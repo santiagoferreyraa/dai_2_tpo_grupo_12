@@ -364,55 +364,47 @@
   }
 }
 
-/* ─────────────────────── La línea del dispositivo a la estación ───────────────────────
-  Aparece al reservar, titila, y se va sola. Ver el `Polyline` de `StationMap`.
+/* ─────────────────────── El recorrido a la estación ───────────────────────
+  La ruta por calles desde el dispositivo hasta la estación elegida. Queda mientras la estación
+  siga elegida. Ver el `Polyline` de `StationMap` y `useRoute`.
 
-  **Las duraciones de acá están atadas a TRACE_DURATION_MS, en `StationsMapPage`.** Son 2500 ms
-  repartidos así: tres parpadeos de 620 ms (1860), una pausa encendida, y el desvanecido de
-  300 ms arrancando a los 2200 para terminar justo cuando React desmonta la línea. Si allá se
-  cambia el plazo, hay que rehacer este reparto o la línea desaparece de golpe a mitad de
-  desvanecido —que es exactamente el corte seco que esto existe para evitar—.
+  Llena y quieta: esta línea es el camino que hay que hacer y tiene que leerse como tal. Acá abajo
+  hubo una `.station-trace` punteada, la recta de respaldo para cuando el servicio no contestaba;
+  se sacó junto con su `Polyline`, porque una recta contesta otra pregunta y nadie que la mire
+  puede saber cuál de las dos tiene en pantalla. Sin recorrido no se dibuja nada.
 
-  El parpadeo NO lleva `forwards`: al terminar, la opacidad vuelve al valor del atributo que
-  escribe Leaflet, que es 1. Esa es la pausa encendida, y sale gratis. El desvanecido sí lo
-  lleva, porque su valor final —invisible— tiene que quedar fijo hasta el desmontaje.
+  Ancha, con las puntas y los quiebres redondeados: un recorrido urbano es una sucesión de
+  esquinas, y con los quiebres en punta cada giro de 90 grados deja una púa que ensucia la línea
+  entera. `round` en los dos lados es lo que la deja leerse como una cinta sobre las calles.
 
-  Punteada y no llena: es dirección y distancia, no un recorrido por calles. Una línea llena
-  prometería un camino que nadie calculó.
+  La opacidad la baja un punto para que las calles se sigan viendo POR DEBAJO del trazo. Es la
+  diferencia entre una ruta dibujada sobre el mapa y una ruta que tapa el mapa; con el segundo, el
+  recorrido deja de poder compararse con lo que tiene alrededor, que es para lo que se lo mira.
+
+  Aparece con un desvanecido corto y nada más. Se probó el trazado progresivo —el guión que
+  corre con `stroke-dashoffset`—, pero para que ande hay que normalizar el largo del trazo con
+  `pathLength`, que es un atributo del SVG y Leaflet no lo expone: sin eso, una ruta de 800 m y
+  una de 40 km se dibujan a velocidades incomparables.
 */
-@keyframes station-trace-blink {
-  0%,
-  100% {
-    stroke-opacity: 1;
-  }
-  50% {
-    stroke-opacity: 0.15;
-  }
-}
-
-@keyframes station-trace-fade {
-  to {
+@keyframes station-route-in {
+  from {
     stroke-opacity: 0;
   }
 }
 
-.station-trace {
+.station-route {
   stroke: var(--color-primary);
-  stroke-width: 3;
+  stroke-width: 5;
   stroke-linecap: round;
-  stroke-dasharray: 1 14;
-  animation:
-    station-trace-blink 620ms ease-in-out 3,
-    station-trace-fade 300ms ease-in 2200ms forwards;
+  stroke-linejoin: round;
+  stroke-opacity: 0.85;
+  animation: station-route-in 320ms ease-out;
 }
 
-/*
-  Sin movimiento la línea no titila, pero SIGUE yéndose sola: el titileo es el énfasis, la
-  desaparición es la función. Una línea que se queda para siempre sobre el mapa es otra cosa.
-*/
+/* Sin movimiento, la ruta aparece de una. No se pierde información: solo la transición. */
 @media (prefers-reduced-motion: reduce) {
-  .station-trace {
-    animation: station-trace-fade 300ms ease-in 2200ms forwards;
+  .station-route {
+    animation: none;
   }
 }
 

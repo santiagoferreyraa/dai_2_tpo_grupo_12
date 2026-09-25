@@ -24,6 +24,7 @@ import {
 import StationHoverCard from './StationHoverCard'
 import { DEVICE_PIN } from '../devicePin'
 import { stationPin } from '../stationPin'
+import type { Route } from '../routing'
 import type { DeviceLocation } from '../useDeviceLocation'
 import type { StationResult } from '../types'
 
@@ -105,70 +106,49 @@ function FlyToStation({
 }
 
 /**
- * Aleja el mapa hasta que entren el dispositivo y la estación.
+ * Aleja el mapa hasta que entre la ruta completa.
  *
- * Es el gesto de la reserva: la pregunta que contesta no es "dónde está la estación" —eso ya lo
- * contestó FlyToStation al elegirla— sino "qué tan lejos me queda". Esa pregunta necesita las
- * dos puntas en pantalla al mismo tiempo, y por eso acá se ALEJA donde el resto de la pantalla
- * acerca.
+ * Es el gesto que sigue a elegir una estación: la pregunta que contesta no es "dónde está la
+ * estación" —eso ya lo contestó FlyToStation— sino "cómo llego y qué tan lejos me queda". Esa
+ * pregunta necesita el recorrido entero en pantalla, y por eso acá se ALEJA donde el resto de la
+ * pantalla acerca.
+ *
+ * **El encuadre sale de la geometría de la ruta y no de sus dos puntas.** Una ruta que rodea —un
+ * río, una vía, una autopista sin bajada— se sale del recuadro que forman el origen y el destino,
+ * y encuadrando las puntas quedaría con el medio del recorrido fuera de la pantalla.
  *
  * `flyToBounds` y no `fitBounds`, por lo mismo que FlyToStation usa `flyTo`: el viaje animado
  * deja ver que el mapa se abrió hacia atrás. Un salto seco desde el zoom 15 hasta ver media
- * provincia es desorientador, y encima se comería el arranque de la línea.
+ * provincia es desorientador.
  *
- * El relleno de abajo suma `bottomInsetPx` por el mismo motivo que allá: en celular el panel
- * está abierto justo cuando se toca Reservar, así que sin compensarlo el encuadre mete la
- * estación —o al usuario— detrás del panel. `paddingBottomRight` es la forma que tiene Leaflet
- * de pedir un margen asimétrico, que es exactamente el caso.
+ * El relleno de abajo suma `bottomInsetPx` por el mismo motivo que allá: en celular el panel está
+ * abierto justo cuando aparece la ruta, así que sin compensarlo el encuadre mete el destino —o al
+ * usuario— detrás del panel. `paddingBottomRight` es la forma que tiene Leaflet de pedir un
+ * margen asimétrico, que es exactamente el caso.
  *
- * **El origen se lee de un ref y no de las dependencias.** `watchPosition` avisa cada vez que
- * el usuario se mueve, así que `from` cambia de identidad seguido; si estuviera en las
- * dependencias, cada arreglo del GPS volvería a disparar el vuelo y el mapa quedaría
- * reencuadrándose solo durante los 2,5 segundos que dura la línea. El encuadre tiene que pasar
- * UNA vez, cuando aparece el destino.
+ * Depende de `route` y no de sus coordenadas: `useRoute` devuelve el mismo objeto mientras no
+ * vuelva a consultar, así que un repintado cualquiera no vuelve a mover el mapa. Y cuando sí
+ * consulta de nuevo —porque el usuario se movió 200 m— el reencuadre es lo correcto, porque el
+ * recorrido cambió.
  */
-function FitTrace({
-  from,
-  to,
-  bottomInsetPx,
-}: {
-  from: DeviceLocation | null
-  to: StationResult | null
-  bottomInsetPx: number
-}) {
+function FitRoute({ route, bottomInsetPx }: { route: Route | null; bottomInsetPx: number }) {
   const map = useMap()
 
-  const fromRef = useRef(from)
-
-  /*
-   * El ref se sincroniza en un efecto y no durante el render —React pide no tocar `current`
-   * mientras se renderiza—, y este efecto va declarado ANTES del de abajo a propósito: los
-   * efectos corren en orden de declaración, así que cuando el de abajo lee el ref ya tiene la
-   * posición de ESTE render y no la del anterior. Invertidos, el encuadre saldría de una
-   * posición vieja por un arreglo del GPS.
-   */
   useEffect(() => {
-    fromRef.current = from
-  }, [from])
+    if (route === null) return
 
-  useEffect(() => {
-    const origin = fromRef.current
-    if (to === null || origin === null) return
-
-    const bounds = L.latLngBounds([origin.latitude, origin.longitude], [to.latitude, to.longitude])
-
-    map.flyToBounds(bounds, {
+    map.flyToBounds(L.latLngBounds(route.coordinates), {
       paddingTopLeft: [56, 56],
       paddingBottomRight: [56, 56 + bottomInsetPx],
       /*
        * El techo evita el caso degenerado: con el usuario a media cuadra de la estación, el
        * recuadro es diminuto y Leaflet se acercaría hasta el máximo que dé el proveedor. La
-       * reserva quedaría mostrando dos puntos separados por toda la pantalla, que es
-       * justamente la lectura contraria a "esto te queda al lado".
+       * pantalla quedaría mostrando dos puntos separados por todo el ancho, que es justamente la
+       * lectura contraria a "esto te queda al lado".
        */
       maxZoom: FOCUS_ZOOM,
     })
-  }, [map, to, bottomInsetPx])
+  }, [map, route, bottomInsetPx])
 
   return null
 }
@@ -184,12 +164,14 @@ interface StationMapProps {
   /** Dónde está el dispositivo, si el navegador lo dijo. Ver useDeviceLocation. */
   deviceLocation?: DeviceLocation | null
   /**
-   * Estación hacia la que se traza la línea desde el dispositivo, o null para no trazar nada.
+   * El recorrido por calles desde el dispositivo hasta la estación elegida, o null si todavía no
+   * llegó, no se pudo calcular o no hay estación elegida.
    *
-   * Quién la prende y por cuánto tiempo NO se decide acá: lo decide la pantalla, que es la que
-   * sabe qué acción la disparó. Este componente solo dibuja lo que le pasan.
+   * Cuándo se pide y contra qué servicio NO se decide acá: lo decide la pantalla con `useRoute`.
+   * Este componente solo dibuja lo que le pasan, que es lo que deja cambiar de proveedor de rutas
+   * sin tocar el mapa.
    */
-  traceTo?: StationResult | null
+  route?: Route | null
 }
 
 export default function StationMap({
@@ -199,7 +181,7 @@ export default function StationMap({
   bottomInsetPx = 0,
   dimUnselected = false,
   deviceLocation = null,
-  traceTo = null,
+  route = null,
 }: StationMapProps) {
   const theme = useTheme()
   const [hoveredStationId, setHoveredStationId] = useState<number | null>(null)
@@ -255,7 +237,7 @@ export default function StationMap({
     >
       <InvalidateSizeOnResize />
       <FlyToStation station={selectedStation} bottomInsetPx={bottomInsetPx} />
-      <FitTrace from={deviceLocation} to={traceTo} bottomInsetPx={bottomInsetPx} />
+      <FitRoute route={route} bottomInsetPx={bottomInsetPx} />
 
       {/*
         Los mosaicos cambian con el tema, y son DOS juegos distintos del mismo proveedor: no es el
@@ -342,24 +324,25 @@ export default function StationMap({
           />
 
           {/*
-            La línea recta hasta la estación reservada.
+            El recorrido por calles hasta la estación elegida, y mientras siga elegida.
 
-            Recta y NO un recorrido por calles: no hay grafo vial en el proyecto, así que esto
-            dice dirección y distancia, no por dónde ir. Que sea punteada y titile es justamente
-            lo que la despega de una ruta trazada —una línea llena y quieta se leería como el
-            camino a hacer— y lo que la vuelve un gesto que pasa en vez de una capa del mapa.
+            Es una línea llena y quieta a propósito: dice por dónde se va, así que se tiene que
+            leer como el camino a hacer.
 
-            Se desmonta sola cuando la pantalla apaga `traceTo`; el desvanecido del final lo
-            hace la animación de CSS, sincronizada con ese plazo. Ver `.station-trace`.
+            **Y si no hay recorrido no se dibuja nada.** Acá hubo una recta punteada de respaldo,
+            para cuando el servicio de rutas no contestaba; se sacó porque una recta entre dos
+            puntos NO es una respuesta más pobre a la misma pregunta, es la respuesta a otra: con
+            una avenida de por medio puede quedar a la mitad de lo que hay que manejar. Quien la
+            mira no tiene cómo saber cuál de las dos está viendo, así que lo único honesto es no
+            dibujarla. Que faltó se dice con palabras, en el panel de detalle.
+
+            El estilo vive en `.station-route`, en index.css.
           */}
-          {traceTo !== null && (
+          {route !== null && (
             <Polyline
-              positions={[
-                [deviceLocation.latitude, deviceLocation.longitude],
-                [traceTo.latitude, traceTo.longitude],
-              ]}
+              positions={route.coordinates}
               interactive={false}
-              pathOptions={{ className: 'station-trace' }}
+              pathOptions={{ className: 'station-route' }}
             />
           )}
         </>

@@ -58,6 +58,20 @@ export const TILE_ATTRIBUTION =
   'Mosaicos &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 
 /**
+ * Obligatoria por licencia del servicio de rutas, y es una deuda distinta de la de arriba.
+ *
+ * Los mosaicos y las rutas vienen de dos proveedores que no tienen nada que ver entre sí: el
+ * dibujo del mapa es de Esri, el recorrido lo calcula OSRM sobre los datos de OpenStreetMap. Que
+ * OSM aparezca en las dos no las vuelve la misma línea —acredita dos usos distintos del mismo
+ * dato—, y acreditar solo una deja al otro proveedor sin crédito.
+ *
+ * Va al mismo lugar que TILE_ATTRIBUTION: el pie de página o la pantalla "acerca de" que el
+ * proyecto todavía debe. Ver `routing.ts`, que es donde se explica de dónde sale la ruta.
+ */
+export const ROUTING_ATTRIBUTION =
+  'Rutas por <a href="https://project-osrm.org/">OSRM</a>, con datos de <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> (ODbL)'
+
+/**
  * El servicio tiene mosaicos hasta el zoom 16. Del 17 en adelante devuelve 200 con un mosaico
  * vacío: el mapa se pondría negro sin un solo error que lo explique.
  *

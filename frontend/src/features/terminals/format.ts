@@ -113,6 +113,26 @@ export function formatDistance(km: number): string {
 }
 
 /**
+ * Duración de un viaje, tal como la diría alguien: "12 min", "1 h 25 min".
+ *
+ * Se redondea al minuto y nunca se muestran segundos. La estimación sale de OSRM, que no modela
+ * el tránsito: escribir "12 min 43 s" afirmaría una exactitud que el dato no tiene, y encima es
+ * una precisión que a nadie le sirve para decidir a qué estación ir.
+ *
+ * Por debajo del minuto dice "menos de 1 min" y no "0 min", que se leería como un error de
+ * cálculo en vez de como "estás al lado".
+ */
+export function formatDuration(seconds: number): string {
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 1) return 'menos de 1 min'
+  if (minutes < 60) return `${String(minutes)} min`
+
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return rest === 0 ? `${String(hours)} h` : `${String(hours)} h ${String(rest)} min`
+}
+
+/**
  * Coordenada recortada a seis decimales.
  *
  * Se muestra con punto y no con coma: es notación de coordenadas, no un número de la

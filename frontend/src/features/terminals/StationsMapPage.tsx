@@ -25,7 +25,7 @@
  * de abajo se entera.
  */
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import type { LatLngTuple } from 'leaflet'
 
@@ -45,6 +45,7 @@ import { matchesFilters, matchesQuery } from './format'
 import type { ConnectorFilters } from './format'
 import { COUNTRY_RADIUS_KM, DEFAULT_CENTER } from './mapConfig'
 import { useDeviceLocation } from './useDeviceLocation'
+import { useRoute } from './useRoute'
 import { useMediaQuery } from '@/lib/useMediaQuery'
 import { useSuggestionNav } from './useSuggestionNav'
 import type { ConnectorSummary, StationResult } from './types'
@@ -77,15 +78,6 @@ const DIALOG_QUERY = '(min-width: 768px)'
  * verdad obligaría a un ResizeObserver sobre un panel que entra animado.
  */
 const SHEET_INSET_PX = 380
-
-/**
- * Cuánto dura la línea entre el dispositivo y la estación al reservar.
- *
- * **Está atado a las animaciones de `.station-trace`, en index.css**, que reparten exactamente
- * este plazo entre los parpadeos y el desvanecido final. Cambiar el número acá sin rehacer aquel
- * reparto deja la línea desapareciendo de golpe.
- */
-const TRACE_DURATION_MS = 2500
 
 /**
  * El conector que viene elegido de arranque: el más rápido de los que están libres.
@@ -187,15 +179,6 @@ export default function StationsMapPage() {
    */
   const device = useDeviceLocation()
 
-  /*
-   * La estación hacia la que se está trazando la línea, mientras dura. Es un estado aparte de
-   * `selectedStationId` y no un booleano colgado de él porque son dos cosas distintas: la
-   * selección la manda el usuario y dura hasta que la cambie, el trazo lo dispara la reserva y
-   * se apaga solo.
-   */
-  const [tracedStationId, setTracedStationId] = useState<number | null>(null)
-  const traceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
   const wide = useMediaQuery(WIDE_QUERY)
   const dialog = useMediaQuery(DIALOG_QUERY)
 
@@ -279,11 +262,19 @@ export default function StationsMapPage() {
   const selectedStation = stations.find((s) => s.stationId === selectedStationId) ?? null
 
   /*
-   * La estación del trazo se resuelve como la elegida, contra la lista ya filtrada: `find`
-   * devuelve siempre la misma referencia mientras no cambie el arreglo, y de eso depende que el
-   * encuadre de `FitTrace` ocurra una sola vez y no en cada arreglo del GPS.
+   * El recorrido por calles hasta la estación elegida.
+   *
+   * **No es un estado de esta pantalla: se deriva de la selección.** Antes había un
+   * `tracedStationId` aparte, porque la línea la disparaba la reserva y se apagaba sola a los dos
+   * segundos y medio; con la ruta fija esa distinción desapareció, y con ella el estado, el
+   * temporizador y las tres funciones que lo manejaban. Elegida la estación hay ruta, y deja de
+   * haberla cuando se elige otra.
+   *
+   * Que devuelva null no es una falla: puede ser que todavía no llegó, que no hay ubicación o que
+   * el servicio está caído. El mapa dibuja la recta de siempre en cualquiera de los tres casos.
    */
-  const tracedStation = stations.find((s) => s.stationId === tracedStationId) ?? null
+  const routeState = useRoute(device.location, selectedStation)
+  const { route } = routeState
 
   /*
    * El conector elegido se resuelve contra la estación de ahora y cae en el de por omisión si
@@ -340,35 +331,6 @@ export default function StationsMapPage() {
     setReserving(null)
   }
 
-  function clearTraceTimer() {
-    if (traceTimer.current === null) return
-    clearTimeout(traceTimer.current)
-    traceTimer.current = null
-  }
-
-  /*
-   * Si la pantalla se desmonta con el trazo corriendo, el setState posterior cae sobre un
-   * componente que ya no existe.
-   */
-  useEffect(() => clearTraceTimer, [])
-
-  /**
-   * Dibuja la línea hasta la estación y la apaga sola. Ver TRACE_DURATION_MS.
-   *
-   * El temporizador anterior se corta antes de abrir otro: sin eso, tocar Reservar dos veces
-   * deja dos plazos corriendo y el primero en vencer apaga la línea que acababa de encender el
-   * segundo, cortándola a la mitad.
-   */
-  function startTrace(stationId: number) {
-    clearTraceTimer()
-    setTracedStationId(stationId)
-
-    traceTimer.current = setTimeout(() => {
-      traceTimer.current = null
-      setTracedStationId(null)
-    }, TRACE_DURATION_MS)
-  }
-
   function handleReserve() {
     if (selectedStation === null || selectedConnector === null) return
     setReserving({ station: selectedStation, connector: selectedConnector })
@@ -377,19 +339,14 @@ export default function StationsMapPage() {
   /**
    * Termina la reserva, confirmada o no.
    *
-   * **Confirmada, dibuja la línea hasta la estación.** Es el trazo que antes disparaba el botón
-   * Reservar mientras la reserva no existía; ahora llega al final, que es cuando dice algo: la
-   * estación a la que el conductor acaba de comprometerse a ir. Se dibuja al cerrar y no antes
-   * porque con el diálogo abierto el fondo está oscurecido y la línea no se vería.
-   *
-   * Sin ubicación no hay punto de partida y no se traza nada; la reserva vale igual.
+   * **Ya no dispara nada en el mapa.** Antes encendía acá la línea hasta la estación, porque era
+   * un gesto de dos segundos y había que elegirle un momento; la reserva confirmada era el mejor,
+   * que es cuando el conductor se compromete a ir. Con el recorrido fijo la pregunta desapareció:
+   * la ruta ya está dibujada desde que se eligió la estación, que es cuando alguien quiere saber
+   * cómo llegar —antes de reservar, no después—.
    */
-  function finishReserving(booking: Booking | null) {
-    const station = reserving?.station ?? null
+  function finishReserving(_booking: Booking | null) {
     setReserving(null)
-    if (booking !== null && station !== null && device.location !== null) {
-      startTrace(station.stationId)
-    }
   }
 
   /*
@@ -423,6 +380,7 @@ export default function StationsMapPage() {
         selectedConnector={selectedConnector}
         onSelectConnector={setSelectedConnectorId}
         onReserve={handleReserve}
+        route={routeState}
       />
     ))
 
@@ -459,7 +417,7 @@ export default function StationsMapPage() {
             bottomInsetPx={!wide && selectedStation !== null ? SHEET_INSET_PX : 0}
             dimUnselected={selectedStation !== null}
             deviceLocation={device.location}
-            traceTo={tracedStation}
+            route={route}
           />
 
           {/*
