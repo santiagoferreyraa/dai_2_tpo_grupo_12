@@ -1,0 +1,259 @@
+/*
+  La burbuja del agente y el panel del chat.
+
+  Está en la feature y no en index.css por lo mismo que el resto: lo que solo usa una pantalla
+  vive con ella. index.css la importa con una línea.
+*/
+
+/*
+  La forma variable.
+
+  Es UNA silueta que se deforma, no un círculo con un borde raro. Se consigue animando las ocho
+  medidas de `border-radius` —cuatro horizontales y cuatro verticales, que es lo que hay antes de
+  la barra— entre cuatro juegos de valores que nunca suman un círculo. El resultado es una gota
+  que respira.
+
+  Encima gira despacio, y eso es lo que evita que se lea como un bucle: la deformación tarda 14
+  segundos y el giro 26, así que las dos ondas no vuelven a coincidir en un rato largo. El giro va
+  en la CAPA DE ADENTRO y no en el botón, porque el ícono tiene que quedar derecho.
+*/
+@keyframes agent-blob-morph {
+  0%,
+  100% {
+    border-radius: 58% 42% 47% 53% / 52% 46% 54% 48%;
+  }
+  25% {
+    border-radius: 44% 56% 62% 38% / 43% 57% 43% 57%;
+  }
+  50% {
+    border-radius: 51% 49% 38% 62% / 61% 41% 59% 39%;
+  }
+  75% {
+    border-radius: 62% 38% 54% 46% / 45% 62% 38% 55%;
+  }
+}
+
+@keyframes agent-blob-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/*
+  El cuerpo de la burbuja.
+
+  **Va llena del verde de la marca**, con el mismo degradado que los botones principales
+  (`--brand-from` → `--brand-to`, que son las dos puntas del par y cambian solas con el tema
+  claro/oscuro). Así la burbuja se lee como la acción principal de la pantalla y no como un bulto
+  del fondo, y el verde ya no aparece dos veces con dos significados distintos.
+
+  **No tiene trazo.** Sobre un relleno lleno el borde solo recorta la silueta y pelea con el halo;
+  la forma se define sola por el contraste del verde contra el fondo.
+
+  El brillo de encima no es decoración suelta: sobre un relleno plano la gota queda muerta. Es una
+  luz blanca corrida hacia arriba a la izquierda, tan tenue que no se lee como forma, y es lo que
+  le da volumen. Lo acompaña un filo blanco arriba —el `inset` de la sombra—, que es el mismo
+  truco.
+
+  **El verde va apenas transparente, con desenfoque detrás.** No es para que se vea menos: es para
+  que la burbuja deje pasar algo de lo que flota abajo y no se lea como una calcomanía apoyada
+  encima de la pantalla. El `backdrop-filter` es lo que evita que ese algo se convierta en suciedad
+  —lo que se ve a través está desenfocado, no legible—. El porcentaje es alto a propósito: tiene
+  que seguir siendo verde de la marca, no un vidrio verdoso.
+*/
+.agent-blob {
+  background-image:
+    radial-gradient(120% 120% at 30% 22%, rgb(255 255 255 / 0.28), transparent 60%),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--brand-from) 88%, transparent),
+      color-mix(in srgb, var(--brand-to) 88%, transparent)
+    );
+  backdrop-filter: blur(8px);
+  box-shadow:
+    0 12px 30px rgb(0 0 0 / 0.28),
+    inset 0 1px 0 rgb(255 255 255 / 0.3);
+  animation:
+    agent-blob-morph 14s ease-in-out infinite,
+    agent-blob-spin 26s linear infinite;
+}
+
+/*
+  El halo: la misma gota, más grande y difuminada, latiendo detrás.
+
+  Sirve para que la burbuja se despegue del fondo y para que el verde no termine de golpe en el
+  filo de la silueta: es el mismo verde, difuminado y muy bajo de opacidad, así que se lee como la
+  luz que la burbuja tira alrededor y no como un segundo borde.
+*/
+@keyframes agent-blob-halo {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.12);
+  }
+}
+
+.agent-blob-halo {
+  background: radial-gradient(
+    circle at 50% 50%,
+    color-mix(in srgb, var(--color-primary) 38%, transparent),
+    transparent 68%
+  );
+  filter: blur(10px);
+  animation: agent-blob-halo 6s ease-in-out infinite;
+}
+
+/*
+  Quien pidió menos movimiento no recibe una gota quieta y fea: recibe una forma FIJA, la del
+  primer fotograma, sin giro ni latido. Sigue sin ser un círculo, que es lo que se pidió.
+*/
+@media (prefers-reduced-motion: reduce) {
+  .agent-blob {
+    animation: none;
+    border-radius: 58% 42% 47% 53% / 52% 46% 54% 48%;
+  }
+
+  .agent-blob-halo {
+    animation: none;
+    opacity: 0.55;
+  }
+}
+
+/*
+  Entrada del panel: crece desde la esquina donde está la burbuja.
+
+  El `transform-origin` lo pone el componente según el tamaño de pantalla —abajo a la derecha en
+  la ventana flotante, abajo y al centro en la hoja del celular—, así que la animación es una sola
+  y el origen cambia el gesto.
+*/
+@keyframes agent-panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.88) translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.agent-panel {
+  animation: agent-panel-in 240ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes agent-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.agent-scrim {
+  animation: agent-scrim-in 200ms ease-out;
+}
+
+/*
+  Los tres puntitos de "está escribiendo". El retraso escalonado es lo único que los distingue de
+  tres puntos quietos.
+*/
+@keyframes agent-typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+.agent-typing-dot {
+  animation: agent-typing-dot 1.2s ease-in-out infinite;
+}
+
+.agent-typing-dot:nth-child(2) {
+  animation-delay: 160ms;
+}
+
+.agent-typing-dot:nth-child(3) {
+  animation-delay: 320ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-panel,
+  .agent-scrim,
+  .agent-typing-dot {
+    animation: none;
+  }
+}
+
+/*
+  Los tres vidrios del chat, de afuera para adentro.
+
+  El chat es un marco y una hoja, no una pila de barras sueltas (ver `AgentChatPanel`), y eso son
+  dos densidades distintas: el MARCO es lo más translúcido de la pieza —es el que deja ver la
+  página, y su ancho es el relleno del panel—, y la HOJA de adentro tiene cuerpo de sobra, porque
+  es la que tiene que sostener texto chico encima de un mapa en movimiento. La diferencia entre las
+  dos es lo que dibuja el marco: no hay un borde de más, hay un salto de densidad.
+
+  Las piezas chicas de adentro —las sugerencias, los mensajes, los puntitos— son el tercer nivel, y
+  van apenas por encima de la hoja: lo justo para leerse como objetos apoyados y no como manchas.
+
+  **Todo esto va acá y no como clases** porque `.glass-panel` vive fuera de las capas de Tailwind:
+  un `bg-*` o un `shadow-none` puesto en el `className` le pierde. Y con DOS selectores, porque
+  `agent.css` se importa arriba de todo en `index.css` y con uno solo perdería por orden aun
+  empatando en especificidad.
+*/
+
+/*
+  Nada de lo que está adentro tira sombra. La de `.glass-panel` existe para despegar una tarjeta
+  del fondo de la página; adentro del chat no hay de qué despegarse, y en algo chico como una
+  sugerencia no se lee como profundidad sino como un corte sucio contra lo que haya atrás.
+*/
+.agent-panel .glass-panel {
+  box-shadow: none;
+}
+
+/*
+  El marco. Solo en pantalla ancha: en el celular manda `.glass-modal`, que sube el cuerpo a
+  propósito porque ahí el chat se apoya sobre el oscurecedor, y pisarlo devolvería el gris sucio
+  que ese ajuste existe para evitar.
+*/
+@media (min-width: 768px) {
+  .agent-panel.glass-panel {
+    background-color: color-mix(in srgb, var(--color-surface) 21%, transparent);
+  }
+}
+
+/* La hoja: el chat entero. Es lo más lleno de la pieza y es lo que hace legible el contenido. */
+.agent-panel .agent-sheet {
+  background-color: color-mix(in srgb, var(--color-surface) 67%, transparent);
+}
+
+/* Las piezas chicas, apoyadas sobre la hoja. */
+.agent-panel .glass-panel:not(.agent-sheet) {
+  background-color: color-mix(in srgb, var(--color-surface) 22%, transparent);
+}
+
+/*
+  Sin desenfoque no queda un vidrio a medias sino texto ilegible sobre lo que haya abajo: el marco
+  y la hoja se vuelven opacos, igual que hace `.glass-panel` con las tarjetas.
+*/
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .agent-panel.glass-panel,
+  .agent-panel .agent-sheet,
+  .agent-panel .glass-panel:not(.agent-sheet) {
+    background-color: var(--color-surface);
+  }
+}

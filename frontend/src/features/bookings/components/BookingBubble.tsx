@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
+import { AGENT_BUBBLE_TOP_PX } from '@/features/agent/AgentBubble'
 import { FLOAT_ABOVE_PX, type BubblePosition } from './floatingTicket'
 
 /**
@@ -47,11 +48,18 @@ function clamp(position: BubblePosition): BubblePosition {
   }
 }
 
-/** Abajo a la derecha, a la altura donde flotaba la tarjeta. */
+/**
+ * Abajo a la derecha, apenas encima de la burbuja del agente.
+ *
+ * La altura de la tarjeta (`FLOAT_ABOVE_PX`) ya no alcanza como punto de partida: ahí abajo está
+ * ahora la burbuja del asistente, que es fija y no se puede correr. Se arranca por encima de ella
+ * y el resto lo decide quien arrastre.
+ */
 function defaultPosition(): BubblePosition {
+  const floor = Math.max(FLOAT_ABOVE_PX, AGENT_BUBBLE_TOP_PX + 12)
   return {
     x: window.innerWidth - SIZE - 16,
-    y: window.innerHeight - FLOAT_ABOVE_PX - SIZE,
+    y: window.innerHeight - floor - SIZE,
   }
 }
 

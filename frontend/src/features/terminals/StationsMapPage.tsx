@@ -25,7 +25,7 @@
  * de abajo se entera.
  */
 
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import type { LatLngTuple } from 'leaflet'
 
@@ -44,6 +44,7 @@ import StationMap from './components/StationMap'
 import StationSearch from './components/StationSearch'
 import StationSuggestions, { MAX_SUGGESTIONS } from './components/StationSuggestions'
 import { searchStations } from './data/stationsRepository'
+import { departFromDevice } from './departure'
 import { matchesFilters, matchesQuery } from './format'
 import type { ConnectorFilters } from './format'
 import { COUNTRY_RADIUS_KM, DEFAULT_CENTER } from './mapConfig'
@@ -218,6 +219,14 @@ export default function StationsMapPage() {
     connector: ConnectorSummary
   } | null>(null)
 
+  /*
+   * La estación de la reserva recién confirmada, mientras Reservas todavía no la devuelve en su
+   * lista. Es un dato de un instante y nadie lo dibuja, así que va en una referencia: guardado en
+   * el estado obligaría a un repintado de toda la pantalla para no cambiar un solo píxel. Quién lo
+   * lee y por qué está explicado en el efecto que olvida el punto de partida.
+   */
+  const justBookedRef = useRef<number | null>(null)
+
   useEffect(() => {
     /*
      * Si la pantalla se desmonta antes de que el backend conteste, la petición se cancela.
@@ -297,6 +306,58 @@ export default function StationsMapPage() {
    * Que devuelva null no es una falla: puede ser que todavía no llegó, que no hay ubicación o que
    * el servicio está caído. El mapa dibuja la recta de siempre en cualquiera de los tres casos.
    */
+  /*
+   * El punto de partida escrito se olvida cuando se queda sin motivo.
+   *
+   * Una dirección de partida no es una preferencia del conductor: es el "salgo de acá" de UN viaje
+   * a UNA estación, por eso `Departure` la guarda junto al `stationId`. Mientras ese viaje existe
+   * —se está reservando, o ya hay una reserva vigente para esa estación— la dirección vale y su
+   * alfiler tiene que estar en el mapa. Cuando el viaje deja de existir, no queda nada que la
+   * sostenga.
+   *
+   * Sin esto la dirección sobrevivía a la reserva entera y el alfiler se quedaba solo en el mapa:
+   * sin recorrido punteado que saliera de él, sin panel abierto que lo nombrara, y sin nada en
+   * pantalla que explicara por qué hay un pin ahí. Peor todavía, seguía siendo el origen de los
+   * recorridos de esa estación, así que tocar su pin más tarde medía la distancia desde un lugar
+   * donde el conductor ya no estaba.
+   *
+   * Los tres casos que esto cubre son el mismo caso: se abandonó el formulario sin confirmar, la
+   * reserva se canceló, o la reserva terminó.
+   *
+   * **Espera a que Reservas conteste**, y de dos maneras distintas.
+   *
+   * Con `myBookings` a medio cargar `bookedStationId` es `null`, que es indistinguible de "no hay
+   * reserva": borraría la dirección de una reserva que sí existe, justo al entrar a la pantalla.
+   * De eso se encarga el `status`.
+   *
+   * El `status` no alcanza para el otro momento, que es el que importa. Al confirmar se pide una
+   * lista nueva, pero con una lista ya a la vista `refreshMyBookings` NO pasa por `loading` —para
+   * no parpadear—, así que durante ese rato el estado dice `ready` con la lista VIEJA, en la que la
+   * reserva recién hecha todavía no está. Cerrar el formulario en esa ventana borraría la dirección
+   * de la reserva que se acaba de confirmar. `justBookedRef` es el compás de espera: se levanta al
+   * confirmar y se baja sola cuando la lista nueva llega con esa estación adentro.
+   *
+   * Si la lista nueva nunca llega —se cayó la red— la bandera queda levantada y el alfiler se
+   * queda. Es el lado correcto para equivocarse: de más, un pin que sobra; de menos, el punto de
+   * partida de una reserva vigente borrado a espaldas del conductor.
+   */
+  useEffect(() => {
+    if (departure.departure.kind !== 'address') return
+    if (myBookings.status !== 'ready') return
+
+    const stationId = departure.departure.stationId
+    if (reserving?.station.stationId === stationId) return
+
+    if (bookedStationId === stationId) {
+      justBookedRef.current = null
+      return
+    }
+
+    if (justBookedRef.current === stationId) return
+
+    departFromDevice()
+  }, [departure.departure, myBookings.status, reserving, bookedStationId])
+
   /*
    * Desde dónde se traza ESTE recorrido, que no siempre es el punto de partida elegido.
    *
@@ -425,7 +486,12 @@ export default function StationsMapPage() {
    * la ruta ya está dibujada desde que se eligió la estación, que es cuando alguien quiere saber
    * cómo llegar —antes de reservar, no después—.
    */
-  function finishReserving(_booking: Booking | null) {
+  function finishReserving(booking: Booking | null) {
+    /*
+     * Ver el efecto que olvida el punto de partida: esto es lo que le avisa que la reserva existe
+     * aunque la lista todavía no la muestre.
+     */
+    if (booking !== null) justBookedRef.current = booking.location?.stationId ?? null
     setReserving(null)
   }
 
