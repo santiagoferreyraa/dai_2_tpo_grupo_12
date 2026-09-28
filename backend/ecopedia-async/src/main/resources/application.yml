@@ -27,9 +27,9 @@ spring:
   # --- Broker ---
   # El de docker-compose. Los nombres de la cola y del tópico están en ARQUITECTURA §3.3.
   #
-  # Si el broker no está, el proceso arranca igual: el listener reintenta la conexión cada
-  # pocos segundos y deja un aviso en el log por cada intento. No es un error de este módulo,
-  # es que falta `docker compose up -d`.
+  # Si el broker no está, el proceso arranca igual: el listener reintenta la conexión cada 5
+  # segundos y por cada intento deja en el log una línea de ERROR que dice "Could not refresh
+  # JMS Connection". No es un error de este módulo, es que falta `docker compose up -d`.
   #
   # Sin `mode` a propósito. Spring Boot usa el broker embebido si encuentra el servidor de
   # Artemis en el classpath, y ese servidor está solo en el scope de test: los tests corren
@@ -53,6 +53,14 @@ ecopedia:
     # Dónde está ecopedia-core. Notificaciones le pregunta el nombre de la estación para que el
     # aviso y el mail digan dónde es la reserva, y no solo un número.
     url: ${ECOPEDIA_CORE_URL:http://localhost:8081}
+
+  notifications:
+    # La cola que escucha este artefacto. Tiene que coincidir con la que publica ecopedia-charging.
+    queue: notifications.dispatch
+
+    # La zona en la que se escriben las horas de los avisos. Las reservas viajan en UTC: sin
+    # esto, un turno de 10 a 11 en Buenos Aires se avisaría "de 13:00 a 14:00".
+    zone: ${ECOPEDIA_NOTIFICATIONS_ZONE:America/Argentina/Buenos_Aires}
 
 ---
 # Perfil de desarrollo: base en memoria. Es el perfil que declaran los tests.
