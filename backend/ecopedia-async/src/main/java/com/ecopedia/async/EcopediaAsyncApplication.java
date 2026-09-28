@@ -6,12 +6,13 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 /**
  * Artefacto desplegable {@code ecopedia-async}.
  *
- * <p>Va a alojar {@code ServicioDeNotificaciones}, consumidor del broker JMS. No expone
- * API pública: su única entrada son los mensajes de la cola y del tópico.
+ * <p>Aloja {@code NotificationService}. <b>Su entrada es el broker:</b> los avisos le llegan por la
+ * cola {@code notifications.dispatch}, y ningún otro componente lo llama directamente. Por eso el
+ * envío de un aviso no puede demorar ni hacer fallar una reserva (RNF05).
  *
- * <p>Por eso arranca sin servidor web y se mantiene vivo con {@code spring.main.keep-alive}
- * (ver application.yml). Cuando exista el primer {@code @JmsListener}, el propio listener
- * sostiene el proceso.
+ * <p>Desde ECO-41 levanta además un servidor web, en el 8084, pero solo de salida: el conductor
+ * consulta ahí los avisos que ya se le guardaron. El navegador no se conecta al broker, así que
+ * esa consulta es la única forma de que un aviso llegue a la pantalla. Ver ARQUITECTURA §3.3.
  */
 @SpringBootApplication
 public class EcopediaAsyncApplication {

@@ -15,24 +15,100 @@
     <artifactId>ecopedia-async</artifactId>
     <name>Ecopedia — Async</name>
     <description>
-        Componente: ServicioDeNotificaciones. Consumidor del broker, no expone API pública.
+        Componente: NotificationService. Consume la cola notifications.dispatch del broker y
+        expone por REST, al dueño de cada aviso, el historial que va guardando.
     </description>
 
     <dependencies>
+        <!--
+            Web desde ECO-41. La entrada del componente sigue siendo el broker —nadie le pide
+            que mande un aviso por HTTP—, pero los avisos que guarda tienen que llegarle al
+            conductor, y el navegador no se conecta al broker. Ver ARQUITECTURA §3.3.
+        -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter</artifactId>
+            <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
         <!--
-            Falta spring-boot-starter-artemis: se agrega junto con el primer @JmsListener.
-            Todavía no está porque el starter intenta conectarse al broker al arrancar, y
-            Docker no está instalado en todas las máquinas. Ver CLAUDE.md, "Pendientes".
+            El cliente JMS contra ActiveMQ Artemis.
+
+            El comentario que estaba acá lo postergaba porque "el starter intenta conectarse al
+            broker al arrancar". No es así: la fábrica de conexiones es perezosa, y el contenedor
+            del @JmsListener, si el broker no está, arranca igual y reintenta en segundo plano
+            cada pocos segundos. El proceso levanta sin Docker; lo que no hace es recibir.
         -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-artemis</artifactId>
+        </dependency>
+
+        <!-- Seguridad declarativa: cada conductor lee solo sus propios avisos. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <!-- Lectura del token JWT. Acá solo se valida y se leen claims: emitirlo es de Usuarios. -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.12.6</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- El historial de avisos, con su schema propio. Ver README, "Migraciones". -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+        <!-- Motor de base de datos objetivo (perfil por defecto) -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- Solo para los perfiles 'dev' y 'local': levantar el módulo sin PostgreSQL instalado. -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!--
+            Un broker Artemis dentro de la JVM de los tests.
+
+            Con esto en el classpath, Spring Boot levanta el broker embebido en vez de salir a
+            buscar el de Docker, así que CI prueba el recorrido real —publicar, encolar,
+            consumir— sin infraestructura. Solo en test: en ejecución el broker es el de
+            docker-compose, que es el que la consigna pide "realmente configurado".
+        -->
+        <dependency>
+            <groupId>org.apache.activemq</groupId>
+            <artifactId>artemis-jakarta-server</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

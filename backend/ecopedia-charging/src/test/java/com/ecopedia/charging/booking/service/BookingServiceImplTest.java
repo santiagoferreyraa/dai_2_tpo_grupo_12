@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.ecopedia.charging.booking.domain.Booking;
 import com.ecopedia.charging.booking.domain.BookingAccessDeniedException;
+import com.ecopedia.charging.booking.domain.BookingEvent;
+import com.ecopedia.charging.booking.domain.BookingEventType;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.BookingStatus;
 import com.ecopedia.charging.booking.domain.ConnectorCatalog;
@@ -51,6 +53,7 @@ class BookingServiceImplTest {
 
     private BookingServiceImpl service;
     private MutableClock clock;
+    private RecordingBookingEventPublisher events;
 
     @AfterEach
     void destroy() {
@@ -67,8 +70,9 @@ class BookingServiceImplTest {
     /** El componente recién inicializado por el "contenedor", con el plazo de retención pedido. */
     private BookingServiceImpl started(ConnectorCatalog catalog, Duration holdTtl) {
         clock = new MutableClock(Instant.parse("2026-09-14T12:00:00Z"));
+        events = new RecordingBookingEventPublisher();
         service = new BookingServiceImpl(
-                catalog, new InMemoryBookingRepository(), clock, holdTtl, MAX_WINDOW, MAX_HORIZON);
+                catalog, new InMemoryBookingRepository(), events, clock, holdTtl, MAX_WINDOW, MAX_HORIZON);
         service.start();
         return service;
     }
@@ -417,6 +421,73 @@ class BookingServiceImplTest {
             assertThatThrownBy(() -> service.cancelBooking(booking.getId(), DRIVER))
                     .isInstanceOf(InvalidBookingRequestException.class);
             assertThat(booking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+        }
+    }
+
+    /** Los avisos que Reservas publica para Notificaciones (ECO-41, RF17). */
+    @Nested
+    @DisplayName("Avisos al conductor")
+    class Notifying {
+
+        @Test
+        @DisplayName("Confirmar publica un aviso con los datos de la reserva")
+        void confirmingPublishesTheBooking() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            TimeWindow window = windowIn(2);
+            Booking booking = service.confirmBooking(
+                    service.startHold(CONNECTOR, window, DRIVER).id(), DRIVER);
+
+            assertThat(events.published()).singleElement().satisfies(event -> {
+                assertThat(event.type()).isEqualTo(BookingEventType.BOOKING_CONFIRMED);
+                assertThat(event.bookingId()).isEqualTo(booking.getId());
+                assertThat(event.driverId()).isEqualTo(DRIVER);
+                assertThat(event.connectorId()).isEqualTo(CONNECTOR);
+                assertThat(event.windowStart()).isEqualTo(window.start());
+                assertThat(event.windowEnd()).isEqualTo(window.end());
+                assertThat(event.eventId()).isEqualTo("booking-" + booking.getId() + "-BOOKING_CONFIRMED");
+            });
+        }
+
+        @Test
+        @DisplayName("Cancelar publica un aviso, y cancelar dos veces no publica dos")
+        void cancellingPublishesOnce() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = service.confirmBooking(
+                    service.startHold(CONNECTOR, windowIn(2), DRIVER).id(), DRIVER);
+
+            service.cancelBooking(booking.getId(), DRIVER);
+            service.cancelBooking(booking.getId(), DRIVER);
+
+            assertThat(events.published())
+                    .extracting(BookingEvent::type)
+                    .containsExactly(BookingEventType.BOOKING_CONFIRMED, BookingEventType.BOOKING_CANCELLED);
+        }
+
+        /* Un aviso de una reserva que no existe sería peor que ningún aviso. */
+        @Test
+        @DisplayName("Una confirmación rechazada no avisa nada")
+        void rejectedConfirmationPublishesNothing() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Hold hold = service.startHold(CONNECTOR, windowIn(5), DRIVER);
+            clock.advance(Duration.ofMinutes(11));
+
+            assertThatThrownBy(() -> service.confirmBooking(hold.id(), DRIVER))
+                    .isInstanceOf(HoldExpiredException.class);
+            assertThat(events.published()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("Una cancelación rechazada no avisa nada")
+        void rejectedCancellationPublishesNothing() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = service.confirmBooking(
+                    service.startHold(CONNECTOR, windowIn(2), DRIVER).id(), DRIVER);
+
+            assertThatThrownBy(() -> service.cancelBooking(booking.getId(), OTHER_DRIVER))
+                    .isInstanceOf(BookingAccessDeniedException.class);
+            assertThat(events.published())
+                    .extracting(BookingEvent::type)
+                    .containsExactly(BookingEventType.BOOKING_CONFIRMED);
         }
     }
 

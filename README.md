@@ -71,11 +71,12 @@ sola API.
 | `pnpm dev:back` | Solo `ecopedia-core` (8081) |
 | `pnpm dev:charging` | Solo Reservas (`ecopedia-charging`, 8082). Necesita el backend arriba |
 | `pnpm dev:pay` | Solo Pagos (`ecopedia-integration`, 8083), que sirve los medios de pago |
+| `pnpm dev:async` | Solo Notificaciones (`ecopedia-async`, 8084). Necesita el broker: ver "Notificaciones" |
 | `pnpm dev:front` | Solo el frontend |
 | `pnpm dev:plain` | Los cuatro en una sola tira de logs, con prefijos `[back]`/`[charging]`/`[pay]`/`[front]` |
 | `pnpm dev:mem` | Los cuatro, pero con las bases **en memoria**: se borra todo al bajar |
 | `pnpm demo` | Los cuatro contra **PostgreSQL**. Necesita la infraestructura arriba |
-| `pnpm free-ports` | Libera el 8081, el 8082, el 8083 y el 5173 a mano |
+| `pnpm free-ports` | Libera el 8081, el 8082, el 8083, el 8084 y el 5173 a mano |
 | `pnpm build` | Empaqueta el frontend adentro del JAR del backend |
 | `pnpm start` | Corre ese JAR |
 
@@ -89,6 +90,10 @@ de la variable `ECOPEDIA_JWT_SECRET`, y sin ella los tres usan el mismo valor de
 
 **`pnpm start` todavía no llega a Reservas:** sirve front y API desde el JAR de core, en el 8081,
 y ahí no hay nada escuchando `/api/bookings`. Para probar reservas se usa `pnpm dev`.
+
+**`pnpm dev` no levanta Notificaciones ni necesita Docker.** Reservas publica los avisos en el
+broker, y si el broker no está, la reserva se confirma igual y el aviso queda en el log de
+`charging`. Para trabajar sobre las notificaciones, ver "Notificaciones" más abajo.
 
 ### Los tres ambientes
 
@@ -177,14 +182,15 @@ docker compose up -d
 ```
 
 Deja arriba PostgreSQL (`localhost:5432`) y ActiveMQ Artemis (`localhost:61616`, consola web en
-http://localhost:8161/console). Y después los cuatro procesos:
+http://localhost:8161/console). Y después los cinco procesos:
 
 ```bash
 pnpm demo
 ```
 
-Levanta backend, Reservas, Pagos y frontend **sin perfil**, que es el que ya apunta a PostgreSQL.
-Si preferís uno solo, `pnpm demo:back`, `pnpm demo:charging` y `pnpm demo:pay`.
+Levanta backend, Reservas, Pagos, Notificaciones y frontend **sin perfil**, que es el que ya
+apunta a PostgreSQL. Si preferís uno solo, `pnpm demo:back`, `pnpm demo:charging`,
+`pnpm demo:pay` y `pnpm demo:async`.
 
 **Si la base no está arriba, el backend no arranca.** Es el error más común de este ambiente, y
 casi siempre falta el `docker compose up -d`. Se ve en dos lugares distintos y conviene reconocer
@@ -236,6 +242,44 @@ y `ECOPEDIA_DB_PASSWORD`. Ver "Direcciones y configuración".
 Y para el ambiente compartido de la Entrega Final vale lo mismo: alcanza con que **una** máquina
 del equipo tenga PostgreSQL, con o sin Docker, y que las demás apunten ahí.
 
+### Notificaciones
+
+Al confirmar o cancelar una reserva, Reservas deja un mensaje en la cola
+`notifications.dispatch` de Artemis, y `ecopedia-async` (8084) lo consume, arma el aviso, lo
+guarda y manda el mail. **El mail es simulado:** se escribe en el log.
+
+Necesita el broker, que es el de `docker-compose.yml`. Para probarlo sin tocar PostgreSQL alcanza
+con levantar solo el broker y usar el ambiente propio:
+
+```bash
+docker compose up -d activemq
+pnpm dev          # core, Reservas, Pagos y front
+pnpm dev:async    # Notificaciones, en otra terminal
+```
+
+Con `pnpm demo` no hace falta nada de esto: ya levanta los cinco procesos y `docker compose up -d`
+trae el broker.
+
+Dónde se ve cada paso, después de confirmar una reserva:
+
+| Qué | Dónde |
+|-----|-------|
+| Reservas publicó | Panel `charging`: `Aviso booking-N-BOOKING_CONFIRMED publicado en la cola notifications.dispatch` |
+| El mensaje pasó por el broker | http://localhost:8161/console (usuario y contraseña `ecopedia`) → *Queues* → `notifications.dispatch`: los contadores de agregados y consumidos |
+| Notificaciones lo recibió y mandó el mail | Panel `async`: `Recibido de la cola...` y la línea `[MAIL SIMULADO]` |
+| Quedó guardado | `GET http://localhost:8084/api/notifications` con el token del conductor, o la consola de H2 en http://localhost:8084/h2-console (tabla `async.notifications`) |
+
+**Para ver el desacople**, que es lo que muestra la mensajería: bajá `async`, confirmá una
+reserva —se confirma igual— y mirá en la consola que el mensaje queda esperando en la cola.
+Al volver a levantar `async`, lo consume y manda el mail.
+
+Dos cosas que conviene reconocer:
+
+- **Sin el broker, `async` arranca igual** pero deja cada 5 segundos una línea de ERROR con
+  `Could not refresh JMS Connection`. No es un error del módulo: falta `docker compose up -d`.
+- **Sin el broker, Reservas reserva igual**, y en su panel aparece en WARN
+  `No se pudo publicar el aviso`, con el aviso entero. Ese aviso no se reenvía solo.
+
 ### Producción: un solo artefacto
 
 ```bash
@@ -283,7 +327,7 @@ Cada artefacto tiene su puerto fijo, así los cuatro pueden estar levantados a l
 | `ecopedia-core` | 8081 | `mvn -pl backend/ecopedia-core spring-boot:run` |
 | `ecopedia-charging` | 8082 | `mvn -pl backend/ecopedia-charging spring-boot:run` |
 | `ecopedia-integration` | 8083 | `mvn -pl backend/ecopedia-integration spring-boot:run` |
-| `ecopedia-async` | — | `mvn -pl backend/ecopedia-async spring-boot:run` *(sin web: consume del broker)* |
+| `ecopedia-async` | 8084 | `mvn -pl backend/ecopedia-async spring-boot:run` *(consume del broker; por HTTP solo sirve el historial de avisos)* |
 
 Sin perfil apuntan a PostgreSQL. Para el ambiente propio y persistente va
 `-Dspring-boot.run.profiles=local`, y para el descartable en memoria,
@@ -405,7 +449,7 @@ dai_2_tpo/
 │   ├── ecopedia-core/        # Usuarios · Terminales · Tarificación
 │   ├── ecopedia-charging/    # Reservas · Sesiones de carga (stateful)
 │   ├── ecopedia-integration/ # Pagos (REST) · Red Eléctrica (SOAP)
-│   └── ecopedia-async/       # Notificaciones (consumidor JMS)
+│   └── ecopedia-async/       # Notificaciones (consumidor JMS + historial por REST)
 ├── frontend/                  # React + TypeScript + Vite
 │   ├── vite.config.ts         # proxy a /api, alias @/, plugin de Tailwind
 │   ├── .prettierrc.json       # Formato compartido

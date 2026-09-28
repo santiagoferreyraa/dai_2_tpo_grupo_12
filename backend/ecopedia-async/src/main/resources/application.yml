@@ -2,20 +2,106 @@ spring:
   application:
     name: ecopedia-async
 
-  main:
-    # Consumidor del broker: no expone API pública, así que no levanta servidor web.
-    web-application-type: none
-    # Sin servidor web y sin listeners todavía, el proceso terminaría apenas arranca.
-    # keep-alive lo mantiene vivo. Cuando exista el primer @JmsListener, se puede sacar.
-    keep-alive: true
+  # Perfil por defecto: PostgreSQL, que es el motor sobre el que corren las demos.
+  datasource:
+    url: ${ECOPEDIA_DB_URL:jdbc:postgresql://localhost:5432/ecopedia}
+    username: ${ECOPEDIA_DB_USER:ecopedia}
+    password: ${ECOPEDIA_DB_PASSWORD:ecopedia}
 
-# --- Broker ---
-# El starter de Artemis se agrega junto con el primer @JmsListener: apenas está en el
-# classpath, Spring intenta conectarse al arrancar, y Docker todavía no está instalado
-# en todas las máquinas. Los nombres de cola y tópico están en ARQUITECTURA §3.3.
-#
-# spring:
-#   artemis:
-#     broker-url: ${ECOPEDIA_BROKER_URL:tcp://localhost:61616}
-#     user: ${ECOPEDIA_BROKER_USER:ecopedia}
-#     password: ${ECOPEDIA_BROKER_PASSWORD:ecopedia}
+  # Un schema por artefacto, dentro de la misma base, con su propio flyway_schema_history.
+  # Ver el application.yml de ecopedia-charging, que explica por qué sin esto nadie arranca.
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    schemas: async
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        default_schema: async
+
+  # --- Broker ---
+  # El de docker-compose. Los nombres de la cola y del tópico están en ARQUITECTURA §3.3.
+  #
+  # Si el broker no está, el proceso arranca igual: el listener reintenta la conexión cada 5
+  # segundos y por cada intento deja en el log una línea de ERROR que dice "Could not refresh
+  # JMS Connection". No es un error de este módulo, es que falta `docker compose up -d`.
+  #
+  # Sin `mode` a propósito. Spring Boot usa el broker embebido si encuentra el servidor de
+  # Artemis en el classpath, y ese servidor está solo en el scope de test: los tests corren
+  # contra uno dentro de la JVM y la aplicación, contra el de acá abajo. Escribir `native` acá
+  # haría que los tests salgan a buscar el broker de Docker y fallen en CI.
+  artemis:
+    broker-url: ${ECOPEDIA_BROKER_URL:tcp://localhost:61616}
+    user: ${ECOPEDIA_BROKER_USER:ecopedia}
+    password: ${ECOPEDIA_BROKER_PASSWORD:ecopedia}
+
+server:
+  port: ${SERVER_PORT:8084}
+
+ecopedia:
+  jwt:
+    # El MISMO secreto que ecopedia-core, que firma el token. Ver el application.yml de
+    # ecopedia-charging: con secretos distintos, todo token llega con firma inválida.
+    secret: ${ECOPEDIA_JWT_SECRET:EcopediaSecretKeyForJWTAuthentication2026SuperSecureKey!}
+
+  core:
+    # Dónde está ecopedia-core. Notificaciones le pregunta el nombre de la estación para que el
+    # aviso y el mail digan dónde es la reserva, y no solo un número.
+    url: ${ECOPEDIA_CORE_URL:http://localhost:8081}
+
+  notifications:
+    # La cola que escucha este artefacto. Tiene que coincidir con la que publica ecopedia-charging.
+    queue: notifications.dispatch
+
+    # La zona en la que se escriben las horas de los avisos. Las reservas viajan en UTC: sin
+    # esto, un turno de 10 a 11 en Buenos Aires se avisaría "de 13:00 a 14:00".
+    zone: ${ECOPEDIA_NOTIFICATIONS_ZONE:America/Argentina/Buenos_Aires}
+
+---
+# Perfil de desarrollo: base en memoria. Es el perfil que declaran los tests.
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+  datasource:
+    # DATABASE_TO_LOWER=TRUE es obligatorio, por lo mismo que en los otros módulos: sin eso el
+    # arranque muere con "Schema-validation: missing table".
+    url: jdbc:h2:mem:ecopedia-async;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+
+  h2:
+    console:
+      enabled: true         # http://localhost:8084/h2-console
+
+---
+# Perfil local: la base de este integrante, en un archivo propio del módulo. Ver el perfil
+# `local` de ecopedia-charging, que es el mismo por los mismos motivos.
+spring:
+  config:
+    activate:
+      on-profile: local
+
+  datasource:
+    # h2:file, no h2:mem. Queda en backend/ecopedia-async/data/, que está en el .gitignore.
+    url: jdbc:h2:file:${ECOPEDIA_ASYNC_LOCAL_DB:./data/ecopedia-async};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+
+  h2:
+    console:
+      enabled: true         # http://localhost:8084/h2-console

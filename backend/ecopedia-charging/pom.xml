@@ -89,9 +89,29 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!--
+            Cliente JMS contra ActiveMQ Artemis: Reservas publica en la cola notifications.dispatch
+            al confirmar y al cancelar (ECO-41). La conexión se abre recién al publicar, así que el
+            artefacto arranca aunque el broker no esté; ver JmsBookingEventPublisher para qué pasa
+            con la reserva en ese caso.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-artemis</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!--
+            Broker embebido para los tests: con esto en el classpath, Spring Boot levanta uno
+            dentro de la JVM y CI prueba la publicación de verdad, sin Docker.
+        -->
+        <dependency>
+            <groupId>org.apache.activemq</groupId>
+            <artifactId>artemis-jakarta-server</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
