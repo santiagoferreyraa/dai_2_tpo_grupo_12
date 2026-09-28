@@ -1,4 +1,4 @@
-# Los mismos cuatro procesos, pero contra PostgreSQL. Los levanta `pnpm demo`.
+# Los procesos de la demo, contra PostgreSQL. Los levanta `pnpm demo`.
 #
 # Es el ambiente sobre el que se defienden las entregas, y el único de los tres que puede
 # ser COMPARTIDO: una sola base que ven todos los que apunten a esa máquina.
@@ -11,7 +11,12 @@
 # es un PostgreSQL instalado en la máquina, escuchando en el 5432 con la base, el usuario y
 # la contraseña que declara docker-compose.yml. Ver el README.
 #
-# No lleva perfil: el perfil por defecto de los tres módulos ya apunta a PostgreSQL.
+# No lleva perfil: el perfil por defecto de los módulos ya apunta a PostgreSQL.
+#
+# **Son cinco, uno más que en `pnpm dev`.** `async` es Notificaciones (8084), y está solo acá
+# porque es el único ambiente que ya exige el broker: sin Docker, `async` arranca igual pero
+# reintenta la conexión y llena su panel de avisos. En desarrollo se levanta aparte, con
+# `pnpm dev:async`, cuando se está trabajando sobre las notificaciones.
 procs:
   back:
     shell: pnpm demo:back
@@ -19,5 +24,7 @@ procs:
     shell: pnpm demo:charging
   pay:
     shell: pnpm demo:pay
+  async:
+    shell: pnpm demo:async
   front:
     shell: pnpm dev:front
