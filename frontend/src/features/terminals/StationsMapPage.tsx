@@ -32,7 +32,10 @@ import type { LatLngTuple } from 'leaflet'
 import BottomSheet from '@/components/BottomSheet'
 import BookingDialog from '@/features/bookings/components/BookingDialog'
 import BookingPanel from '@/features/bookings/components/BookingPanel'
+import { useMyBookings } from '@/features/bookings/data/myBookingsStore'
+import { nextBooking } from '@/features/bookings/timeline'
 import type { Booking } from '@/features/bookings/types'
+import { useNow } from '@/features/bookings/useNow'
 import MapScrim from './components/MapScrim'
 import StationCarousel from './components/StationCarousel'
 import StationDetailPanel from './components/StationDetailPanel'
@@ -44,7 +47,7 @@ import { searchStations } from './data/stationsRepository'
 import { matchesFilters, matchesQuery } from './format'
 import type { ConnectorFilters } from './format'
 import { COUNTRY_RADIUS_KM, DEFAULT_CENTER } from './mapConfig'
-import { useDeviceLocation } from './useDeviceLocation'
+import { useDepartureOrigin } from './useDepartureOrigin'
 import { useRoute } from './useRoute'
 import { useMediaQuery } from '@/lib/useMediaQuery'
 import { useSuggestionNav } from './useSuggestionNav'
@@ -167,17 +170,38 @@ export default function StationsMapPage() {
   const [selectedConnectorId, setSelectedConnectorId] = useState<number | null>(null)
 
   /*
-   * La ubicación del dispositivo. Se pide al entrar al mapa y no detrás de un botón: es la
-   * pantalla donde el permiso se explica solo, y donde pedirlo en otro momento sería más raro
-   * que pedirlo acá.
+   * Desde dónde sale el conductor: la ubicación del dispositivo, o la dirección que haya escrito
+   * en el campo de la reserva. Ver `useDepartureOrigin`, que es quien elige entre las dos.
    *
-   * Que falte no rompe nada. Sin permiso, sin HTTPS o fuera del país no hay punto azul y la
-   * reserva no traza línea; todo lo demás de la pantalla funciona igual. Por eso el estado no
-   * se muestra hoy en ningún cartel: el hook distingue los cuatro motivos (ver
-   * `DeviceLocationStatus`) para el día que se quiera decirlo, pero un aviso permanente de
-   * "activá la ubicación" sobre un mapa que anda sin ella es ruido.
+   * La ubicación se pide al entrar al mapa y no detrás de un botón: es la pantalla donde el
+   * permiso se explica solo, y donde pedirlo en otro momento sería más raro que pedirlo acá.
+   *
+   * Que falte no rompe nada. Sin permiso, sin HTTPS o fuera del país no hay punto verde y no se
+   * traza el recorrido; todo lo demás de la pantalla funciona igual. Por eso el estado sigue sin
+   * mostrarse en ningún cartel del mapa: el lugar donde eso importa —y donde además hay algo que
+   * hacer al respecto, que es escribir una dirección— es el campo de la reserva, que sí lo dice.
    */
-  const device = useDeviceLocation()
+  const departure = useDepartureOrigin()
+
+  /*
+   * La estación que el conductor ya tiene reservada, si es que tiene una reserva en curso o por
+   * empezar. Es lo único que la pantalla necesita de Reservas, y de ahí cuelga el recorrido
+   * punteado, que se dibuja SIEMPRE y no solo mientras esa estación esté elegida.
+   *
+   * Sale de `nextBooking`, la misma regla que usa la franja de arriba y el perfil. Que las tres
+   * pantallas pregunten lo mismo es lo que evita que el mapa marque como reservada una estación
+   * que la franja ya dejó de nombrar.
+   *
+   * El reloj corre cada medio minuto y no cada segundo como el de la franja: acá no se muestra
+   * ninguna cuenta regresiva, lo único que puede cambiar es que la reserva empiece o termine, y
+   * que el punteado tarde hasta treinta segundos en aparecer o irse no lo nota nadie.
+   */
+  const now = useNow(30_000)
+  const myBookings = useMyBookings()
+  const bookedStationId =
+    myBookings.status === 'ready'
+      ? (nextBooking(myBookings.bookings, now)?.location?.stationId ?? null)
+      : null
 
   const wide = useMediaQuery(WIDE_QUERY)
   const dialog = useMediaQuery(DIALOG_QUERY)
@@ -273,8 +297,64 @@ export default function StationsMapPage() {
    * Que devuelva null no es una falla: puede ser que todavía no llegó, que no hay ubicación o que
    * el servicio está caído. El mapa dibuja la recta de siempre en cualquiera de los tres casos.
    */
-  const routeState = useRoute(device.location, selectedStation)
-  const { route } = routeState
+  /*
+   * Desde dónde se traza ESTE recorrido, que no siempre es el punto de partida elegido.
+   *
+   * La dirección escrita en el formulario es el punto de partida DEL VIAJE a una estación concreta
+   * —por eso `Departure` se la guarda con el `stationId`—, y vale mientras se esté mirando esa
+   * estación. Tocar otra, para comparar o porque quedaba de paso, es otra pregunta: "¿cuánto tengo
+   * hasta acá desde donde estoy?". Contestada desde la dirección de la otra reserva, el mapa
+   * dibujaba un recorrido que salía de un lugar donde el conductor no está y que nada en pantalla
+   * nombraba.
+   *
+   * Ojo con lo que NO hace: mirando otra estación sin ubicación del dispositivo, no hay recorrido.
+   * Es a propósito y es el mismo silencio de siempre —sin saber dónde está el conductor no hay
+   * nada honesto que dibujar—; el punto de partida de la otra estación no es un reemplazo.
+   */
+  const routeOrigin =
+    departure.departure.kind === 'address' &&
+    selectedStation?.stationId !== departure.departure.stationId
+      ? departure.deviceOrigin
+      : departure.origin
+
+  /*
+   * En el mapa hay DOS recorridos, y son dos porque contestan dos preguntas distintas.
+   *
+   * El de la reserva —punteado— dice "así vas a ir a donde ya te comprometiste", y por eso no
+   * depende de qué pin esté tocado: se dibuja mientras la reserva esté vigente, se mire lo que se
+   * mire. Antes salía del mismo `useRoute` que la selección, y ese era el error que hacía que
+   * tocar otra estación lo borrara: no era un recorrido que se mantenía, era el mismo recorrido
+   * apuntando a otro lado.
+   *
+   * El de la selección —lleno— dice "y esta otra estación, ¿a cuánto me queda desde acá?". Ese sí
+   * cambia con cada pin, que es lo que se espera de él.
+   *
+   * La estación reservada se busca en `allStations` y no en `stations`: una búsqueda o un filtro
+   * que la deje afuera esconde su pin, y está bien que lo esconda, pero el viaje comprometido
+   * sigue siendo cierto y su línea se tiene que poder seguir viendo.
+   */
+  const bookedStation = allStations.find((s) => s.stationId === bookedStationId) ?? null
+  const selectedIsBooked = selectedStation !== null && selectedStation.stationId === bookedStationId
+
+  /*
+   * El recorrido de la reserva sale de la dirección que se eligió PARA esa estación, y de la
+   * ubicación del dispositivo si no se eligió ninguna. Es el punto de partida del viaje reservado,
+   * y no cambia porque el conductor ande mirando otros pines.
+   */
+  const bookedOrigin =
+    departure.departure.kind === 'address' && departure.departure.stationId === bookedStationId
+      ? departure.origin
+      : departure.deviceOrigin
+
+  const bookedRouteState = useRoute(bookedOrigin, bookedStation)
+
+  /*
+   * Con la estación reservada elegida los dos recorridos serían el mismo, así que se calcula uno
+   * solo: el origen en `null` deja a este hook en reposo y el panel lee el de la reserva. Sin eso
+   * serían dos consultas a OSRM por la misma línea, dibujada dos veces encima de sí misma.
+   */
+  const selectedRouteState = useRoute(selectedIsBooked ? null : routeOrigin, selectedStation)
+  const routeState = selectedIsBooked ? bookedRouteState : selectedRouteState
 
   /*
    * El conector elegido se resuelve contra la estación de ahora y cae en el de por omisión si
@@ -416,8 +496,15 @@ export default function StationsMapPage() {
             onSelect={selectStation}
             bottomInsetPx={!wide && selectedStation !== null ? SHEET_INSET_PX : 0}
             dimUnselected={selectedStation !== null}
-            deviceLocation={device.location}
-            route={route}
+            /*
+              El alfiler del punto de partida se dibuja con la dirección elegida y no con el origen
+              de ESTE recorrido: mientras el recorrido punteado siga en pantalla, el lugar de donde
+              sale tiene que estar marcado, aunque lo que se esté mirando sea otra estación.
+            */
+            origin={departure.origin}
+            deviceLocation={departure.device.location}
+            route={selectedIsBooked ? null : selectedRouteState.route}
+            bookedRoute={bookedRouteState.route}
           />
 
           {/*

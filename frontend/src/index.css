@@ -364,6 +364,34 @@
   }
 }
 
+/* ─────────────────────── El alfiler del punto de partida ───────────────────────
+  El origen del recorrido cuando lo escribió el conductor en vez de decirlo el navegador. Ver
+  DEPARTURE_PIN en `devicePin.ts`, que es donde está explicado por qué no puede ser el mismo
+  dibujo que el punto azul —perdón, verde— de la ubicación en vivo.
+
+  El relleno va del verde de la marca y el agujero del medio es el color de la superficie, no
+  blanco: en el tema claro un centro blanco sobre verde se ve bien, pero en el oscuro deja un
+  punto encendido que le roba la mirada a las estaciones. Con la superficie, el alfiler se lee
+  como recortado sobre el mapa en los dos temas.
+
+  La sombra despega la figura de los mosaicos, igual que el anillo blanco despega al otro punto.
+  Acá no va un anillo: sobre una silueta con punta, un borde parejo ensucia justamente la punta,
+  que es lo único que este marcador tiene que dejar claro.
+*/
+.departure-pin svg {
+  width: 24px;
+  height: 32px;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.45));
+}
+
+.departure-pin svg path {
+  fill: var(--color-primary);
+}
+
+.departure-pin svg circle {
+  fill: var(--color-surface);
+}
+
 /* ─────────────────────── El recorrido a la estación ───────────────────────
   La ruta por calles desde el dispositivo hasta la estación elegida. Queda mientras la estación
   siga elegida. Ver el `Polyline` de `StationMap` y `useRoute`.
@@ -399,6 +427,24 @@
   stroke-linejoin: round;
   stroke-opacity: 0.85;
   animation: station-route-in 320ms ease-out;
+}
+
+/*
+  El recorrido hasta una estación que se está mirando nomás, punteado.
+
+  Es la misma línea verde y en el mismo lugar; lo único que cambia es que se corta. El verde sigue
+  siendo el de la marca porque el trazo no cambió de significado —sigue diciendo por dónde se va—,
+  y el punteado es lo que lo distingue del recorrido de la reserva: acá todavía no hay nada
+  comprometido, es un "¿y hasta acá cuánto tengo?". La línea llena queda para el viaje que ya está
+  reservado, que es el único que el conductor se comprometió a hacer.
+
+  Los guiones se dibujan cortos contra un hueco largo —2 contra 14— porque las puntas redondeadas
+  le suman 5 al alto de cada guión y otros tantos le comen al hueco: con valores parejos la línea
+  se vuelve a ver llena. El `round` no se saca, que es lo que deja cada punto como un disco y no
+  como un ladrillo.
+*/
+.station-route--tentative {
+  stroke-dasharray: 2 14;
 }
 
 /* Sin movimiento, la ruta aparece de una. No se pierde información: solo la transición. */

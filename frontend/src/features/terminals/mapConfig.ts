@@ -72,6 +72,21 @@ export const ROUTING_ATTRIBUTION =
   'Rutas por <a href="https://project-osrm.org/">OSRM</a>, con datos de <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> (ODbL)'
 
 /**
+ * Obligatoria por licencia del buscador de direcciones, y es una TERCERA deuda distinta.
+ *
+ * El mapa lo dibuja Esri, el recorrido lo calcula OSRM y las direcciones las busca Photon: tres
+ * proveedores que no tienen nada que ver entre sí y que casualmente comparten los datos de
+ * OpenStreetMap en dos de los tres usos. Que OSM aparezca en varias de estas líneas no las vuelve
+ * la misma: cada una acredita un uso distinto del dato, y acreditar uno solo deja a los otros sin
+ * crédito.
+ *
+ * Va al mismo lugar que las otras dos: el pie de página o la pantalla "acerca de" que el proyecto
+ * todavía debe. Ver `geocoding.ts`, que es donde se explica de dónde salen las direcciones.
+ */
+export const GEOCODING_ATTRIBUTION =
+  'Direcciones por <a href="https://photon.komoot.io/">Photon</a>, con datos de <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> (ODbL)'
+
+/**
  * El servicio tiene mosaicos hasta el zoom 16. Del 17 en adelante devuelve 200 con un mosaico
  * vacío: el mapa se pondría negro sin un solo error que lo explique.
  *
