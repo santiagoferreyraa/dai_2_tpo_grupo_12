@@ -96,6 +96,22 @@ export function windowEnd(start: Date, minutes: number): Date {
   return new Date(start.getTime() + minutes * MINUTE_MS)
 }
 
+/**
+ * La tolerancia para presentarse, en minutos desde el inicio de la reserva.
+ *
+ * Es el margen de gracia de RF09: pasado ese plazo sin que el conductor se presente, la reserva
+ * se cancela. **Todavía no lo aplica el backend** —la cancelación automática no está
+ * implementada—, así que por ahora es lo que el conductor acepta al reservar. Cuando exista,
+ * será configuración de `ecopedia-charging` y este número tiene que coincidir, igual que los
+ * límites de arriba.
+ */
+export const GRACE_MINUTES = 15
+
+/** Hasta cuándo puede presentarse el conductor a una reserva que empieza en `start`. */
+export function graceDeadline(start: Date): Date {
+  return new Date(start.getTime() + GRACE_MINUTES * MINUTE_MS)
+}
+
 /*
  * ---------------------------------------------------------------------------
  * Cómo se escribe
@@ -132,6 +148,16 @@ export function dayNumber(day: Date): string {
 /** Una hora como "18:00". */
 export function formatTime(date: Date): string {
   return TIME.format(date)
+}
+
+/**
+ * Una hora que puede caer al día siguiente de `reference`: "18:15", o "00:05 del día siguiente".
+ *
+ * Por lo mismo que `formatWindow`: una reserva a las 23:50 tiene tolerancia hasta las 00:05, y
+ * "hasta las 00:05" a secas se lee como una hora que ya pasó.
+ */
+export function formatTimeAfter(reference: Date, date: Date): string {
+  return isSameDay(reference, date) ? formatTime(date) : `${formatTime(date)} del día siguiente`
 }
 
 /** Una duración como "30 min", "1 h" o "4 h". */
