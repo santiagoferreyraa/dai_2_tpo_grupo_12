@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { refreshNotificationsSoon } from '@/features/notifications/data/notificationsStore'
 import { ApiError } from '@/lib/api'
 
-import { confirmBooking, startHold } from './data/bookingsRepository'
+import { checkoutBooking, startHold } from './data/bookingsRepository'
 import { refreshMyBookings } from './data/myBookingsStore'
 import type { Booking, Hold } from './types'
 
@@ -129,7 +129,7 @@ export function useBookingFlow(connectorId: number): BookingFlow {
     setError(null)
     setStep({ kind: 'confirming', hold })
 
-    confirmBooking(hold.id).then(
+    checkoutBooking(hold.id, null, true).then(
       (booking) => {
         pendingHolds.delete(connectorId)
         /* La franja y el perfil muestran las reservas: se enteran de la nueva sin recargar. */
