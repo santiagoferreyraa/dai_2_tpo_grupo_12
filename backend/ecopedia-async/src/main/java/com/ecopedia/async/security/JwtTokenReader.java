@@ -26,8 +26,7 @@ public class JwtTokenReader {
 
     private final SecretKey key;
 
-    public JwtTokenReader(
-            @Value("${ecopedia.jwt.secret:EcopediaSecretKeyForJWTAuthentication2026SuperSecureKey!}") String secret) {
+    public JwtTokenReader(@Value("${ecopedia.jwt.secret}") String secret) {
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 

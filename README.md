@@ -85,8 +85,10 @@ disco, sin PostgreSQL instalado y sin Docker.** Lo que cargues sobrevive a bajar
 levantar. Consolas de H2: http://localhost:8081/h2-console, http://localhost:8082/h2-console y
 http://localhost:8083/h2-console
 
-Los tres procesos validan el mismo token, así que tienen que compartir el secreto de firma: sale
-de la variable `ECOPEDIA_JWT_SECRET`, y sin ella los tres usan el mismo valor de desarrollo.
+Los backends validan el mismo token, así que tienen que compartir el secreto de firma: sale de
+la variable `ECOPEDIA_JWT_SECRET`. Con `pnpm dev` y `pnpm dev:mem` no hace falta definirla,
+porque los perfiles `local` y `dev` traen un valor de desarrollo. **Sin perfil no hay valor por
+defecto**: ver "El `.env`", más abajo.
 
 **`pnpm start` todavía no llega a Reservas:** sirve front y API desde el JAR de core, en el 8081,
 y ahí no hay nada escuchando `/api/bookings`. Para probar reservas se usa `pnpm dev`.
@@ -175,14 +177,22 @@ se lo reinicia. `pnpm free-ports` mata únicamente al proceso que escucha el pue
 ### Con PostgreSQL
 
 H2 alcanza para desarrollar, pero **las demos de las entregas corren sobre PostgreSQL**, que es
-lo que se documenta y se defiende. Primero la infraestructura:
+lo que se documenta y se defiende. Primero, una sola vez, el `.env` (ver abajo):
+
+```bash
+pnpm env:init
+```
+
+Después la infraestructura:
 
 ```bash
 docker compose up -d
 ```
 
 Deja arriba PostgreSQL (`localhost:5432`) y ActiveMQ Artemis (`localhost:61616`, consola web en
-http://localhost:8161/console). Y después los cinco procesos:
+http://localhost:8161/console). **Los dos escuchan solo en `127.0.0.1`**: desde otra máquina de la
+red no se llega, y está bien, porque los usan los backends de esta misma. Y después los cinco
+procesos:
 
 ```bash
 pnpm demo
@@ -205,6 +215,45 @@ los dos:
 **Los dos módulos comparten la base pero no el schema.** `core` y `charging` entran a la misma
 base `ecopedia` y cada uno crea el suyo, con su propia `flyway_schema_history`. Es lo que hace
 que puedan migrar por separado sin pisarse.
+
+#### El `.env`
+
+Los secretos viven en un `.env` en la raíz, **que no se versiona**. `pnpm env:init` lo genera a
+partir de `.env.example` con valores al azar, y no pisa uno que ya exista. Tiene tres variables:
+
+| Variable | Qué es |
+|---|---|
+| `ECOPEDIA_JWT_SECRET` | La firma de los tokens. La comparten los cuatro backends |
+| `ECOPEDIA_DB_PASSWORD` | La contraseña de PostgreSQL |
+| `ECOPEDIA_BROKER_PASSWORD` | La contraseña de Artemis |
+
+`docker compose` lo lee solo, y los scripts del backend lo cargan con `scripts/with-env.mjs`,
+así que no hay que exportar nada a mano. Una variable que ya esté en el entorno le gana al
+archivo.
+
+**Sin `.env`**, `docker compose up` se niega a arrancar y dice qué variable falta, y los
+backends sin perfil abortan con `Could not resolve placeholder 'ECOPEDIA_JWT_SECRET'`. Es a
+propósito: el ambiente compartido no puede arrancar con un secreto que está publicado en el repo.
+`pnpm dev` y `pnpm dev:mem` no lo necesitan.
+
+**Si ya tenías los contenedores de antes**, con la contraseña `ecopedia`: los dos guardan la
+contraseña en su volumen al crearse, así que cambiar el `.env` no la cambia adentro. Para
+PostgreSQL, sin perder los datos:
+
+```bash
+docker exec -it ecopedia-postgres psql -U ecopedia -d ecopedia -c "alter user ecopedia password '<la del .env>'"
+```
+
+Para Artemis, que solo guarda mensajes en tránsito, se recrea el volumen:
+
+```bash
+docker compose rm -sf activemq
+docker volume rm dai_2_tpo_activemq-data   # el prefijo es el nombre de la carpeta del repo
+docker compose up -d activemq
+```
+
+**Cambiar `ECOPEDIA_JWT_SECRET` desloguea a todo el mundo:** los tokens ya emitidos dejan de
+verificar. En pantalla se ve como "me sacó la sesión".
 
 #### Si el seed de estaciones choca
 
@@ -233,14 +282,16 @@ entera, así que en el historial no queda ninguna fila fallada.
 
 Docker es el camino cómodo, no un requisito del proyecto. La alternativa es **instalar PostgreSQL**
 en la máquina y crear la base con los mismos valores que declara `docker-compose.yml` —base
-`ecopedia`, usuario `ecopedia`, contraseña `ecopedia`, puerto 5432—. Con eso `pnpm demo` funciona
+`ecopedia`, usuario `ecopedia`, puerto 5432— y la contraseña que diga `ECOPEDIA_DB_PASSWORD` en el
+`.env`. Con eso `pnpm demo` funciona
 igual, porque lo único que le importa es qué hay escuchando en el 5432.
 
 Si preferís otros valores, no hay que tocar código: salen de `ECOPEDIA_DB_URL`, `ECOPEDIA_DB_USER`
 y `ECOPEDIA_DB_PASSWORD`. Ver "Direcciones y configuración".
 
 Y para el ambiente compartido de la Entrega Final vale lo mismo: alcanza con que **una** máquina
-del equipo tenga PostgreSQL, con o sin Docker, y que las demás apunten ahí.
+del equipo tenga PostgreSQL, con o sin Docker. Las demás entran por el frontend de esa máquina,
+no directo a la base.
 
 ### Notificaciones
 
@@ -249,7 +300,8 @@ Al confirmar o cancelar una reserva, Reservas deja un mensaje en la cola
 guarda y manda el mail. **El mail es simulado:** se escribe en el log.
 
 Necesita el broker, que es el de `docker-compose.yml`. Para probarlo sin tocar PostgreSQL alcanza
-con levantar solo el broker y usar el ambiente propio:
+con levantar solo el broker y usar el ambiente propio. El broker también necesita el `.env`
+(`pnpm env:init`, una vez):
 
 ```bash
 docker compose up -d activemq
@@ -265,7 +317,7 @@ Dónde se ve cada paso, después de confirmar una reserva:
 | Qué | Dónde |
 |-----|-------|
 | Reservas publicó | Panel `charging`: `Aviso booking-N-BOOKING_CONFIRMED publicado en la cola notifications.dispatch` |
-| El mensaje pasó por el broker | http://localhost:8161/console (usuario y contraseña `ecopedia`) → *Queues* → `notifications.dispatch`: los contadores de agregados y consumidos |
+| El mensaje pasó por el broker | http://localhost:8161/console (usuario `ecopedia`, contraseña la de `ECOPEDIA_BROKER_PASSWORD` en el `.env`) → *Queues* → `notifications.dispatch`: los contadores de agregados y consumidos |
 | Notificaciones lo recibió y mandó el mail | Panel `async`: `Recibido de la cola...` y la línea `[MAIL SIMULADO]` |
 | Quedó guardado | `GET http://localhost:8084/api/notifications` con el token del conductor, o la consola de H2 en http://localhost:8084/h2-console (tabla `async.notifications`) |
 
@@ -511,6 +563,13 @@ url: ${ECOPEDIA_DB_URL:jdbc:postgresql://localhost:5432/ecopedia}
 
 Así el que clona el repo levanta el módulo sin configurar nada, y el ambiente compartido se
 arma exportando variables, sin tocar el código.
+
+**Los secretos son la excepción: no tienen valor por defecto.** La firma del JWT
+(`ECOPEDIA_JWT_SECRET`) y las contraseñas de la base (`ECOPEDIA_DB_PASSWORD`) y del broker
+(`ECOPEDIA_BROKER_PASSWORD`) salen solo del entorno. Un valor escrito en el YAML sería
+público, porque el repo lo es, y con el secreto del JWT a la vista cualquiera se firma un token
+de `ADMIN`. Solo los perfiles `local` y `dev` traen un secreto de desarrollo, para que
+`pnpm dev` y los tests anden sin configurar nada.
 
 Si un módulo necesita hablar con otro, la dirección se declara igual, bajo la clave
 `ecopedia:` del YAML — nunca incrustada donde se hace la llamada. `ecopedia-integration` ya
