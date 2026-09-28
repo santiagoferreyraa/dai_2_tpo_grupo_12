@@ -13,7 +13,10 @@ import {
   formatCountdown,
   formatDuration,
   formatTime,
+  formatTimeAfter,
   formatWindow,
+  GRACE_MINUTES,
+  graceDeadline,
   isSameDay,
   startTimesFor,
   windowEnd,
@@ -128,6 +131,7 @@ export default function BookingForm({
 
       {(step.kind === 'reviewing' || step.kind === 'confirming') && (
         <ReviewStep
+          key={step.hold.id}
           hold={step.hold}
           busy={step.kind === 'confirming'}
           error={flow.error}
@@ -442,6 +446,16 @@ function ReviewStep({ hold, busy, error, onConfirm, onChangeWindow, onExpire }: 
   /* El último minuto se pinta de alerta: es cuando todavía hay tiempo de hacer algo. */
   const urgent = remaining <= 60_000
 
+  /*
+   * La aceptación de la tolerancia. Arranca sin tildar en cada retención: la hora límite es la de
+   * ESTE horario, y un "acepto" dado para otro no vale para este. Por eso el paso se monta con
+   * `key` en la retención, y "Cambiar horario" vuelve a pedirla.
+   *
+   * Es un control de pantalla, como el guard de rutas: el backend no registra la aceptación.
+   */
+  const [accepted, setAccepted] = useState(false)
+  const deadline = formatTimeAfter(hold.start, graceDeadline(hold.start))
+
   return (
     <div className="flex flex-col gap-5">
       <p
@@ -479,17 +493,46 @@ function ReviewStep({ hold, busy, error, onConfirm, onChangeWindow, onExpire }: 
         <dd className="text-text">Sin cobro por ahora</dd>
       </dl>
 
+      {/*
+        Todo el texto es la etiqueta: tocar cualquier parte tilda el check, que en el celular es la
+        diferencia entre acertarle a un cuadradito de 16 px o no.
+      */}
+      <label className="text-text flex cursor-pointer items-start gap-3 text-sm leading-relaxed">
+        <input
+          type="checkbox"
+          checked={accepted}
+          onChange={(event) => setAccepted(event.target.checked)}
+          disabled={busy}
+          className="accent-primary mt-1 h-4 w-4 shrink-0 cursor-pointer disabled:cursor-not-allowed"
+        />
+        <span>
+          Acepto que la reserva cuenta con una tolerancia de {GRACE_MINUTES} minutos desde su inicio
+          (hasta las {deadline}). Transcurrido ese plazo sin que me presente, la reserva se
+          cancelará automáticamente.
+        </span>
+      </label>
+
       {error !== null && <ErrorMessage message={error} />}
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         <button type="button" onClick={onChangeWindow} disabled={busy} className={GHOST_BUTTON}>
           Cambiar horario
         </button>
+        {/*
+          Apagado hasta aceptar la tolerancia. El `disabled:cursor-wait` del botón es para cuando
+          viaja la confirmación; sin aceptar, el cursor tiene que decir "no se puede" y no
+          "esperá". Se reemplaza la clase en vez de sumar otra porque con dos `disabled:cursor-*`
+          gana la que Tailwind escriba última en el CSS, no la última del atributo.
+        */}
         <button
           type="button"
           onClick={onConfirm}
-          disabled={busy || expired}
-          className={PRIMARY_BUTTON}
+          disabled={busy || expired || !accepted}
+          className={
+            accepted
+              ? PRIMARY_BUTTON
+              : PRIMARY_BUTTON.replace('disabled:cursor-wait', 'disabled:cursor-not-allowed')
+          }
         >
           {busy ? 'Confirmando…' : 'Confirmar reserva'}
         </button>
