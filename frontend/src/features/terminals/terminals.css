@@ -33,6 +33,19 @@
   --color-st-available: var(--brand-from);
   --color-st-occupied: #e8a33d;
   --color-st-offline: #e05c4e;
+
+  /*
+    El ámbar de las advertencias: algo que se puede usar igual, pero con una salvedad.
+
+    Referenciado y no copiado, por el mismo motivo que `--color-st-available` referencia al par de
+    la marca: son el MISMO ámbar y tienen que seguir siéndolo. En esta feature ese tono ya significa
+    "atención, pero no bloqueado" —es el del conector ocupado, que se puede reservar igual—, así que
+    reusarlo no es un atajo: es lo que hace que la advertencia se lea sin tener que aprenderla.
+
+    El rojo de lo que no se puede hacer NO vive acá: es `--color-danger`, de index.css, que ya es el
+    rojo de los errores y además cambia con el tema.
+  */
+  --color-st-warning: var(--color-st-occupied);
 }
 
 /*

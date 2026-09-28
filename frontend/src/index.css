@@ -364,55 +364,93 @@
   }
 }
 
-/* ─────────────────────── La línea del dispositivo a la estación ───────────────────────
-  Aparece al reservar, titila, y se va sola. Ver el `Polyline` de `StationMap`.
+/* ─────────────────────── El alfiler del punto de partida ───────────────────────
+  El origen del recorrido cuando lo escribió el conductor en vez de decirlo el navegador. Ver
+  DEPARTURE_PIN en `devicePin.ts`, que es donde está explicado por qué no puede ser el mismo
+  dibujo que el punto azul —perdón, verde— de la ubicación en vivo.
 
-  **Las duraciones de acá están atadas a TRACE_DURATION_MS, en `StationsMapPage`.** Son 2500 ms
-  repartidos así: tres parpadeos de 620 ms (1860), una pausa encendida, y el desvanecido de
-  300 ms arrancando a los 2200 para terminar justo cuando React desmonta la línea. Si allá se
-  cambia el plazo, hay que rehacer este reparto o la línea desaparece de golpe a mitad de
-  desvanecido —que es exactamente el corte seco que esto existe para evitar—.
+  El relleno va del verde de la marca y el agujero del medio es el color de la superficie, no
+  blanco: en el tema claro un centro blanco sobre verde se ve bien, pero en el oscuro deja un
+  punto encendido que le roba la mirada a las estaciones. Con la superficie, el alfiler se lee
+  como recortado sobre el mapa en los dos temas.
 
-  El parpadeo NO lleva `forwards`: al terminar, la opacidad vuelve al valor del atributo que
-  escribe Leaflet, que es 1. Esa es la pausa encendida, y sale gratis. El desvanecido sí lo
-  lleva, porque su valor final —invisible— tiene que quedar fijo hasta el desmontaje.
-
-  Punteada y no llena: es dirección y distancia, no un recorrido por calles. Una línea llena
-  prometería un camino que nadie calculó.
+  La sombra despega la figura de los mosaicos, igual que el anillo blanco despega al otro punto.
+  Acá no va un anillo: sobre una silueta con punta, un borde parejo ensucia justamente la punta,
+  que es lo único que este marcador tiene que dejar claro.
 */
-@keyframes station-trace-blink {
-  0%,
-  100% {
-    stroke-opacity: 1;
-  }
-  50% {
-    stroke-opacity: 0.15;
-  }
+.departure-pin svg {
+  width: 24px;
+  height: 32px;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.45));
 }
 
-@keyframes station-trace-fade {
-  to {
+.departure-pin svg path {
+  fill: var(--color-primary);
+}
+
+.departure-pin svg circle {
+  fill: var(--color-surface);
+}
+
+/* ─────────────────────── El recorrido a la estación ───────────────────────
+  La ruta por calles desde el dispositivo hasta la estación elegida. Queda mientras la estación
+  siga elegida. Ver el `Polyline` de `StationMap` y `useRoute`.
+
+  Llena y quieta: esta línea es el camino que hay que hacer y tiene que leerse como tal. Acá abajo
+  hubo una `.station-trace` punteada, la recta de respaldo para cuando el servicio no contestaba;
+  se sacó junto con su `Polyline`, porque una recta contesta otra pregunta y nadie que la mire
+  puede saber cuál de las dos tiene en pantalla. Sin recorrido no se dibuja nada.
+
+  Ancha, con las puntas y los quiebres redondeados: un recorrido urbano es una sucesión de
+  esquinas, y con los quiebres en punta cada giro de 90 grados deja una púa que ensucia la línea
+  entera. `round` en los dos lados es lo que la deja leerse como una cinta sobre las calles.
+
+  La opacidad la baja un punto para que las calles se sigan viendo POR DEBAJO del trazo. Es la
+  diferencia entre una ruta dibujada sobre el mapa y una ruta que tapa el mapa; con el segundo, el
+  recorrido deja de poder compararse con lo que tiene alrededor, que es para lo que se lo mira.
+
+  Aparece con un desvanecido corto y nada más. Se probó el trazado progresivo —el guión que
+  corre con `stroke-dashoffset`—, pero para que ande hay que normalizar el largo del trazo con
+  `pathLength`, que es un atributo del SVG y Leaflet no lo expone: sin eso, una ruta de 800 m y
+  una de 40 km se dibujan a velocidades incomparables.
+*/
+@keyframes station-route-in {
+  from {
     stroke-opacity: 0;
   }
 }
 
-.station-trace {
+.station-route {
   stroke: var(--color-primary);
-  stroke-width: 3;
+  stroke-width: 5;
   stroke-linecap: round;
-  stroke-dasharray: 1 14;
-  animation:
-    station-trace-blink 620ms ease-in-out 3,
-    station-trace-fade 300ms ease-in 2200ms forwards;
+  stroke-linejoin: round;
+  stroke-opacity: 0.85;
+  animation: station-route-in 320ms ease-out;
 }
 
 /*
-  Sin movimiento la línea no titila, pero SIGUE yéndose sola: el titileo es el énfasis, la
-  desaparición es la función. Una línea que se queda para siempre sobre el mapa es otra cosa.
+  El recorrido hasta una estación que se está mirando nomás, punteado.
+
+  Es la misma línea verde y en el mismo lugar; lo único que cambia es que se corta. El verde sigue
+  siendo el de la marca porque el trazo no cambió de significado —sigue diciendo por dónde se va—,
+  y el punteado es lo que lo distingue del recorrido de la reserva: acá todavía no hay nada
+  comprometido, es un "¿y hasta acá cuánto tengo?". La línea llena queda para el viaje que ya está
+  reservado, que es el único que el conductor se comprometió a hacer.
+
+  Los guiones se dibujan cortos contra un hueco largo —2 contra 14— porque las puntas redondeadas
+  le suman 5 al alto de cada guión y otros tantos le comen al hueco: con valores parejos la línea
+  se vuelve a ver llena. El `round` no se saca, que es lo que deja cada punto como un disco y no
+  como un ladrillo.
 */
+.station-route--tentative {
+  stroke-dasharray: 2 14;
+}
+
+/* Sin movimiento, la ruta aparece de una. No se pierde información: solo la transición. */
 @media (prefers-reduced-motion: reduce) {
-  .station-trace {
-    animation: station-trace-fade 300ms ease-in 2200ms forwards;
+  .station-route {
+    animation: none;
   }
 }
 

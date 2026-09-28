@@ -51,3 +51,36 @@ export const DEVICE_PIN: L.DivIcon = L.divIcon({
   iconSize: [24, 24],
   iconAnchor: [12, 12],
 })
+
+/**
+ * Marcador del punto de partida cuando lo escribió el conductor, y no el navegador.
+ *
+ * **No puede ser el mismo dibujo que DEVICE_PIN, y el motivo es que el otro afirma algo.** El
+ * disco con el halo que late significa "el navegador te está midiendo ahora y estás acá"; una
+ * dirección tecleada no es eso —es un lugar elegido, quieto, que puede no tener nada que ver con
+ * dónde está el conductor en este momento—. Con el mismo dibujo, poner la dirección de casa para
+ * ver cuánto hay hasta una estación dejaría en pantalla un "estás acá" falso.
+ *
+ * Por eso: un alfiler y no un punto, sin latido, y anclado en la punta. La forma de alfiler es la
+ * que todos los mapas usan para "este lugar", y el que no se mueva es justamente lo que se quiere
+ * decir.
+ *
+ * Va del verde de la marca igual que el otro, porque los dos son el conductor y no una estación:
+ * el color agrupa, la forma distingue.
+ */
+export const DEPARTURE_PIN: L.DivIcon = L.divIcon({
+  className: '',
+  html: `
+    <div class="departure-pin">
+      <svg viewBox="0 0 24 32" aria-hidden="true">
+        <path d="M12 31C12 31 22 18.8 22 11.4A10 10 0 1 0 2 11.4C2 18.8 12 31 12 31Z" />
+        <circle cx="12" cy="11" r="3.6" />
+      </svg>
+    </div>`,
+  /*
+   * El ancla va en la PUNTA de abajo y no en el centro: un alfiler señala con la punta, y anclado
+   * al medio el lugar señalado queda media figura más arriba de donde está.
+   */
+  iconSize: [24, 32],
+  iconAnchor: [12, 32],
+})

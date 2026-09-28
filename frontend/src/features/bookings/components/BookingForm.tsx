@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 
+import DepartureField from '@/features/terminals/components/DepartureField'
 import { CONNECTOR_TYPE_LABEL, formatPower } from '@/features/terminals/format'
 import type { ConnectorSummary, StationResult } from '@/features/terminals/types'
 import { useWheelToHorizontal } from '@/features/terminals/useWheelToHorizontal'
@@ -118,6 +119,7 @@ export default function BookingForm({
 
       {(step.kind === 'choosing' || step.kind === 'holding') && (
         <ChooseStep
+          stationId={station.stationId}
           connectorId={connector.connectorId}
           choice={choice}
           onChoiceChange={setChoice}
@@ -177,6 +179,7 @@ function ErrorMessage({ message }: { message: string }) {
  */
 
 interface ChooseStepProps {
+  stationId: number
   connectorId: number
   choice: Choice
   onChoiceChange: (choice: Choice) => void
@@ -188,6 +191,7 @@ interface ChooseStepProps {
 }
 
 function ChooseStep({
+  stationId,
   connectorId,
   choice,
   onChoiceChange,
@@ -267,6 +271,19 @@ function ChooseStep({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+      {/*
+        Desde dónde sale, ARRIBA del día. No es un adorno del formulario: es lo que decide el
+        recorrido que el mapa dibuja hasta esta estación y los minutos que el panel dice que hay
+        hasta acá. Por omisión es la ubicación del dispositivo y no hay nada que tocar; está acá
+        para los casos en que esa ubicación no sirve —sin permiso, con kilómetros de error, o
+        reservando desde la oficina para salir de casa—.
+
+        No forma parte de `Choice` y no viaja con la reserva: el punto de partida es del navegador
+        y lo guarda su propio módulo (ver `departure`), porque lo mira el mapa de atrás y no solo
+        este formulario. Lo que se reserva sigue siendo un conector por una ventana de tiempo.
+      */}
+      <DepartureField stationId={stationId} disabled={busy} />
+
       <fieldset className="flex min-w-0 flex-col gap-2" disabled={busy}>
         <legend className="text-text mb-2 text-sm font-semibold">Día</legend>
         {/*
