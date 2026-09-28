@@ -1,0 +1,66 @@
+/*
+  Las dos animaciones de los avisos: la ventanita que cuelga de la campanita y los recuadros que
+  aparecen solos.
+
+  Está en la feature y no en index.css por lo mismo que el resto: lo que solo usa una pantalla vive
+  con ella. index.css la importa con una línea.
+*/
+
+/*
+  La ventanita crece desde la campanita, no desde su propio centro.
+
+  El `transform-origin` arriba a la derecha es lo que hace que el gesto salga del botón que la
+  abrió: sin él, el panel se infla desde el medio y parece aparecido de la nada en un lugar que
+  nadie tocó.
+*/
+@keyframes notification-popover-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.notification-popover {
+  transform-origin: top right;
+  animation: notification-popover-in 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/*
+  El recuadro entra desde el borde derecho.
+
+  **Entra de costado y no desvaneciéndose** porque nadie lo pidió: lo que aparece sin que uno lo
+  toque necesita contar de dónde viene, y el desplazamiento es lo que lo distingue de un cartel que
+  simplemente estaba ahí y no se había visto.
+
+  Poco recorrido y poco tiempo: es un aviso, no una entrada triunfal, y el contenido tiene que
+  poder leerse enseguida.
+*/
+@keyframes notification-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.notification-toast {
+  animation: notification-toast-in 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/*
+  Quien pidió menos movimiento recibe las dos cosas quietas. No se pierde nada: lo que la animación
+  agrega es de dónde viene cada una, y eso es un adorno, no la información.
+*/
+@media (prefers-reduced-motion: reduce) {
+  .notification-popover,
+  .notification-toast {
+    animation: none;
+  }
+}

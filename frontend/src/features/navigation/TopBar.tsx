@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef } from 'react'
 import { Link, NavLink, useLocation } from 'react-router'
 
 import { useSession } from '@/features/auth/session'
+import NotificationBell from '@/features/notifications/NotificationBell'
 import ThemeToggle from '@/features/theme/ThemeToggle'
 
 import { isSectionActive, MAIN_SECTIONS, visibleSections } from './navSections'
@@ -183,8 +184,17 @@ export default function TopBar() {
           />
         </nav>
 
+        {/*
+          Tema, avisos y perfil. La campanita va **en el medio y no en una punta**, y no es un
+          orden arbitrario: los tres son controles del usuario y no de la aplicación, pero solo el
+          del medio cambia con lo que pasa afuera. Entre dos piezas quietas, el círculo con el
+          número es lo único que se mueve, y ahí es donde el ojo lo encuentra sin buscarlo.
+
+          Sin sesión no se dibuja: ver `NotificationBell`.
+        */}
         <div className="flex items-center gap-3 justify-self-end">
           <ThemeToggle />
+          <NotificationBell />
           <ProfilePill />
         </div>
       </div>

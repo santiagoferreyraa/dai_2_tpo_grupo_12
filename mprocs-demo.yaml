@@ -16,10 +16,9 @@
 #
 # No lleva perfil: el perfil por defecto de los módulos ya apunta a PostgreSQL.
 #
-# **Son cinco, uno más que en `pnpm dev`.** `async` es Notificaciones (8084), y está solo acá
-# porque es el único ambiente que ya exige el broker: sin Docker, `async` arranca igual pero
-# reintenta la conexión y llena su panel de avisos. En desarrollo se levanta aparte, con
-# `pnpm dev:async`, cuando se está trabajando sobre las notificaciones.
+# Son cinco, los mismos que `pnpm dev`. `async` es Notificaciones (8084) y acá el broker no es
+# opcional: este ambiente ya exige Docker por PostgreSQL, así que el `docker compose up -d` de
+# arriba levanta las dos cosas y los avisos funcionan de punta a punta sin hacer nada más.
 procs:
   back:
     shell: pnpm demo:back

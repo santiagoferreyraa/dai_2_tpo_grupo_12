@@ -1,12 +1,25 @@
+import NotificationList from '@/features/notifications/NotificationList'
+
 import ProfileCard from './components/ProfileCard'
 
 /**
- * La sección "Notificaciones": una sola tarjeta, todavía vacía.
+ * La sección "Notificaciones": el buzón del conductor adentro de la tarjeta del perfil.
  *
- * Lo que va adentro depende de `NotificationService`, el consumidor de JMS del módulo
- * `ecopedia-async`, que hoy es un scaffold. Se dibuja el recuadro y no un cartel de "próximamente"
- * porque el lugar ya está decidido y el contenido no.
+ * **Es un montaje, no una copia**, igual que Reservas y Medios de pago: traer los avisos, marcarlos
+ * como leídos y dibujar cada renglón vive en `features/notifications`. Acá solo se decide DÓNDE se
+ * muestra.
+ *
+ * Es la misma lista que asoma en la ventanita de la campanita, sin recortar: allá se ven los
+ * últimos y acá están todos, que es a lo que se viene cuando se entra a esta pantalla.
+ *
+ * **Es el único lugar donde el celular ve el historial.** En el celular no hay franja y por lo
+ * tanto no hay campanita —ver `NotificationBell`—, así que el recuadro flotante avisa en el momento
+ * y esta pantalla es donde queda lo que pasó.
  */
 export default function NotificationsPage() {
-  return <ProfileCard />
+  return (
+    <ProfileCard>
+      <NotificationList emptyHint="Cuando confirmes o canceles una reserva, te avisamos acá." />
+    </ProfileCard>
+  )
 }

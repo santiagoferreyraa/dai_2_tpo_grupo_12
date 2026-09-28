@@ -59,23 +59,24 @@ panel y Vite ni se entera.
 El frontend queda en http://localhost:5173. **Se navega siempre por el 5173:** el proxy ya está
 configurado y reparte `/api` entre los backends.
 
-**Son tres procesos, porque son tres artefactos desplegables**: `ecopedia-core` en el 8081
-(usuarios, estaciones), `ecopedia-charging` en el 8082 (reservas) y `ecopedia-integration` en el
-8083 (medios de pago). Ver ARQUITECTURA §6.4. El proxy de Vite manda `/api/bookings` al 8082,
-`/api/payment-methods` al 8083 y todo lo demás al 8081, así que desde el navegador se ve como una
+**Son cuatro procesos, porque son cuatro artefactos desplegables**: `ecopedia-core` en el 8081
+(usuarios, estaciones), `ecopedia-charging` en el 8082 (reservas), `ecopedia-integration` en el
+8083 (medios de pago) y `ecopedia-async` en el 8084 (notificaciones). Ver ARQUITECTURA §6.4. El
+proxy de Vite manda `/api/bookings` al 8082, `/api/payment-methods` al 8083,
+`/api/notifications` al 8084 y todo lo demás al 8081, así que desde el navegador se ve como una
 sola API.
 
 | Comando | Qué hace |
 |---------|----------|
-| `pnpm dev` | Los cuatro procesos, cada uno en su panel |
+| `pnpm dev` | Los cinco procesos, cada uno en su panel |
 | `pnpm dev:back` | Solo `ecopedia-core` (8081) |
 | `pnpm dev:charging` | Solo Reservas (`ecopedia-charging`, 8082). Necesita el backend arriba |
 | `pnpm dev:pay` | Solo Pagos (`ecopedia-integration`, 8083), que sirve los medios de pago |
-| `pnpm dev:async` | Solo Notificaciones (`ecopedia-async`, 8084). Necesita el broker: ver "Notificaciones" |
+| `pnpm dev:async` | Solo Notificaciones (`ecopedia-async`, 8084). Para recibir avisos necesita el broker: ver "Notificaciones" |
 | `pnpm dev:front` | Solo el frontend |
-| `pnpm dev:plain` | Los cuatro en una sola tira de logs, con prefijos `[back]`/`[charging]`/`[pay]`/`[front]` |
-| `pnpm dev:mem` | Los cuatro, pero con las bases **en memoria**: se borra todo al bajar |
-| `pnpm demo` | Los cuatro contra **PostgreSQL**. Necesita la infraestructura arriba |
+| `pnpm dev:plain` | Los cuatro de siempre —sin Notificaciones— en una sola tira de logs, con prefijos `[back]`/`[charging]`/`[pay]`/`[front]` |
+| `pnpm dev:mem` | Los cinco, pero con las bases **en memoria**: se borra todo al bajar |
+| `pnpm demo` | Los cinco contra **PostgreSQL**. Necesita la infraestructura arriba |
 | `pnpm free-ports` | Libera el 8081, el 8082, el 8083, el 8084 y el 5173 a mano |
 | `pnpm build` | Empaqueta el frontend adentro del JAR del backend |
 | `pnpm start` | Corre ese JAR |
@@ -307,15 +308,22 @@ guarda y manda el mail. **El mail es simulado:** se escribe en el log.
 Necesita el broker, que es el de `docker-compose.yml`. Para probarlo sin tocar PostgreSQL alcanza
 con levantar solo el broker y usar el ambiente propio. El broker también necesita el `.env`
 (`pnpm env:init`, una vez):
+`pnpm dev` ya levanta `async`, así que lo único que hay que agregar es el broker, que es el de
+`docker-compose.yml`. Para probarlo sin tocar PostgreSQL alcanza con levantar el broker solo:
 
 ```bash
 docker compose up -d activemq
-pnpm dev          # core, Reservas, Pagos y front
-pnpm dev:async    # Notificaciones, en otra terminal
+pnpm dev          # core, Reservas, Pagos, Notificaciones y front
 ```
 
-Con `pnpm demo` no hace falta nada de esto: ya levanta los cinco procesos y `docker compose up -d`
-trae el broker.
+**Sin el broker el proceso arranca igual** y la campanita y la sección del perfil contestan —el
+historial es HTTP y no pasa por la cola—, pero no llega ningún aviso nuevo y el panel `async` se
+llena de reintentos de conexión. Si al confirmar una reserva no aparece nada, ese panel y el
+`WARN` de `charging` ("No se pudo publicar el aviso en la cola…") son los dos lugares donde
+mirar primero.
+
+Con `pnpm demo` no hace falta nada aparte: `docker compose up -d` ya trae el broker junto con
+PostgreSQL.
 
 Dónde se ve cada paso, después de confirmar una reserva:
 

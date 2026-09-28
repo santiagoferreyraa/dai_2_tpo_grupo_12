@@ -1,6 +1,7 @@
 import type { Role } from '@/features/auth/types'
 import ActiveBookingDot from '@/features/bookings/ActiveBookingDot'
 import { BellIcon, CalendarIcon, CardIcon, SlidersIcon } from '@/features/navigation/icons'
+import UnreadNotificationsDot from '@/features/notifications/UnreadNotificationsDot'
 
 /**
  * Las secciones del perfil, en un solo lugar.
@@ -47,7 +48,12 @@ export const PROFILE_SECTIONS: ProfileSection[] = [
     Icon: CalendarIcon,
     Badge: ActiveBookingDot,
   },
-  { to: '/profile/notifications', label: 'Notificaciones', Icon: BellIcon },
+  {
+    to: '/profile/notifications',
+    label: 'Notificaciones',
+    Icon: BellIcon,
+    Badge: UnreadNotificationsDot,
+  },
   { to: '/profile/payment-methods', label: 'Medios de pago', Icon: CardIcon, roles: ['CONDUCTOR'] },
   { to: '/profile/settings', label: 'Configuración', Icon: SlidersIcon },
 ]
