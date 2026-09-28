@@ -36,10 +36,27 @@ spring:
         # Las entidades de este módulo viven en su schema, el mismo que gobierna Flyway.
         default_schema: charging
 
+  # --- Broker ---
+  # El de docker-compose. Reservas publica ahí los avisos para Notificaciones.
+  #
+  # Si el broker no está, el artefacto arranca y reserva igual: la conexión se intenta recién al
+  # publicar, y si falla el aviso queda en el log. Por eso `pnpm dev` no necesita Docker.
+  #
+  # Sin `mode`, igual que en ecopedia-async: los tests usan el broker embebido porque el servidor
+  # de Artemis está solo en su classpath.
+  artemis:
+    broker-url: ${ECOPEDIA_BROKER_URL:tcp://localhost:61616}
+    user: ${ECOPEDIA_BROKER_USER:ecopedia}
+    password: ${ECOPEDIA_BROKER_PASSWORD:ecopedia}
+
 server:
   port: ${SERVER_PORT:8082}
 
 ecopedia:
+  notifications:
+    # La cola de avisos. El nombre tiene que coincidir con el que escucha ecopedia-async.
+    queue: notifications.dispatch
+
   jwt:
     # El MISMO secreto que ecopedia-core. Core firma el token al hacer login y este artefacto
     # lo valida: con secretos distintos, todo token llega con firma inválida y cada operación

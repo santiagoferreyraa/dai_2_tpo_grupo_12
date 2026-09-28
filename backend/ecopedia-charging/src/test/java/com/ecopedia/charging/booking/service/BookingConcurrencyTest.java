@@ -40,6 +40,7 @@ class BookingConcurrencyTest {
         BookingServiceImpl service = new BookingServiceImpl(
                 available,
                 new InMemoryBookingRepository(),
+                new RecordingBookingEventPublisher(),
                 Clock.systemUTC(),
                 Duration.ofMinutes(10),
                 Duration.ofHours(4),

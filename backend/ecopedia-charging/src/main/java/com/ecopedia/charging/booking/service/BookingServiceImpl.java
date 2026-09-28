@@ -2,6 +2,8 @@ package com.ecopedia.charging.booking.service;
 
 import com.ecopedia.charging.booking.domain.Booking;
 import com.ecopedia.charging.booking.domain.BookingAccessDeniedException;
+import com.ecopedia.charging.booking.domain.BookingEvent;
+import com.ecopedia.charging.booking.domain.BookingEventPublisher;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.BookingRepository;
 import com.ecopedia.charging.booking.domain.BookingService;
@@ -77,6 +79,7 @@ public class BookingServiceImpl implements BookingService {
 
     private final ConnectorCatalog connectorCatalog;
     private final BookingRepository bookingRepository;
+    private final BookingEventPublisher eventPublisher;
     private final Clock clock;
     private final Duration holdTtl;
     private final Duration maxWindow;
@@ -111,12 +114,14 @@ public class BookingServiceImpl implements BookingService {
     public BookingServiceImpl(
             ConnectorCatalog connectorCatalog,
             BookingRepository bookingRepository,
+            BookingEventPublisher eventPublisher,
             Clock clock,
             @Value("${ecopedia.booking.hold-ttl}") Duration holdTtl,
             @Value("${ecopedia.booking.max-window}") Duration maxWindow,
             @Value("${ecopedia.booking.max-horizon}") Duration maxHorizon) {
         this.connectorCatalog = connectorCatalog;
         this.bookingRepository = bookingRepository;
+        this.eventPublisher = eventPublisher;
         this.clock = clock;
         this.holdTtl = holdTtl;
         this.maxWindow = maxWindow;
@@ -340,6 +345,15 @@ public class BookingServiceImpl implements BookingService {
                 driverId,
                 booking.getWindow().start(),
                 booking.getWindow().end());
+
+        /*
+         * El aviso sale DESPUÉS de que la reserva quedó guardada —save() ya hizo commit, ver
+         * arriba— y fuera del candado. Lo primero es para no avisar una reserva que al final no
+         * se guardó; lo segundo, para que un broker lento no frene a los otros conductores que
+         * esperan el candado. Si algún día este método pasa a tener @Transactional, la
+         * publicación tiene que moverse a después del commit.
+         */
+        eventPublisher.publish(BookingEvent.confirmed(booking, now));
         return booking;
     }
 
@@ -372,6 +386,9 @@ public class BookingServiceImpl implements BookingService {
                 booking.getConnectorId(),
                 booking.getWindow().start(),
                 booking.getWindow().end());
+
+        // Solo la primera cancelación avisa: la segunda ya salió por el `return` de arriba.
+        eventPublisher.publish(BookingEvent.cancelled(booking, clock.instant()));
     }
 
     @Override
