@@ -52,6 +52,12 @@ ecopedia:
     # Cambiarlo invalida los tokens ya emitidos: en pantalla se ve como "me deslogueó solo".
     secret: ${ECOPEDIA_JWT_SECRET:EcopediaSecretKeyForJWTAuthentication2026SuperSecureKey!}
 
+    # Cuánto dura un token: dos horas. Era un día entero. Core revisa en cada petición que el
+    # usuario siga activo y lee su rol de la base, pero Reservas, Pagos y Notificaciones solo
+    # verifican la firma: para ellos, este es el techo de cuánto le sigue valiendo el token a
+    # alguien dado de baja o al que le cambiaron el rol. Vencido, el front pide volver a entrar.
+    expiration-ms: ${ECOPEDIA_JWT_EXPIRATION_MS:7200000}
+
 ---
 # Perfil de desarrollo: base en memoria, para levantar el módulo sin PostgreSQL instalado.
 # Las demos de las entregas corren sobre PostgreSQL, no sobre H2.

@@ -15,7 +15,11 @@ import com.ecopedia.core.terminal.domain.ConnectorType;
 import com.ecopedia.core.terminal.domain.Station;
 import com.ecopedia.core.terminal.domain.StationData;
 import com.ecopedia.core.terminal.domain.TerminalService;
+import com.ecopedia.core.user.data.JpaUserRepository;
+import com.ecopedia.core.user.domain.RegistrationData;
 import com.ecopedia.core.user.domain.Role;
+import com.ecopedia.core.user.domain.User;
+import com.ecopedia.core.user.domain.UserService;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.stream.Stream;
@@ -87,15 +91,36 @@ class TerminalAuthorizationTest {
     @Autowired
     private JpaConnectorRepository connectorRepository;
 
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private JpaUserRepository userRepository;
+
     @AfterEach
     void cleanUp() {
         connectorRepository.deleteAll();
         stationRepository.deleteAll();
+        userRepository.deleteAll();
     }
 
     /** Token firmado de verdad para el rol pedido, tal como lo emite el login. */
     private String bearer(Role role) {
-        return "Bearer " + tokenProvider.generateToken(1L, role.name().toLowerCase() + "@ecopedia.test", role);
+        return bearerFor(role.name().toLowerCase() + "@ecopedia.test", role);
+    }
+
+    /**
+     * Token de un usuario que existe de verdad en la base.
+     *
+     * <p>Tiene que existir: el dueño de una estación se resuelve por el usuario del token, y un
+     * token de alguien que no está en la base no es dueño de nada.
+     */
+    private String bearerFor(String email, Role role) {
+        User user = userRepository
+                .findByEmail(email)
+                .orElseGet(() ->
+                        userService.register(new RegistrationData(email, "unaClave123", "Usuario " + role, role)));
+        return "Bearer " + tokenProvider.generateToken(user.getId(), email, role);
     }
 
     /**

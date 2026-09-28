@@ -14,12 +14,17 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
+    private final LoginAttempts loginAttempts;
 
     public UserServiceImpl(
-            UserRepository userRepository, PasswordEncoder passwordEncoder, JwtTokenProvider tokenProvider) {
+            UserRepository userRepository,
+            PasswordEncoder passwordEncoder,
+            JwtTokenProvider tokenProvider,
+            LoginAttempts loginAttempts) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenProvider = tokenProvider;
+        this.loginAttempts = loginAttempts;
     }
 
     @Override
@@ -38,20 +43,35 @@ public class UserServiceImpl implements UserService {
         return userRepository.save(user);
     }
 
+    /*
+     * Tres cosas, en este orden:
+     *
+     * 1. Si la cuenta está bloqueada por intentos fallidos, se rechaza sin mirar la contraseña.
+     *    Ver LoginAttempts.
+     * 2. Mail inexistente y contraseña equivocada dan el mismo mensaje y cuentan igual como fallo:
+     *    no se le dice a nadie qué cuentas existen.
+     * 3. La baja se informa recién DESPUÉS de verificar la contraseña. Antes se informaba primero,
+     *    y cualquiera averiguaba qué cuentas estaban dadas de baja con solo escribir el mail.
+     */
     @Override
     @Transactional(readOnly = true)
     public AuthToken authenticate(Credentials credentials) {
-        User user = userRepository
-                .findByEmail(credentials.email())
-                .orElseThrow(() -> new IllegalArgumentException("Credenciales inválidas"));
+        loginAttempts.lockRemaining(credentials.email()).ifPresent(remaining -> {
+            throw new TooManyLoginAttemptsException(remaining);
+        });
+
+        User user = userRepository.findByEmail(credentials.email()).orElse(null);
+
+        if (user == null || !passwordEncoder.matches(credentials.rawPassword(), user.getPasswordHash())) {
+            loginAttempts.recordFailure(credentials.email());
+            throw new IllegalArgumentException("Credenciales inválidas");
+        }
 
         if (!user.isActive()) {
             throw new IllegalArgumentException("El usuario está dado de baja");
         }
 
-        if (!passwordEncoder.matches(credentials.rawPassword(), user.getPasswordHash())) {
-            throw new IllegalArgumentException("Credenciales inválidas");
-        }
+        loginAttempts.recordSuccess(credentials.email());
 
         String token = tokenProvider.generateToken(user.getId(), user.getEmail(), user.getRole());
         long expiresInSeconds = tokenProvider.getExpirationMs() / 1000;

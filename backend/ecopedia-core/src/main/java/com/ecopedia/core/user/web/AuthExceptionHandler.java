@@ -1,8 +1,11 @@
 package com.ecopedia.core.user.web;
 
+import com.ecopedia.core.user.domain.TooManyLoginAttemptsException;
 import java.util.stream.Collectors;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -36,6 +39,21 @@ public class AuthExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ProblemDetail handleInvalidRequest(IllegalArgumentException exception) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+    }
+
+    /**
+     * Cuenta bloqueada por intentos fallidos: 429, con {@code Retry-After} en segundos.
+     *
+     * <p>429 y no 400 porque no es que el pedido esté mal —con la contraseña correcta tampoco
+     * entraría ahora—, sino que llegaron demasiados. Tampoco es 401 ni 403, por lo mismo que el
+     * login fallido: el frontend cerraría una sesión que no existe.
+     */
+    @ExceptionHandler(TooManyLoginAttemptsException.class)
+    public ResponseEntity<ProblemDetail> handleTooManyAttempts(TooManyLoginAttemptsException exception) {
+        long seconds = Math.max(1, exception.getRetryAfter().toSeconds());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(seconds))
+                .body(ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, exception.getMessage()));
     }
 
     /** Campos que no pasan las anotaciones de validación del DTO. */

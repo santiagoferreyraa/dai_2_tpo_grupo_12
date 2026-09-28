@@ -1,6 +1,7 @@
 package com.ecopedia.core.security;
 
-import com.ecopedia.core.user.domain.Role;
+import com.ecopedia.core.user.domain.User;
+import com.ecopedia.core.user.domain.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -17,14 +18,26 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * Filtro de autenticación JWT para peticiones HTTP.
+ *
+ * <p><b>La firma no alcanza: el usuario tiene que seguir existiendo y activo.</b> El token dura
+ * horas, y antes el filtro le creía todo lo que decía. Un usuario dado de baja seguía entrando
+ * hasta que el token venciera, y a un {@code ADMIN} al que le sacaban el rol le seguía valiendo el
+ * de antes. Ahora, con la firma verificada, se busca al usuario en la base: si no está o está dado
+ * de baja, la petición sigue como anónima, y el rol sale de la base y no del token.
+ *
+ * <p>Cuesta una consulta por clave primaria por petición autenticada, que es lo más barato que
+ * tiene la base. Los otros tres artefactos no pueden hacer lo mismo, porque la tabla de usuarios
+ * es de core: ahí el techo es la vida corta del token ({@code ecopedia.jwt.expiration-ms}).
  */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider tokenProvider;
+    private final UserRepository userRepository;
 
-    public JwtAuthenticationFilter(JwtTokenProvider tokenProvider) {
+    public JwtAuthenticationFilter(JwtTokenProvider tokenProvider, UserRepository userRepository) {
         this.tokenProvider = tokenProvider;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -35,16 +48,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         if (StringUtils.hasText(token) && tokenProvider.validateToken(token)) {
             Long userId = tokenProvider.getUserIdFromToken(token);
-            String email = tokenProvider.getEmailFromToken(token);
-            Role role = tokenProvider.getRoleFromToken(token);
 
-            SimpleGrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + role.name());
+            userRepository.findById(userId).filter(User::isActive).ifPresent(user -> {
+                SimpleGrantedAuthority authority =
+                        new SimpleGrantedAuthority("ROLE_" + user.getRole().name());
 
-            UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(email, null, List.of(authority));
-            authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(user.getEmail(), null, List.of(authority));
+                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
-            SecurityContextHolder.getContext().setAuthentication(authentication);
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+            });
         }
 
         filterChain.doFilter(request, response);

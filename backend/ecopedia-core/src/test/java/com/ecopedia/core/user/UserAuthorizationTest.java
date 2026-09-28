@@ -1,5 +1,6 @@
 package com.ecopedia.core.user;
 
+import static org.hamcrest.Matchers.hasItem;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -70,8 +71,14 @@ class UserAuthorizationTest {
         userRepository.deleteAll();
     }
 
+    /**
+     * Token firmado de verdad para el rol pedido, de un usuario que existe en la base: el filtro
+     * busca al usuario del token y, si no está, la petición sigue como anónima.
+     */
     private String bearer(Role role) {
-        return "Bearer " + tokenProvider.generateToken(1L, role.name().toLowerCase() + "@ecopedia.test", role);
+        String email = role.name().toLowerCase() + "@ecopedia.test";
+        User user = userRepository.findByEmail(email).orElseGet(() -> givenUser(email, role));
+        return "Bearer " + tokenProvider.generateToken(user.getId(), email, role);
     }
 
     private User givenUser(String email, Role role) {
@@ -122,7 +129,8 @@ class UserAuthorizationTest {
 
         mockMvc.perform(get("/api/users").header(HttpHeaders.AUTHORIZATION, admin))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].email").value("conductor@ecopedia.test"));
+                // El ADMIN que llama también está en la base, así que el conductor no es el único.
+                .andExpect(jsonPath("$[*].email", hasItem("conductor@ecopedia.test")));
 
         mockMvc.perform(get("/api/users/" + driver.getId()).header(HttpHeaders.AUTHORIZATION, admin))
                 .andExpect(status().isOk())
