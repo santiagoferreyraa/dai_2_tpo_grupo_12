@@ -151,6 +151,11 @@ update core.users set role = 'CPO' where email = 'el-tuyo@ejemplo.com';
 En el ambiente propio se hace **una sola vez**. En el descartable, en cada arranque — y ése es
 justo el momento en que algo sale mal delante del docente, así que la demo no se hace ahí.
 
+**Un `CPO` ve y toca solo sus estaciones**: las que dio de alta él. El backend le responde 403
+ante cualquier cambio sobre una ajena, y `/stations` le muestra únicamente las propias. Las 15
+del seed son del usuario con id 1 —el primero que se registró en esa base—; el `ADMIN` las
+administra todas desde `/admin`.
+
 ### Si el puerto quedó tomado
 
 No debería pasar, porque `dev:back` y `dev:front` liberan su puerto antes de arrancar. Pero
