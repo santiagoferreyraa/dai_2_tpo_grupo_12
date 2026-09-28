@@ -136,6 +136,36 @@ class NotificationServiceImplTest {
                     .sorted(Comparator.comparing(Notification::getCreatedAt).reversed())
                     .toList();
         }
+
+        /*
+         * Lo que sigue es la lectura y el marcado de la pantalla. Depende de los ids que asigna la
+         * base, que esta versión en memoria no tiene, y lo prueba NotificationApiTest contra H2.
+         */
+
+        @Override
+        public Optional<Notification> findById(Long id) {
+            throw new UnsupportedOperationException("Lo prueba NotificationApiTest");
+        }
+
+        @Override
+        public List<Notification> findTop50ByRecipientIdOrderByIdDesc(Long recipientId) {
+            throw new UnsupportedOperationException("Lo prueba NotificationApiTest");
+        }
+
+        @Override
+        public List<Notification> findTop50ByRecipientIdAndIdGreaterThanOrderByIdDesc(Long recipientId, Long afterId) {
+            throw new UnsupportedOperationException("Lo prueba NotificationApiTest");
+        }
+
+        @Override
+        public long countByRecipientIdAndReadAtIsNull(Long recipientId) {
+            throw new UnsupportedOperationException("Lo prueba NotificationApiTest");
+        }
+
+        @Override
+        public int markAllAsRead(Long recipientId, Instant when) {
+            throw new UnsupportedOperationException("Lo prueba NotificationApiTest");
+        }
     }
 
     static class RecordingEmailSender implements EmailSender {

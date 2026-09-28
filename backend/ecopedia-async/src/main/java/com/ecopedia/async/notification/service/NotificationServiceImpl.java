@@ -2,6 +2,9 @@ package com.ecopedia.async.notification.service;
 
 import com.ecopedia.async.notification.domain.EmailSender;
 import com.ecopedia.async.notification.domain.Notification;
+import com.ecopedia.async.notification.domain.NotificationAccessDeniedException;
+import com.ecopedia.async.notification.domain.NotificationFeed;
+import com.ecopedia.async.notification.domain.NotificationNotFoundException;
 import com.ecopedia.async.notification.domain.NotificationRepository;
 import com.ecopedia.async.notification.domain.NotificationService;
 import com.ecopedia.async.notification.domain.NotificationToDispatch;
@@ -9,6 +12,7 @@ import com.ecopedia.async.notification.domain.StationDirectory;
 import com.ecopedia.async.notification.domain.StationInfo;
 import java.time.Clock;
 import java.time.ZoneId;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -73,5 +77,31 @@ public class NotificationServiceImpl implements NotificationService {
 
         log.info("Aviso {} guardado para el conductor {}", request.eventId(), request.recipientId());
         emailSender.send(request.recipientId(), title, body);
+    }
+
+    @Override
+    public NotificationFeed getHistory(Long recipientId, Long afterId) {
+        List<Notification> items = afterId == null
+                ? repository.findTop50ByRecipientIdOrderByIdDesc(recipientId)
+                : repository.findTop50ByRecipientIdAndIdGreaterThanOrderByIdDesc(recipientId, afterId);
+        return new NotificationFeed(items, repository.countByRecipientIdAndReadAtIsNull(recipientId));
+    }
+
+    @Override
+    public void markAsRead(Long notificationId, Long recipientId) {
+        Notification notification = repository
+                .findById(notificationId)
+                .orElseThrow(() -> new NotificationNotFoundException(notificationId));
+        if (!notification.belongsTo(recipientId)) {
+            throw new NotificationAccessDeniedException(notificationId);
+        }
+        // Idempotente, como cancelar una reserva: marcar dos veces no es un error.
+        notification.markReadAt(clock.instant());
+        repository.save(notification);
+    }
+
+    @Override
+    public void markAllAsRead(Long recipientId) {
+        repository.markAllAsRead(recipientId, clock.instant());
     }
 }

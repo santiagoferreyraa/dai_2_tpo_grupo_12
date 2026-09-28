@@ -19,4 +19,18 @@ public interface NotificationService {
      * veces —el broker reentrega, o alguien publicó dos veces—, se guarda y se manda una sola.
      */
     void dispatch(NotificationToDispatch request);
+
+    /**
+     * Los avisos del conductor, del más nuevo al más viejo, con cuántos tiene sin leer.
+     *
+     * @param afterId si viene, solo los posteriores a ese aviso: es lo que usa la pantalla para
+     *     preguntar cada tantos segundos si llegó algo, sin volver a bajar todo el historial.
+     */
+    NotificationFeed getHistory(Long recipientId, Long afterId);
+
+    /** Marca un aviso como leído. Solo su destinatario puede hacerlo. */
+    void markAsRead(Long notificationId, Long recipientId);
+
+    /** Marca como leídos todos los avisos del conductor. */
+    void markAllAsRead(Long recipientId);
 }
