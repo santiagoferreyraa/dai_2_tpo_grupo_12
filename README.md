@@ -305,11 +305,9 @@ Al confirmar o cancelar una reserva, Reservas deja un mensaje en la cola
 `notifications.dispatch` de Artemis, y `ecopedia-async` (8084) lo consume, arma el aviso, lo
 guarda y manda el mail. **El mail es simulado:** se escribe en el log.
 
-Necesita el broker, que es el de `docker-compose.yml`. Para probarlo sin tocar PostgreSQL alcanza
-con levantar solo el broker y usar el ambiente propio. El broker también necesita el `.env`
-(`pnpm env:init`, una vez):
 `pnpm dev` ya levanta `async`, así que lo único que hay que agregar es el broker, que es el de
-`docker-compose.yml`. Para probarlo sin tocar PostgreSQL alcanza con levantar el broker solo:
+`docker-compose.yml`. Para probarlo sin tocar PostgreSQL alcanza con levantar el broker solo, con
+el ambiente propio. El broker también necesita el `.env` (`pnpm env:init`, una vez):
 
 ```bash
 docker compose up -d activemq
