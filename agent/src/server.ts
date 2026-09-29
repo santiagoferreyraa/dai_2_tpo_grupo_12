@@ -20,11 +20,14 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { z } from 'zod'
 
 import { AssistantError, type AskInput, type AskResult } from './assistant.ts'
+import { clientKey, createRateLimiter, type RateLimiter } from './rate-limit.ts'
 
 export interface ServerDeps {
   /** `null` cuando falta la clave de Gemini: el servicio arranca igual y lo avisa en el chat. */
   assistant: { ask(input: AskInput): Promise<AskResult> } | null
   log?: (line: string) => void
+  /** Por omisión, `QUESTIONS_PER_MINUTE` por cliente. Se inyecta en los tests. */
+  rateLimiter?: RateLimiter
 }
 
 export const CHAT_PATH = '/api/agent/chat'
@@ -39,6 +42,12 @@ const MAX_HISTORY = 40
  * segundos; si Gemini está saturado, Strands reintenta, y pasado este tiempo es mejor decirlo.
  */
 const ANSWER_TIMEOUT_MS = 45_000
+
+/**
+ * Preguntas por minuto por cliente, para no agotar el cupo gratis de Gemini. Una conversación
+ * normal no llega: cada respuesta tarda varios segundos y hay que leerla antes de seguir.
+ */
+export const QUESTIONS_PER_MINUTE = 10
 
 const ChatRequest = z.object({
   message: z.string().trim().min(1).max(MAX_MESSAGE_CHARS),
@@ -55,9 +64,11 @@ const ChatRequest = z.object({
 
 export function createServer(deps: ServerDeps): Server {
   const log = deps.log ?? ((line: string) => console.log(line))
+  const limiter =
+    deps.rateLimiter ?? createRateLimiter({ limit: QUESTIONS_PER_MINUTE, windowMs: 60_000 })
 
   return createHttpServer((request, response) => {
-    handle(request, response, deps, log).catch((error: unknown) => {
+    handle(request, response, deps, limiter, log).catch((error: unknown) => {
       log(`[agent] error inesperado: ${error instanceof Error ? error.stack : String(error)}`)
       if (!response.headersSent) send(response, 500, { message: 'El asistente tuvo un error.' })
     })
@@ -68,6 +79,7 @@ async function handle(
   request: IncomingMessage,
   response: ServerResponse,
   deps: ServerDeps,
+  limiter: RateLimiter,
   log: (line: string) => void,
 ): Promise<void> {
   const path = new URL(request.url ?? '/', 'http://localhost').pathname
@@ -91,6 +103,24 @@ async function handle(
   if (deps.assistant === null) {
     return send(response, 503, {
       message: 'El asistente no está configurado: falta GEMINI_API_KEY en el .env.',
+    })
+  }
+
+  /*
+   * El límite va después de validar: un pedido mal armado no llega al modelo, así que no gasta
+   * cupo y no tiene por qué contar.
+   */
+  const forwarded = request.headers['x-forwarded-for']
+  const client = clientKey(
+    request.socket.remoteAddress,
+    Array.isArray(forwarded) ? forwarded[0] : forwarded,
+  )
+  const quota = limiter.take(client)
+  if (!quota.allowed) {
+    log(`[agent] 429 · ${client} pasó las ${QUESTIONS_PER_MINUTE} preguntas por minuto`)
+    response.setHeader('Retry-After', String(quota.retryAfterSeconds))
+    return send(response, 429, {
+      message: `Hiciste muchas preguntas seguidas. Esperá ${quota.retryAfterSeconds} segundos y probá de nuevo.`,
     })
   }
 

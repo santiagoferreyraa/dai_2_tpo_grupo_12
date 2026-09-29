@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net'
 import { after, before, describe, it } from 'node:test'
 
 import { AssistantError, type AskInput, type AskResult } from '../src/assistant.ts'
-import { CHAT_PATH, createServer, type ServerDeps } from '../src/server.ts'
+import { CHAT_PATH, createServer, QUESTIONS_PER_MINUTE, type ServerDeps } from '../src/server.ts'
 
 /** Levanta el servidor en un puerto libre con el asistente que se le pase. */
 function serve(assistant: ServerDeps['assistant']) {
@@ -115,5 +115,35 @@ describe('las fallas llegan como mensajes para el conductor, nunca como 401 o 40
       assert.equal(response.status, 503)
       assert.match(((await response.json()) as { message: string }).message, /GEMINI_API_KEY/)
     })
+  })
+})
+
+describe('el límite de preguntas por minuto', () => {
+  const { assistant, received } = answering(async () => ({ text: 'ok', toolsUsed: [] }))
+  const post = serve(assistant)
+  const ask = (ip: string) => post({ message: 'hola', history: [] }, { 'X-Forwarded-For': ip })
+
+  it(`deja pasar ${QUESTIONS_PER_MINUTE} y frena la siguiente con 429 y Retry-After`, async () => {
+    for (let i = 0; i < QUESTIONS_PER_MINUTE; i++) {
+      assert.equal((await ask('10.0.0.1')).status, 200)
+    }
+    const before = received.length
+
+    const blocked = await ask('10.0.0.1')
+    assert.equal(blocked.status, 429)
+    assert.ok(Number(blocked.headers.get('Retry-After')) >= 1)
+    assert.match(((await blocked.json()) as { message: string }).message, /Esperá \d+ segundos/)
+    assert.equal(received.length, before, 'la pregunta frenada no llega al modelo')
+  })
+
+  it('cuenta por separado a cada cliente que llega por el proxy', async () => {
+    assert.equal((await ask('10.0.0.2')).status, 200)
+  })
+
+  it('un pedido mal armado no gasta cupo', async () => {
+    for (let i = 0; i < QUESTIONS_PER_MINUTE + 2; i++) {
+      await post({ message: '' }, { 'X-Forwarded-For': '10.0.0.3' })
+    }
+    assert.equal((await ask('10.0.0.3')).status, 200)
   })
 })

@@ -37,10 +37,17 @@ export default defineConfig({
         target: 'http://localhost:8083',
         changeOrigin: true,
       },
-      /* El asistente del chat: un proceso en Node, fuera de los backends de Java. */
+      /*
+        El asistente del chat: un proceso en Node, fuera de los backends de Java.
+
+        `xfwd` le pasa la dirección real del navegador en X-Forwarded-For. Sin eso, para el
+        agente todos los pedidos vienen de esta máquina y el límite de preguntas por minuto sería
+        uno solo para todos los que usen la app, no uno por persona.
+      */
       '/api/agent': {
         target: 'http://localhost:8085',
         changeOrigin: true,
+        xfwd: true,
       },
       '/api': {
         target: 'http://localhost:8081',
