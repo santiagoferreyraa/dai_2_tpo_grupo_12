@@ -8,13 +8,13 @@ import type { ChatMessage } from './types'
  * por un solo lugar. Las pantallas llaman `askAgent` y no saben si atrás hay un modelo, una
  * cadena de herramientas o el simulador de acá abajo.
  *
- * **Hoy contesta el simulador.** El endpoint todavía no existe, así que `BACKEND_READY` está en
- * `false` y las respuestas salen de `stubReply`. Cuando el backend esté, se pone en `true` y no
- * hay que tocar nada más: el resto de la feature ya llama a esto.
+ * **Contesta el agente de verdad**, el servicio de `agent/` en el 8085, al que llega el proxy de
+ * Vite. Con `BACKEND_READY` en `false` vuelven a contestar las respuestas fijas de `stubReply`,
+ * útil para tocar la pantalla sin levantar el agente.
  */
 
-/** Poner en `true` cuando `POST /agent/chat` esté disponible. Ver el comentario de arriba. */
-const BACKEND_READY = false
+/** En `false`, el chat usa el simulador de abajo en vez del agente. Ver el comentario de arriba. */
+const BACKEND_READY = true
 
 /** Ruta del agente en la API. Sin el prefijo `/api`, que lo agrega el cliente HTTP. */
 const ENDPOINT = '/agent/chat'
