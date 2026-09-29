@@ -33,6 +33,8 @@ export interface AgentRequest {
 
 export interface AgentReply {
   text: string
+  /** El sello de la respuesta. Se guarda en el mensaje y vuelve con el historial. */
+  signature?: string
 }
 
 /** Forma cruda del backend. Se acepta más de un nombre de campo para no atarse a uno solo. */
@@ -40,6 +42,7 @@ interface AgentResponseBody {
   text?: string
   reply?: string
   message?: string
+  signature?: string
 }
 
 export async function askAgent(request: AgentRequest, signal?: AbortSignal): Promise<AgentReply> {
@@ -49,14 +52,18 @@ export async function askAgent(request: AgentRequest, signal?: AbortSignal): Pro
     ENDPOINT,
     {
       message: request.message,
-      history: request.history.map(({ role, text }) => ({ role, text })),
+      history: request.history.map(({ role, text, signature }) => ({ role, text, signature })),
     },
     { signal },
   )
 
-  const text = (body.text ?? body.reply ?? body.message ?? '').trim()
-  if (text === '') throw new Error('El agente contestó vacío')
-  return { text }
+  /*
+   * El texto va SIN recortar: el sello se calculó sobre el texto exacto que mandó el agente, y un
+   * espacio de menos lo invalidaría. El agente ya lo manda sin espacios de más.
+   */
+  const text = body.text ?? body.reply ?? body.message ?? ''
+  if (text.trim() === '') throw new Error('El agente contestó vacío')
+  return { text, signature: body.signature }
 }
 
 /*

@@ -16,8 +16,8 @@ import type { ChatMessage, ChatStatus } from './types'
 /** Cuántos mensajes se le mandan de contexto al agente. Los viejos dejan de viajar. */
 const HISTORY_LIMIT = 20
 
-function createMessage(role: ChatMessage['role'], text: string): ChatMessage {
-  return { id: crypto.randomUUID(), role, text, at: Date.now() }
+function createMessage(role: ChatMessage['role'], text: string, signature?: string): ChatMessage {
+  return { id: crypto.randomUUID(), role, text, at: Date.now(), signature }
 }
 
 export interface AgentChat {
@@ -71,7 +71,8 @@ export function useAgentChat(): AgentChat {
       askAgent({ message: text, history: history.slice(-HISTORY_LIMIT) }, controller.signal)
         .then((reply) => {
           if (controller.signal.aborted) return
-          commit([...thread.current, createMessage('agent', reply.text)])
+          /* El sello viaja pegado a la respuesta: sin él, el agente la descarta del historial. */
+          commit([...thread.current, createMessage('agent', reply.text, reply.signature)])
           setStatus('idle')
         })
         .catch((cause: unknown) => {

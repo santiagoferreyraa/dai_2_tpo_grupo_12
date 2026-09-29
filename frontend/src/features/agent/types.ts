@@ -16,6 +16,12 @@ export interface ChatMessage {
   text: string
   /** Momento en que se agregó, para la hora al costado del mensaje. */
   at: number
+  /**
+   * El sello que el agente le puso a su respuesta. Solo lo tienen los mensajes del agente, y hay
+   * que devolverlo tal cual con el historial: el agente descarta las respuestas que vuelven sin
+   * sello válido, que es como se defiende de un historial inventado. Ver `agent/src/signature.ts`.
+   */
+  signature?: string
 }
 
 /**
