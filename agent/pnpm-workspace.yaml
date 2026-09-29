@@ -1,0 +1,6 @@
+# Los dos paquetes traen scripts de instalación que el agente no necesita: el de @google/genai es
+# un `echo` vacío y el de protobufjs solo avisa versiones. Se declaran en false para que
+# `pnpm install` no los deje pendientes de aprobación ni corte con error.
+allowBuilds:
+  '@google/genai': false
+  protobufjs: false
