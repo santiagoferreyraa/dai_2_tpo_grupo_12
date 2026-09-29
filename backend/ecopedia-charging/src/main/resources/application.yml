@@ -6,7 +6,7 @@ spring:
   datasource:
     url: ${ECOPEDIA_DB_URL:jdbc:postgresql://localhost:5432/ecopedia}
     username: ${ECOPEDIA_DB_USER:ecopedia}
-    password: ${ECOPEDIA_DB_PASSWORD:ecopedia}
+    password: ${ECOPEDIA_DB_PASSWORD}         # sin valor por defecto: sale del .env
 
   # El esquema lo gobierna Flyway. Los archivos van en src/main/resources/db/migration
   # y se nombran V<AAAAMMDD><HHmm>__descripcion.sql — con timestamp, NUNCA con V1/V2/V3.
@@ -47,7 +47,7 @@ spring:
   artemis:
     broker-url: ${ECOPEDIA_BROKER_URL:tcp://localhost:61616}
     user: ${ECOPEDIA_BROKER_USER:ecopedia}
-    password: ${ECOPEDIA_BROKER_PASSWORD:ecopedia}
+    password: ${ECOPEDIA_BROKER_PASSWORD}     # sin valor por defecto: sale del .env
 
 server:
   port: ${SERVER_PORT:8082}
@@ -62,9 +62,9 @@ ecopedia:
     # lo valida: con secretos distintos, todo token llega con firma inválida y cada operación
     # de Reservas responde 403 aunque el usuario esté logueado.
     #
-    # El valor real entra por variable de entorno. El de acá es solo para desarrollo, y es el
-    # mismo que usa core por omisión, así que `pnpm dev` funciona sin configurar nada.
-    secret: ${ECOPEDIA_JWT_SECRET:EcopediaSecretKeyForJWTAuthentication2026SuperSecureKey!}
+    # Sin valor por defecto, por lo mismo que en core: ver el comentario de allá. Los perfiles
+    # dev y local traen el mismo valor de desarrollo que core, así `pnpm dev` funciona sin .env.
+    secret: ${ECOPEDIA_JWT_SECRET}
 
   core:
     # Dónde está ecopedia-core. Reservas le pregunta por el conector antes de retener un slot.
@@ -114,6 +114,17 @@ spring:
     console:
       enabled: true         # http://localhost:8082/h2-console
 
+  # Sin valor por defecto en el perfil de arriba; acá vacío, así los tests y un `pnpm dev` sin
+  # .env arrancan igual. Contra el broker de docker-compose la contraseña sale del .env.
+  artemis:
+    password: ${ECOPEDIA_BROKER_PASSWORD:}
+
+# El secreto de desarrollo. Existe solo en los perfiles dev y local: sin perfil (`pnpm demo`,
+# el JAR) no hay valor por defecto y el proceso no arranca sin ECOPEDIA_JWT_SECRET.
+ecopedia:
+  jwt:
+    secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
+
 ---
 # Perfil local: la base de este integrante, en un archivo de su propio disco.
 #
@@ -152,3 +163,14 @@ spring:
   h2:
     console:
       enabled: true         # http://localhost:8082/h2-console
+
+  # Sin valor por defecto en el perfil de arriba; acá vacío, así los tests y un `pnpm dev` sin
+  # .env arrancan igual. Contra el broker de docker-compose la contraseña sale del .env.
+  artemis:
+    password: ${ECOPEDIA_BROKER_PASSWORD:}
+
+# El secreto de desarrollo. Existe solo en los perfiles dev y local: sin perfil (`pnpm demo`,
+# el JAR) no hay valor por defecto y el proceso no arranca sin ECOPEDIA_JWT_SECRET.
+ecopedia:
+  jwt:
+    secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}

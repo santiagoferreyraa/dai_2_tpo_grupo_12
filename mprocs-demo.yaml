@@ -3,13 +3,16 @@
 # Es el ambiente sobre el que se defienden las entregas, y el único de los tres que puede
 # ser COMPARTIDO: una sola base que ven todos los que apunten a esa máquina.
 #
-# ANTES de levantar esto tiene que estar arriba la infraestructura:
+# ANTES de levantar esto tiene que estar el .env y arriba la infraestructura:
 #
+#   pnpm env:init       (una sola vez: genera los secretos)
 #   docker compose up -d
 #
 # Si no, el backend no arranca y falla con "Connection refused". La alternativa sin Docker
-# es un PostgreSQL instalado en la máquina, escuchando en el 5432 con la base, el usuario y
-# la contraseña que declara docker-compose.yml. Ver el README.
+# es un PostgreSQL instalado en la máquina, escuchando en el 5432 con la base y el usuario que
+# declara docker-compose.yml y la contraseña del .env. Ver el README.
+#
+# Sin .env, los backends no arrancan: sin perfil no hay secreto del JWT por defecto.
 #
 # No lleva perfil: el perfil por defecto de los módulos ya apunta a PostgreSQL.
 #

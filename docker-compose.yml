@@ -4,6 +4,14 @@
 #
 # Levanta lo que la consigna exige tener "realmente configurado y funcionando":
 # la base de datos y el broker de mensajería.
+#
+# **Necesita el .env** (`pnpm env:init` lo genera): las contraseñas salen de ahí y no tienen
+# valor por defecto. Sin él, compose se niega a arrancar y dice qué variable falta.
+#
+# **Los puertos se publican solo en 127.0.0.1.** La base y el broker los usan los backends de
+# esta misma máquina; nadie de la red tiene por qué llegarles. Publicados en todas las
+# interfaces, cualquiera en el mismo WiFi podía entrar a PostgreSQL o dejar mensajes falsos en
+# la cola de avisos. En el ambiente compartido, la otra máquina entra por el frontend, no acá.
 
 services:
 
@@ -13,9 +21,9 @@ services:
     environment:
       POSTGRES_DB: ecopedia
       POSTGRES_USER: ecopedia
-      POSTGRES_PASSWORD: ecopedia
+      POSTGRES_PASSWORD: ${ECOPEDIA_DB_PASSWORD:?Falta ECOPEDIA_DB_PASSWORD en el .env. Correr pnpm env:init}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -32,10 +40,10 @@ services:
     container_name: ecopedia-activemq
     environment:
       ARTEMIS_USER: ecopedia
-      ARTEMIS_PASSWORD: ecopedia
+      ARTEMIS_PASSWORD: ${ECOPEDIA_BROKER_PASSWORD:?Falta ECOPEDIA_BROKER_PASSWORD en el .env. Correr pnpm env:init}
     ports:
-      - "61616:61616"   # protocolo core / JMS
-      - "8161:8161"     # consola web: http://localhost:8161/console
+      - "127.0.0.1:61616:61616"   # protocolo core / JMS
+      - "127.0.0.1:8161:8161"     # consola web: http://localhost:8161/console
     volumes:
       - activemq-data:/var/lib/artemis-instance
 
