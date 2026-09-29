@@ -360,7 +360,7 @@ lo mismo que él. Para ubicar lugares usa Photon, el mismo servicio que el mapa.
 
 Sin clave, el agente arranca igual y el chat dice que no está configurado.
 
-Cuatro cosas que conviene saber:
+Cinco cosas que conviene saber:
 
 - **El plan gratis de Gemini es lento a ratos.** Una pregunta con búsqueda tarda de 5 a 30
   segundos según la demanda, y a veces un modelo contesta 503. El agente prueba los modelos de
@@ -368,6 +368,9 @@ Cuatro cosas que conviene saber:
 - **Hay un tope de 10 preguntas por minuto por persona**, para no agotar el cupo gratis. La
   undécima recibe "Esperá N segundos". Se cuenta por la dirección del navegador, que el proxy de
   Vite le pasa al agente, y se borra al reiniciar el panel `agent`.
+- **Reiniciar el panel `agent` le borra la memoria de las conversaciones abiertas.** Cada respuesta
+  sale sellada y el asistente descarta las que vuelven sin sello válido (así se defiende de un
+  historial inventado); el sello se hace con una clave que se genera al arrancar.
 - **Google puede usar lo que se le manda** en el plan gratis para mejorar sus modelos. No
   escribas datos personales en el chat.
 - **En el panel `agent` queda una línea por pregunta**, con el tiempo y las herramientas que usó:

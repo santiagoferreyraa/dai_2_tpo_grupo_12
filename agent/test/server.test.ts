@@ -43,10 +43,12 @@ describe('POST /api/agent/chat', () => {
   }))
   const post = serve(assistant)
 
-  it('contesta { text } con la forma que espera el front', async () => {
+  it('contesta { text, signature } con la forma que espera el front', async () => {
     const response = await post({ message: 'hola', history: [{ role: 'user', text: 'hola' }] })
     assert.equal(response.status, 200)
-    assert.deepEqual(await response.json(), { text: 'Andá a Palermo.' })
+    const body = (await response.json()) as { text: string; signature: string }
+    assert.equal(body.text, 'Andá a Palermo.')
+    assert.equal(typeof body.signature, 'string')
     assert.equal(received.at(-1)?.message, 'hola')
     assert.equal(received.at(-1)?.history.length, 1)
   })

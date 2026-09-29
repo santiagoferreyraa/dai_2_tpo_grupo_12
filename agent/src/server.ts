@@ -6,9 +6,12 @@
  *
  * El contrato es el que ya espera `frontend/src/features/agent/agentClient.ts`:
  *
- *   pedido:    { message: string, history: { role: 'user' | 'agent', text: string }[] }
- *   respuesta: { text: string }
- *   error:     { message: string }, que es lo que el cliente HTTP del front muestra.
+ *   pedido:    { message, history: { role: 'user' | 'agent', text, signature? }[] }
+ *   respuesta: { text, signature }
+ *   error:     { message }, que es lo que el cliente HTTP del front muestra.
+ *
+ * `signature` es el sello de cada respuesta del asistente: el front lo guarda y lo devuelve, y las
+ * líneas del asistente que vuelven sin un sello válido se descartan. Ver `signature.ts`.
  *
  * **Nunca contesta 401 ni 403.** El cliente del front cierra la sesión ante cualquiera de los dos,
  * y un problema del agente no tiene por qué desloguear a nadie. Si el token venció, lo dice el
@@ -21,6 +24,7 @@ import { z } from 'zod'
 
 import { AssistantError, type AskInput, type AskResult } from './assistant.ts'
 import { clientKey, createRateLimiter, type RateLimiter } from './rate-limit.ts'
+import { createSigner, type Signer } from './signature.ts'
 
 export interface ServerDeps {
   /** `null` cuando falta la clave de Gemini: el servicio arranca igual y lo avisa en el chat. */
@@ -28,6 +32,15 @@ export interface ServerDeps {
   log?: (line: string) => void
   /** Por omisión, `QUESTIONS_PER_MINUTE` por cliente. Se inyecta en los tests. */
   rateLimiter?: RateLimiter
+  /** Por omisión, uno con una clave nueva al azar. Se inyecta en los tests. */
+  signer?: Signer
+}
+
+interface Context {
+  assistant: ServerDeps['assistant']
+  limiter: RateLimiter
+  signer: Signer
+  log: (line: string) => void
 }
 
 export const CHAT_PATH = '/api/agent/chat'
@@ -56,6 +69,7 @@ const ChatRequest = z.object({
       z.object({
         role: z.enum(['user', 'agent']),
         text: z.string().max(4 * MAX_MESSAGE_CHARS),
+        signature: z.string().max(100).optional(),
       }),
     )
     .max(MAX_HISTORY)
@@ -63,12 +77,17 @@ const ChatRequest = z.object({
 })
 
 export function createServer(deps: ServerDeps): Server {
-  const log = deps.log ?? ((line: string) => console.log(line))
-  const limiter =
-    deps.rateLimiter ?? createRateLimiter({ limit: QUESTIONS_PER_MINUTE, windowMs: 60_000 })
+  const context: Context = {
+    assistant: deps.assistant,
+    limiter:
+      deps.rateLimiter ?? createRateLimiter({ limit: QUESTIONS_PER_MINUTE, windowMs: 60_000 }),
+    signer: deps.signer ?? createSigner(),
+    log: deps.log ?? ((line: string) => console.log(line)),
+  }
+  const { log } = context
 
   return createHttpServer((request, response) => {
-    handle(request, response, deps, limiter, log).catch((error: unknown) => {
+    handle(request, response, context).catch((error: unknown) => {
       log(`[agent] error inesperado: ${error instanceof Error ? error.stack : String(error)}`)
       if (!response.headersSent) send(response, 500, { message: 'El asistente tuvo un error.' })
     })
@@ -78,14 +97,12 @@ export function createServer(deps: ServerDeps): Server {
 async function handle(
   request: IncomingMessage,
   response: ServerResponse,
-  deps: ServerDeps,
-  limiter: RateLimiter,
-  log: (line: string) => void,
+  { assistant, limiter, signer, log }: Context,
 ): Promise<void> {
   const path = new URL(request.url ?? '/', 'http://localhost').pathname
 
   if (path === '/api/agent/health' && request.method === 'GET') {
-    return send(response, 200, { status: 'UP', configured: deps.assistant !== null })
+    return send(response, 200, { status: 'UP', configured: assistant !== null })
   }
   if (path !== CHAT_PATH) return send(response, 404, { message: 'No existe esa ruta.' })
   if (request.method !== 'POST') return send(response, 405, { message: 'Solo POST.' })
@@ -100,7 +117,7 @@ async function handle(
     return send(response, 400, { message: 'El pedido no tiene la forma esperada.' })
   }
 
-  if (deps.assistant === null) {
+  if (assistant === null) {
     return send(response, 503, {
       message: 'El asistente no está configurado: falta GEMINI_API_KEY en el .env.',
     })
@@ -131,22 +148,32 @@ async function handle(
   })
   const signal = AbortSignal.any([disconnected.signal, AbortSignal.timeout(ANSWER_TIMEOUT_MS)])
 
+  /*
+   * Solo sobreviven las líneas del asistente con sello válido: las inventadas o retocadas se
+   * descartan antes de que el modelo las lea. Las del conductor pasan siempre.
+   */
+  const history = parsed.history.filter(
+    (entry) => entry.role === 'user' || signer.verify(entry.text, entry.signature),
+  )
+  const dropped = parsed.history.length - history.length
+
   const authorization = request.headers.authorization
   const started = Date.now()
 
   try {
-    const result = await deps.assistant.ask({
+    const result = await assistant.ask({
       message: parsed.message,
-      history: parsed.history,
+      history: history.map(({ role, text }) => ({ role, text })),
       authorization: authorization?.startsWith('Bearer ') ? authorization : undefined,
       signal,
     })
     log(
       `[agent] 200 en ${Date.now() - started} ms` +
         ` · ${authorization ? 'con' : 'sin'} sesión` +
-        ` · herramientas: ${result.toolsUsed.join(', ') || 'ninguna'}`,
+        ` · herramientas: ${result.toolsUsed.join(', ') || 'ninguna'}` +
+        (dropped > 0 ? ` · ${dropped} respuesta(s) sin sello válido descartada(s)` : ''),
     )
-    return send(response, 200, { text: result.text })
+    return send(response, 200, { text: result.text, signature: signer.sign(result.text) })
   } catch (error) {
     if (disconnected.signal.aborted) return
     const { status, message } = describe(error, signal)
