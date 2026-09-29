@@ -38,6 +38,7 @@ Una sola vez, después de clonar:
 ```bash
 pnpm install                  # en la raíz: el lanzador
 pnpm --dir frontend install   # el frontend
+pnpm --dir agent install      # el asistente del chat
 ```
 
 Y de ahí en más, **un solo comando levanta todo**:
@@ -67,16 +68,17 @@ sola API.
 
 | Comando | Qué hace |
 |---------|----------|
-| `pnpm dev` | Los cuatro procesos, cada uno en su panel |
+| `pnpm dev` | Los tres backends, el asistente y el front, cada uno en su panel |
 | `pnpm dev:back` | Solo `ecopedia-core` (8081) |
 | `pnpm dev:charging` | Solo Reservas (`ecopedia-charging`, 8082). Necesita el backend arriba |
 | `pnpm dev:pay` | Solo Pagos (`ecopedia-integration`, 8083), que sirve los medios de pago |
 | `pnpm dev:async` | Solo Notificaciones (`ecopedia-async`, 8084). Necesita el broker: ver "Notificaciones" |
+| `pnpm dev:agent` | Solo el asistente del chat (8085). Ver "El asistente" |
 | `pnpm dev:front` | Solo el frontend |
 | `pnpm dev:plain` | Los cuatro en una sola tira de logs, con prefijos `[back]`/`[charging]`/`[pay]`/`[front]` |
-| `pnpm dev:mem` | Los cuatro, pero con las bases **en memoria**: se borra todo al bajar |
-| `pnpm demo` | Los cuatro contra **PostgreSQL**. Necesita la infraestructura arriba |
-| `pnpm free-ports` | Libera el 8081, el 8082, el 8083, el 8084 y el 5173 a mano |
+| `pnpm dev:mem` | Lo mismo, pero con las bases **en memoria**: se borra todo al bajar |
+| `pnpm demo` | Todo contra **PostgreSQL**, con Notificaciones. Necesita la infraestructura arriba |
+| `pnpm free-ports` | Libera el 8081, el 8082, el 8083, el 8084, el 8085 y el 5173 a mano |
 | `pnpm build` | Empaqueta el frontend adentro del JAR del backend |
 | `pnpm start` | Corre ese JAR |
 
@@ -336,6 +338,45 @@ Dos cosas que conviene reconocer:
   `Could not refresh JMS Connection`. No es un error del módulo: falta `docker compose up -d`.
 - **Sin el broker, Reservas reserva igual**, y en su panel aparece en WARN
   `No se pudo publicar el aviso`, con el aviso entero. Ese aviso no se reenvía solo.
+
+### El asistente
+
+La burbuja de abajo a la derecha abre un chat con un agente que entiende pedidos como *"estoy en
+Plaza Italia, ¿dónde cargo?"*: ubica el lugar, busca estaciones cerca y recomienda a cuál ir. Con
+sesión iniciada, también dice qué horarios tiene libres un conector. **Solo consulta: no reserva
+ni confirma nada**, eso se hace desde el mapa.
+
+Es un proceso aparte en `agent/`, en TypeScript con [Strands Agents](https://strandsagents.com) y
+Gemini, en el 8085. `pnpm dev` lo levanta en el panel `agent`, y el proxy de Vite le manda
+`/api/agent`. Consulta a core y a Reservas **con el token del conductor que escribe**, así que ve
+lo mismo que él. Para ubicar lugares usa Photon, el mismo servicio que el mapa.
+
+**Necesita una clave de Gemini**, que es personal y gratis:
+
+1. Sacala en https://aistudio.google.com/apikey (con una cuenta de Google, sin tarjeta).
+2. Pegala en el `.env` de la raíz: `GEMINI_API_KEY=tu_clave`. **Nunca en otro archivo**: el `.env`
+   es el único que no se versiona.
+3. Reiniciá el panel `agent`.
+
+Sin clave, el agente arranca igual y el chat dice que no está configurado.
+
+Tres cosas que conviene saber:
+
+- **El plan gratis de Gemini es lento a ratos.** Una pregunta con búsqueda tarda de 5 a 30
+  segundos según la demanda, y a veces un modelo contesta 503. El agente prueba los modelos de
+  `GEMINI_MODELS` en orden; si todos fallan, el chat dice que está saturado.
+- **Google puede usar lo que se le manda** en el plan gratis para mejorar sus modelos. No
+  escribas datos personales en el chat.
+- **En el panel `agent` queda una línea por pregunta**, con el tiempo y las herramientas que usó:
+  `[agent] 200 en 12483 ms · con sesión · herramientas: find_place, search_stations`.
+
+Los tests no salen a la red: usan un modelo guionado.
+
+```bash
+pnpm --dir agent test        # los tests
+pnpm --dir agent typecheck   # los tipos
+pnpm --dir agent format      # el formato (Prettier, la misma configuración que el front)
+```
 
 ### Producción: un solo artefacto
 
