@@ -20,6 +20,10 @@
 # Para trabajar solo en el mapa o en el ABM alcanza con `back` y `front`; los otros dos hacen
 # falta para reservas y para la pantalla de medios de pago.
 #
+# `agent` es el asistente del chat (8085), en TypeScript y no en Java: consulta a `back` y a
+# `charging` con el token del conductor. Sin GEMINI_API_KEY en el .env arranca igual, y el chat
+# avisa que no está configurado. Ver README, "El asistente".
+#
 # ---
 #
 # Éste es el ambiente PROPIO Y PERSISTENTE: perfil `local`, H2 en archivo. Tus datos
@@ -38,5 +42,7 @@ procs:
     shell: pnpm dev:charging
   pay:
     shell: pnpm dev:pay
+  agent:
+    shell: pnpm dev:agent
   front:
     shell: pnpm dev:front

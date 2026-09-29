@@ -9,6 +9,7 @@
     "dev:pay": "node scripts/free-port.mjs 8083 && node scripts/with-env.mjs mvn -pl backend/ecopedia-integration spring-boot:run -Dspring-boot.run.profiles=local",
     "dev:async": "node scripts/free-port.mjs 8084 && node scripts/with-env.mjs mvn -pl backend/ecopedia-async spring-boot:run -Dspring-boot.run.profiles=local",
     "dev:front": "node scripts/free-port.mjs 5173 && pnpm --dir frontend dev",
+    "dev:agent": "node scripts/free-port.mjs 8085 && node scripts/with-env.mjs pnpm --dir agent start",
     "dev:plain": "concurrently --names back,charging,pay,front --prefix-colors cyan,yellow,blue,magenta --kill-others-on-fail \"pnpm dev:back\" \"pnpm dev:charging\" \"pnpm dev:pay\" \"pnpm dev:front\"",
     "dev:mem": "mprocs --config mprocs-mem.yaml",
     "dev:mem:back": "node scripts/free-port.mjs 8081 && node scripts/with-env.mjs mvn -pl backend/ecopedia-core spring-boot:run -Dspring-boot.run.profiles=dev",
@@ -21,7 +22,7 @@
     "demo:pay": "node scripts/free-port.mjs 8083 && node scripts/with-env.mjs mvn -pl backend/ecopedia-integration spring-boot:run",
     "demo:async": "node scripts/free-port.mjs 8084 && node scripts/with-env.mjs mvn -pl backend/ecopedia-async spring-boot:run",
     "env:init": "node scripts/env-init.mjs",
-    "free-ports": "node scripts/free-port.mjs 8081 8082 8083 8084 5173",
+    "free-ports": "node scripts/free-port.mjs 8081 8082 8083 8084 8085 5173",
     "build": "mvn -Pweb clean package",
     "start": "node scripts/with-env.mjs java -jar backend/ecopedia-core/target/ecopedia-core-0.1.0-SNAPSHOT.jar"
   },

@@ -29,5 +29,7 @@ procs:
     shell: pnpm demo:pay
   async:
     shell: pnpm demo:async
+  agent:
+    shell: pnpm dev:agent
   front:
     shell: pnpm dev:front

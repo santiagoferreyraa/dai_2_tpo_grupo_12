@@ -37,6 +37,11 @@ export default defineConfig({
         target: 'http://localhost:8083',
         changeOrigin: true,
       },
+      /* El asistente del chat: un proceso en Node, fuera de los backends de Java. */
+      '/api/agent': {
+        target: 'http://localhost:8085',
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://localhost:8081',
         changeOrigin: true,

@@ -13,5 +13,7 @@ procs:
     shell: pnpm dev:mem:charging
   pay:
     shell: pnpm dev:mem:pay
+  agent:
+    shell: pnpm dev:agent
   front:
     shell: pnpm dev:front
