@@ -18,8 +18,8 @@ import type {
  * pantalla necesita para decir "hace cinco minutos" y para ordenar.
  *
  * **Nunca se piden los avisos de un id.** El destinatario sale del token, así que no hay ruta que
- * permita leer los de otro; marcar uno como leído sí manda el id del AVISO, y el backend verifica
- * que sea tuyo antes de tocarlo.
+ * permita leer los de otro; marcar uno como leído o borrarlo sí manda el id del AVISO, y el backend
+ * verifica que sea tuyo antes de tocarlo.
  */
 
 /**
@@ -63,6 +63,26 @@ export function markNotificationAsRead(notificationId: number): Promise<void> {
 /** Marca como leídos todos los avisos propios de una sola vez. Responde 204 sin cuerpo. */
 export function markAllNotificationsAsRead(): Promise<void> {
   return api.post<void>('/notifications/read-all', undefined)
+}
+
+/**
+ * Saca un aviso propio del buzón. Responde 204 sin cuerpo.
+ *
+ * **Borrar dos veces el mismo aviso no falla**: el backend contesta 204 igual, porque el buzón
+ * queda en el mismo estado. Eso es lo que hace que reintentar sea seguro. Los errores que sí
+ * pueden llegar son los mismos que en `markNotificationAsRead`: 404 si no existe, 403 si es de
+ * otro.
+ *
+ * Que del otro lado el aviso se marque como borrado en vez de desaparecer de la tabla es asunto
+ * de `ecopedia-async`; acá se fue y no vuelve.
+ */
+export function deleteNotification(notificationId: number): Promise<void> {
+  return api.delete<void>(`/notifications/${String(notificationId)}`)
+}
+
+/** Vacía el buzón propio de una sola vez. Responde 204 sin cuerpo. */
+export function deleteAllNotifications(): Promise<void> {
+  return api.delete<void>('/notifications')
 }
 
 /*

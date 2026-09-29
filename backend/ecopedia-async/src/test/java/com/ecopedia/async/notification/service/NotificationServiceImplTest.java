@@ -56,7 +56,7 @@ class NotificationServiceImplTest {
         serviceWith(connector -> Optional.of(PALERMO))
                 .dispatch(request("booking-40-BOOKING_CONFIRMED", NotificationType.BOOKING_CONFIRMED));
 
-        assertThat(repository.findByRecipientIdOrderByCreatedAtDesc(DRIVER))
+        assertThat(repository.findByRecipientIdAndDeletedAtIsNullOrderByCreatedAtDesc(DRIVER))
                 .singleElement()
                 .satisfies(notification -> {
                     assertThat(notification.getTitle()).isEqualTo("Reserva confirmada");
@@ -76,7 +76,7 @@ class NotificationServiceImplTest {
         serviceWith(connector -> Optional.of(PALERMO))
                 .dispatch(request("booking-40-BOOKING_CANCELLED", NotificationType.BOOKING_CANCELLED));
 
-        assertThat(repository.findByRecipientIdOrderByCreatedAtDesc(DRIVER))
+        assertThat(repository.findByRecipientIdAndDeletedAtIsNullOrderByCreatedAtDesc(DRIVER))
                 .singleElement()
                 .satisfies(notification -> {
                     assertThat(notification.getTitle()).isEqualTo("Reserva cancelada");
@@ -94,7 +94,8 @@ class NotificationServiceImplTest {
         service.dispatch(confirmed);
         service.dispatch(confirmed);
 
-        assertThat(repository.findByRecipientIdOrderByCreatedAtDesc(DRIVER)).hasSize(1);
+        assertThat(repository.findByRecipientIdAndDeletedAtIsNullOrderByCreatedAtDesc(DRIVER))
+                .hasSize(1);
         assertThat(mail.sent).hasSize(1);
     }
 
@@ -104,7 +105,7 @@ class NotificationServiceImplTest {
         serviceWith(connector -> Optional.empty())
                 .dispatch(request("booking-40-BOOKING_CONFIRMED", NotificationType.BOOKING_CONFIRMED));
 
-        assertThat(repository.findByRecipientIdOrderByCreatedAtDesc(DRIVER))
+        assertThat(repository.findByRecipientIdAndDeletedAtIsNullOrderByCreatedAtDesc(DRIVER))
                 .singleElement()
                 .satisfies(notification -> {
                     assertThat(notification.getBody()).startsWith("Tu reserva del conector 12 está confirmada");
@@ -130,9 +131,10 @@ class NotificationServiceImplTest {
         }
 
         @Override
-        public List<Notification> findByRecipientIdOrderByCreatedAtDesc(Long recipientId) {
+        public List<Notification> findByRecipientIdAndDeletedAtIsNullOrderByCreatedAtDesc(Long recipientId) {
             return rows.stream()
                     .filter(row -> row.getRecipientId().equals(recipientId))
+                    .filter(row -> !row.isDeleted())
                     .sorted(Comparator.comparing(Notification::getCreatedAt).reversed())
                     .toList();
         }
@@ -148,22 +150,28 @@ class NotificationServiceImplTest {
         }
 
         @Override
-        public List<Notification> findTop50ByRecipientIdOrderByIdDesc(Long recipientId) {
+        public List<Notification> findTop50ByRecipientIdAndDeletedAtIsNullOrderByIdDesc(Long recipientId) {
             throw new UnsupportedOperationException("Lo prueba NotificationApiTest");
         }
 
         @Override
-        public List<Notification> findTop50ByRecipientIdAndIdGreaterThanOrderByIdDesc(Long recipientId, Long afterId) {
+        public List<Notification> findTop50ByRecipientIdAndIdGreaterThanAndDeletedAtIsNullOrderByIdDesc(
+                Long recipientId, Long afterId) {
             throw new UnsupportedOperationException("Lo prueba NotificationApiTest");
         }
 
         @Override
-        public long countByRecipientIdAndReadAtIsNull(Long recipientId) {
+        public long countByRecipientIdAndReadAtIsNullAndDeletedAtIsNull(Long recipientId) {
             throw new UnsupportedOperationException("Lo prueba NotificationApiTest");
         }
 
         @Override
         public int markAllAsRead(Long recipientId, Instant when) {
+            throw new UnsupportedOperationException("Lo prueba NotificationApiTest");
+        }
+
+        @Override
+        public int markAllAsDeleted(Long recipientId, Instant when) {
             throw new UnsupportedOperationException("Lo prueba NotificationApiTest");
         }
     }

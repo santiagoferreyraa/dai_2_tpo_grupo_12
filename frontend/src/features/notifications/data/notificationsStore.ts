@@ -4,6 +4,8 @@ import { getSession, useSession } from '@/features/auth/session'
 
 import type { Notification } from '../types'
 import {
+  deleteAllNotifications,
+  deleteNotification,
   listMyNotifications,
   markAllNotificationsAsRead,
   markNotificationAsRead,
@@ -94,8 +96,16 @@ function currentItems(): Notification[] {
  *
  * Mientras viaja, si ya había buzón lo deja a la vista: pasar a "cargando" haría parpadear la
  * campanita en cada consulta. El "cargando" se ve solo la primera vez.
+ *
+ * @param full pide el buzón entero en vez de solo lo nuevo, y reemplaza lo que haya.
+ *
+ *     **Lo necesita el borrado que falló.** La consulta incremental solo AGREGA: manda el id del más
+ *     nuevo que se tiene y pega adelante lo que vuelve. Si un aviso se sacó de la pantalla porque se
+ *     lo borró y el backend rechazó el borrado, ninguna consulta incremental lo devolvería —el
+ *     backend lo manda, sí, pero como un aviso viejo que no entra en "lo posterior a tal id"—, así
+ *     que la pantalla quedaría mintiendo hasta recargar. Con esto el error se deshace solo.
  */
-export function refreshNotifications(): void {
+export function refreshNotifications({ full = false }: { full?: boolean } = {}): void {
   const session = getSession()
   if (session === null) {
     publish({ token: null, state: { status: 'idle' } })
@@ -105,7 +115,7 @@ export function refreshNotifications(): void {
   const token = session.token
   const sameSession = snapshot.token === token
   const known = sameSession ? currentItems() : []
-  const newestId = known.length > 0 ? known[0].id : undefined
+  const newestId = !full && known.length > 0 ? known[0].id : undefined
 
   const current = requestNumber + 1
   requestNumber = current
@@ -239,6 +249,69 @@ export function refreshNotificationsSoon(): void {
 /** Saca un aviso de la cola de anuncios: se cerró su recuadro, o se terminó su tiempo en pantalla. */
 export function dismissArrival(notificationId: number): void {
   publishArrivals(arrivals.filter((item) => item.id !== notificationId))
+}
+
+/**
+ * Borra un aviso: lo saca de la pantalla primero y lo pide al backend después.
+ *
+ * **Optimista, por lo mismo que `markNotificationRead`**: el gesto es de quien mira y esperar a que
+ * el servidor conteste para que el renglón se vaya se siente roto. La diferencia con marcar como
+ * leído es el precio de equivocarse, y por eso acá el fallo se trata de verdad en vez de dejárselo a
+ * la próxima consulta: si el backend rechaza el borrado, se pide el buzón ENTERO y el aviso vuelve a
+ * su lugar. La consulta de siempre no alcanzaría —es incremental, solo agrega lo nuevo— y el aviso
+ * quedaría escondido hasta recargar la página. Ver `refreshNotifications`.
+ *
+ * **También lo saca de la cola de anuncios**, si venía de llegar: borrar el aviso y que su recuadro
+ * siga flotando en la esquina es la pantalla contradiciéndose sola.
+ */
+export function removeNotification(notificationId: number): void {
+  const state = snapshot.state
+  if (state.status !== 'ready') return
+
+  const target = state.items.find((item) => item.id === notificationId)
+  if (target === undefined) return
+
+  dismissArrival(notificationId)
+  publish({
+    token: snapshot.token,
+    state: {
+      status: 'ready',
+      items: state.items.filter((item) => item.id !== notificationId),
+      /* Un aviso sin leer que se va se lleva su punto: el contador es de lo que está en el buzón. */
+      unreadCount: target.read ? state.unreadCount : Math.max(0, state.unreadCount - 1),
+    },
+  })
+
+  deleteNotification(notificationId).catch(() => {
+    refreshNotifications({ full: true })
+  })
+}
+
+/**
+ * Vacía el buzón.
+ *
+ * **Esta sí devuelve la promesa**, a diferencia de las otras. Es la única que se confirma con un
+ * cartel, y el cartel necesita saber cuándo terminó para decir "Borrando…" y para cerrarse recién
+ * cuando el backend contestó. Vaciar el buzón entero por error y arreglarlo medio segundo después
+ * es un parpadeo demasiado grande como para hacerlo optimista.
+ */
+export async function removeAllNotifications(): Promise<void> {
+  /* De quién era el buzón cuando se pidió vaciarlo. Ver más abajo por qué se guarda. */
+  const token = snapshot.token
+
+  await deleteAllNotifications()
+
+  /*
+   * Si mientras viajaba entró otra cuenta, el buzón que está a la vista ya no es el que se vació:
+   * dejarlo en cero sería mostrarle a alguien un buzón vacío que no es el suyo. El de la cuenta
+   * anterior no hace falta tocarlo, porque al cambiar de sesión se descarta entero.
+   */
+  if (snapshot.token !== token) return
+
+  if (snapshot.state.status === 'ready') {
+    publish({ token, state: { status: 'ready', items: [], unreadCount: 0 } })
+  }
+  publishArrivals([])
 }
 
 function subscribe(listener: () => void): () => void {

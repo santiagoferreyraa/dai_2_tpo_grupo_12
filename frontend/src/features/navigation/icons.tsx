@@ -319,6 +319,22 @@ export function CrossIcon({ className }: IconProps) {
   )
 }
 
+/**
+ * Un tacho: borrar un aviso del buzón.
+ *
+ * **Es un tacho y no la cruz de al lado, y la diferencia es el punto.** La cruz de un recuadro
+ * flotante quiere decir "no me lo muestres más", y el aviso sigue estando en el buzón; esto lo
+ * saca de ahí y no vuelve. Con el mismo dibujo para las dos cosas, el que cierra el recuadro de
+ * la esquina creería que borró algo, y el que borra creería que solo lo escondió.
+ */
+export function TrashIcon({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className}>
+      <path d="M4 7h16M10 4h4M9.5 7v12M14.5 7v12M6 7l1 13h10l1-13" />
+    </svg>
+  )
+}
+
 /** Flecha a la izquierda: volver al listado desde el detalle de una configuración. */
 export function ArrowLeftIcon({ className }: IconProps) {
   return (
