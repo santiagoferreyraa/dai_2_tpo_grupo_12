@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 
 import BottomSheet from '@/components/BottomSheet'
+import { getSession } from '@/features/auth/session'
 import NetworkSummary from './components/NetworkSummary'
 import StationCard from './components/StationCard'
 import StationFormSheet from './components/StationFormSheet'
@@ -104,7 +105,16 @@ export default function StationsPage() {
     const controller = new AbortController()
 
     listStations(controller.signal)
-      .then((rows) => setStations(rows))
+      /*
+       * Solo las estaciones propias. El listado es público y trae las de toda la red, pero esta
+       * es la pantalla del operador y el backend le rechaza con 403 cualquier cambio sobre una
+       * estación ajena: mostrarlas sería ofrecerle botones que no andan. La regla la hace
+       * cumplir el backend; esto solo no la contradice en pantalla.
+       */
+      .then((rows) => {
+        const userId = getSession()?.userId
+        setStations(rows.filter((station) => station.ownerId === userId))
+      })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return
         setLoadError(

@@ -21,9 +21,15 @@ public class PricingController {
         this.pricingService = pricingService;
     }
 
-    /** RF06 / ECO-29: Definir esquema tarifario de un conector (Solo CPO o ADMIN). */
+    /**
+     * RF06 / ECO-29: Definir esquema tarifario de un conector (ADMIN, o el CPO dueño del conector).
+     *
+     * <p>El dueño lo resuelve {@code TerminalAccess}, el mismo que usa el ABM de Terminales: sin
+     * ese chequeo, cualquier operador le ponía precio al conector de otro.
+     */
     @PostMapping
-    @PreAuthorize("hasRole('CPO') or hasRole('ADMIN')")
+    @PreAuthorize(
+            "hasRole('ADMIN') or (hasRole('CPO') and @terminalAccess.ownsConnector(#request.connectorId(), authentication))")
     public ResponseEntity<PricingSchemeResponse> defineScheme(@Valid @RequestBody PricingSchemeRequest request) {
         PricingScheme scheme = pricingService.defineScheme(request.toDomainData());
         return ResponseEntity.status(HttpStatus.CREATED).body(PricingSchemeResponse.fromDomain(scheme));
