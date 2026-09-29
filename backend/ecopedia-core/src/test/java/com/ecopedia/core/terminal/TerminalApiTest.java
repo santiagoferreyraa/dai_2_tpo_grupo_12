@@ -70,7 +70,7 @@ class TerminalApiTest {
 
     private Station givenStation(String name, List<String> photoUrls) {
         return terminalService.createStation(
-                new StationData(name, "Av. San Juan 2901", -34.603754, -58.381659, photoUrls));
+                1L, new StationData(name, "Av. San Juan 2901", -34.603754, -58.381659, photoUrls));
     }
 
     @Test

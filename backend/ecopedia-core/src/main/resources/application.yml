@@ -6,7 +6,7 @@ spring:
   datasource:
     url: ${ECOPEDIA_DB_URL:jdbc:postgresql://localhost:5432/ecopedia}
     username: ${ECOPEDIA_DB_USER:ecopedia}
-    password: ${ECOPEDIA_DB_PASSWORD:ecopedia}
+    password: ${ECOPEDIA_DB_PASSWORD}         # sin valor por defecto: sale del .env
 
   # El esquema lo gobierna Flyway. Los archivos van en src/main/resources/db/migration
   # y se nombran V<AAAAMMDD><HHmm>__descripcion.sql — con timestamp, NUNCA con V1/V2/V3.
@@ -43,14 +43,17 @@ server:
 
 ecopedia:
   jwt:
-    # El secreto con el que se firman los tokens. El valor real entra por variable de entorno,
-    # igual que la base y el broker; el de acá es solo para desarrollo.
+    # El secreto con el que se firman los tokens. Entra SOLO por variable de entorno: sin perfil
+    # no hay valor por defecto, y si falta, el arranque aborta con "Could not resolve placeholder
+    # 'ECOPEDIA_JWT_SECRET'". Es a propósito: un valor escrito acá sería público, porque el repo
+    # lo es, y con él cualquiera podría firmarse un token de ADMIN. Los perfiles dev y local, más
+    # abajo, traen uno de desarrollo. `pnpm env:init` genera el de verdad en el .env.
     #
     # Lo comparte con ecopedia-charging, que valida los tokens que este artefacto emite: los
     # dos tienen que leer la MISMA variable, o Reservas rechaza a todo el mundo.
     #
     # Cambiarlo invalida los tokens ya emitidos: en pantalla se ve como "me deslogueó solo".
-    secret: ${ECOPEDIA_JWT_SECRET:EcopediaSecretKeyForJWTAuthentication2026SuperSecureKey!}
+    secret: ${ECOPEDIA_JWT_SECRET}
 
 ---
 # Perfil de desarrollo: base en memoria, para levantar el módulo sin PostgreSQL instalado.
@@ -80,6 +83,12 @@ spring:
   h2:
     console:
       enabled: true         # http://localhost:8081/h2-console
+
+# El secreto de desarrollo. Existe solo en los perfiles dev y local: sin perfil (`pnpm demo`,
+# el JAR) no hay valor por defecto y el proceso no arranca sin ECOPEDIA_JWT_SECRET.
+ecopedia:
+  jwt:
+    secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
 
 ---
 # Perfil local: la base de este integrante, en un archivo de su propio disco.
@@ -123,3 +132,9 @@ spring:
   h2:
     console:
       enabled: true         # http://localhost:8081/h2-console
+
+# El secreto de desarrollo. Existe solo en los perfiles dev y local: sin perfil (`pnpm demo`,
+# el JAR) no hay valor por defecto y el proceso no arranca sin ECOPEDIA_JWT_SECRET.
+ecopedia:
+  jwt:
+    secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
