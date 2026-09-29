@@ -16,7 +16,7 @@ import type { MessageData, Model, ModelRouter } from '@strands-agents/sdk'
 
 import type { EcopediaApi } from './ecopedia.ts'
 import type { Place } from './geocoding.ts'
-import { buildSystemPrompt } from './prompt.ts'
+import { buildSystemPrompt, REMINDER } from './prompt.ts'
 import { createTools } from './tools.ts'
 
 /** Un mensaje del hilo, como lo manda el front. */
@@ -80,7 +80,8 @@ export function createAssistant(deps: AssistantDeps) {
       const before = agent.messages.length
       let text: string
       try {
-        const result = await agent.invoke(prompt, {
+        /* La pregunta y, en un bloque aparte, el recordatorio de las reglas. Ver `REMINDER`. */
+        const result = await agent.invoke([{ text: prompt }, { text: REMINDER }], {
           cancelSignal: input.signal,
           limits: { turns: MAX_TURNS },
         })
