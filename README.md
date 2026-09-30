@@ -527,7 +527,7 @@ estos módulos, cada uno con su interfaz explícita.
 
 | Módulo | Componentes | Estado |
 |--------|-------------|--------|
-| `ecopedia-core` | TerminalService · UserService · PricingService | 🚧 scaffold |
+| `ecopedia-core` | TerminalService · UserService · PricingService · VehicleCatalog | 🚧 scaffold |
 | `ecopedia-charging` | BookingService · ChargingSessionService *(stateful)* | 🚧 scaffold |
 | `ecopedia-integration` | PaymentService (REST) · PowerGridService (SOAP) | 🚧 scaffold |
 | `ecopedia-async` | NotificationService | 🚧 scaffold |

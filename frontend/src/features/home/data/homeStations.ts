@@ -22,7 +22,7 @@ import type { StationDetail } from '@/features/terminals/types'
 import { useDeviceLocation } from '@/features/terminals/useDeviceLocation'
 import type { DeviceLocation } from '@/features/terminals/useDeviceLocation'
 
-import { DRIVER_VEHICLE } from '../vehicle'
+import { useDriverVehicle } from '@/features/vehicles/vehicle'
 
 /**
  * Desde dónde se mide mientras el navegador no diga dónde está el usuario: UADE, Lima e
@@ -53,19 +53,31 @@ export interface HomeStations {
    * Null si ninguna cumple las dos condiciones. No se cae a "la más cercana a secas" a
    * propósito: el recuadro promete una estación donde se puede enchufar, y ofrecer uno ocupado
    * o de otro conector sería contestar otra pregunta.
+   *
+   * **Sin auto elegido, el filtro por conector no se aplica**: pasa a ser la más cercana con
+   * CUALQUIER enchufe libre. Es la mejor respuesta posible a "dónde cargo" cuando todavía no se
+   * sabe con qué, y es honesta: no promete compatibilidad, solo cercanía y disponibilidad.
    */
   nearest: StationWithDistance | null
-  /** Cuántas estaciones tienen al menos un conector del tipo que usa el auto. */
-  compatibleCount: number
   /**
-   * Cuántas de esas tienen además uno LIBRE ahora mismo.
+   * Cuántas estaciones tienen al menos un conector del tipo que usa el auto, o `null` si no hay
+   * auto elegido.
+   *
+   * **`null` y no cero, y la diferencia no es cosmética.** Cero diría "ninguna estación te
+   * sirve", que es una afirmación falsa; lo que pasa cuando no hay vehículo es que la pregunta
+   * no se puede contestar todavía. El tipo obliga a quien lo muestre a decidir qué dibujar en
+   * ese caso, en vez de pintar un cero que se lee como una mala noticia.
+   */
+  compatibleCount: number | null
+  /**
+   * Cuántas de esas tienen además uno LIBRE ahora mismo, o `null` sin auto elegido.
    *
    * Es un subconjunto de `compatibleCount` y se cuenta aparte porque contestan preguntas
    * distintas: una dice a cuántas podrías ir alguna vez, la otra a cuántas podrías ir ahora.
    * La segunda es la que sirve para salir a cargar; la primera, para saber si el auto encaja
    * en la red.
    */
-  usableCount: number
+  usableCount: number | null
   /** Desde dónde se midió. Es la del dispositivo, o FALLBACK_ORIGIN. */
   origin: DeviceLocation | typeof FALLBACK_ORIGIN
   /**
@@ -89,6 +101,7 @@ export function useHomeStations(): HomeStations {
   const [error, setError] = useState<string | null>(null)
 
   const device = useDeviceLocation()
+  const vehicle = useDriverVehicle()
 
   useEffect(() => {
     /*
@@ -120,14 +133,20 @@ export function useHomeStations(): HomeStations {
    * a los componentes de abajo a redibujarse por nada.
    */
   const { nearest, compatibleCount, usableCount } = useMemo(() => {
+    /*
+     * Sin auto elegido el conector no filtra nada, y esa es la única diferencia entre los dos
+     * casos: el resto de la cuenta —libre ahora, la más cercana— es idéntico. Escrito como un
+     * predicado y no como dos ramas paralelas, no hay forma de que una se arregle y la otra no.
+     */
+    const usesMyConnector = (type: string) => vehicle === null || type === vehicle.connectorType
+
     const compatible = stations.filter((station) =>
-      station.connectors.some((c) => c.connectorType === DRIVER_VEHICLE.connectorType),
+      station.connectors.some((c) => usesMyConnector(c.connectorType)),
     )
 
     const usable = compatible.filter((station) =>
       station.connectors.some(
-        (c) =>
-          c.connectorType === DRIVER_VEHICLE.connectorType && c.operationalStatus === 'AVAILABLE',
+        (c) => usesMyConnector(c.connectorType) && c.operationalStatus === 'AVAILABLE',
       ),
     )
 
@@ -138,10 +157,11 @@ export function useHomeStations(): HomeStations {
 
     return {
       nearest: closest,
-      compatibleCount: compatible.length,
-      usableCount: usable.length,
+      /* Ver los comentarios de los campos: sin auto la pregunta no tiene respuesta, no tiene cero. */
+      compatibleCount: vehicle === null ? null : compatible.length,
+      usableCount: vehicle === null ? null : usable.length,
     }
-  }, [stations, origin])
+  }, [stations, origin, vehicle])
 
   return {
     stations,

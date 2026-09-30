@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 
 import { updateMyPassword, updateMyProfile } from '@/features/auth/data/userRepository'
-import { applyFullName, useSession } from '@/features/auth/session'
+import { applyProfile, useSession } from '@/features/auth/session'
 import { ChevronRightIcon, EyeIcon, EyeOffIcon } from '@/features/navigation/icons'
 import {
   validateNewPassword,
@@ -10,6 +10,9 @@ import {
   validateRequiredPassword,
 } from '@/features/auth/validation'
 import UnderlineField from '@/components/UnderlineField'
+import { useVehicleModels } from '@/features/vehicles/catalog'
+import VehicleDialog from '@/features/vehicles/components/VehicleDialog'
+import { vehicleLabelOf } from '@/features/vehicles/vehicle'
 import { ApiError } from '@/lib/api'
 
 import { AVATAR_IDS, avatarSrc, chooseAvatar, useAvatarId } from './avatars'
@@ -28,9 +31,14 @@ import ProfileCard from './components/ProfileCard'
  *
  * **De los cuatro datos que se ven arriba, solo dos se pueden cambiar.** El correo identifica la
  * cuenta y viaja adentro del token; el rol es una decisión administrativa —si se aceptara acá,
- * cualquiera se promovería a administrador desde su propio perfil—. El auto todavía no existe en
- * el sistema: no hay entidad de vehículo, así que se dibuja apagado y diciendo por qué, porque el
- * lugar ya está decidido y el dato no.
+ * cualquiera se promovería a administrador desde su propio perfil—. Los que sí se editan son el
+ * nombre y el auto.
+ *
+ * **El auto se ELIGE de una lista, no se escribe.** Lo que sale de acá no es una etiqueta: el
+ * conector y las potencias del modelo son los que después filtran estaciones en la portada y
+ * estiman cuánto tarda una carga. Un campo de texto libre —"tesla model 3"— no se puede comparar
+ * contra el conector de una estación, y una potencia tipeada a mano convierte una estimación en
+ * una adivinanza. Ver `vehicles/data/vehicleModelsRepository`.
  *
  * **El avatar sí se elige, y se guarda en otro lado que el resto.** El nombre y la contraseña van
  * al backend; el avatar se queda en el navegador, porque el perfil no tiene dónde guardarlo. Ver
@@ -66,6 +74,20 @@ export default function EditProfilePage() {
     `pickedAvatar` es `null` mientras nadie eligió nada en esta visita, y ahí manda lo guardado.
     Es la misma forma que el nombre, y por el mismo motivo.
   */
+  /*
+    El auto, con la misma forma que el nombre y por el mismo motivo: `null` mientras nadie tocó el
+    selector en esta visita, y hasta entonces manda lo que diga la sesión. El perfil llega un
+    instante después de entrar —ver `hydrateProfile`—, así que inicializar el estado con él dejaría
+    el selector en "Todavía no elegí" para siempre a quien llega rápido a esta pantalla.
+
+    **Y es `number | null | undefined`, tres valores, porque `null` ya significa algo**: es
+    "ningún auto", que es una elección legítima y la que hace quien se lo quiere sacar.
+    `undefined` es "no toqué el selector".
+  */
+  const [pickedVehicle, setPickedVehicle] = useState<number | null | undefined>(undefined)
+  const vehicleModelId =
+    pickedVehicle === undefined ? (session?.vehicle?.id ?? null) : pickedVehicle
+
   const savedAvatar = useAvatarId(session?.userId ?? null)
   const [pickedAvatar, setPickedAvatar] = useState<string | null>(null)
   const avatarId = pickedAvatar ?? savedAvatar
@@ -116,8 +138,8 @@ export default function EditProfilePage() {
       */
       if (changingPassword) await updateMyPassword(currentPassword, newPassword)
 
-      const profile = await updateMyProfile(fullName.trim())
-      applyFullName(profile.fullName)
+      const profile = await updateMyProfile(fullName.trim(), vehicleModelId)
+      applyProfile(profile)
 
       /*
         El avatar, al final y solo si se tocó. Va DESPUÉS de las llamadas porque es lo único que
@@ -197,27 +219,7 @@ export default function EditProfilePage() {
             )}
           </UnderlineField>
 
-          {/*
-            El auto, apagado. No hay entidad de vehículo en el sistema —ni endpoint, ni catálogo
-            de modelos—, así que un campo que se pueda escribir prometería guardar algo que no
-            tiene dónde guardarse. Ver `home/vehicle.ts`.
-          */}
-          <div className="opacity-60">
-            <UnderlineField
-              label="Auto"
-              hint="Llega cuando el sistema tenga catálogo de vehículos."
-            >
-              {(props) => (
-                <input
-                  {...props}
-                  type="text"
-                  disabled
-                  value=""
-                  placeholder="Todavía no se puede elegir"
-                />
-              )}
-            </UnderlineField>
-          </div>
+          <VehiclePicker value={vehicleModelId} onChange={setPickedVehicle} />
         </fieldset>
 
         <fieldset className="glass-inset flex flex-col gap-5 rounded-3xl p-6">
@@ -332,6 +334,103 @@ export default function EditProfilePage() {
         </div>
       </form>
     </ProfileCard>
+  )
+}
+
+/**
+ * El campo del auto: muestra el elegido y abre el selector visual.
+ *
+ * **El campo en sí no elige nada, y por eso es un botón y no un control.** Elegir pasa adentro
+ * del diálogo —marca, modelo, ficha—, que necesita bastante más lugar del que hay en un renglón
+ * de un formulario. Lo que queda acá es lo que hace falta ver sin abrir nada: qué auto está
+ * puesto.
+ *
+ * **Reemplazó a un `<select>`, y no fue solo estética.** Un desplegable muestra los modelos como
+ * renglones de texto iguales: para encontrar el suyo hay que leerlos uno por uno, y no tiene dónde
+ * mostrar el conector ni las potencias, que es lo que esta elección decide. Ver `VehicleDialog`.
+ *
+ * **Sigue adentro de `UnderlineField` aunque no sea un `<input>`.** Lo que da ese envoltorio es el
+ * rótulo que se enciende con el foco, el subrayado y el renglón de ayuda: el formulario tiene que
+ * verse como uno solo, y un campo con caja propia entre dos subrayados se lee como de otra
+ * pantalla. El botón toma la misma clase que los controles y agrega lo suyo.
+ *
+ * **El catálogo que no llegó no bloquea el formulario.** El campo queda apagado mientras carga y
+ * quien vino a cambiarse la contraseña sigue pudiendo guardar. Si falla, se dice por qué en el
+ * mismo lugar donde iría la ayuda: el resto del formulario no tiene la culpa.
+ */
+function VehiclePicker({
+  value,
+  onChange,
+}: {
+  /** El modelo marcado, o `null` para "sin auto". */
+  value: number | null
+  onChange: (vehicleModelId: number | null) => void
+}) {
+  const { models, loading, error } = useVehicleModels()
+  const [open, setOpen] = useState(false)
+
+  /*
+    El modelo elegido se busca en el catálogo por id y no se guarda entero en el formulario. El id
+    es lo único que viaja al backend, y tener además una copia de la ficha abre la puerta a que las
+    dos se separen: el día que el catálogo corrija una potencia, la copia seguiría mostrando la
+    vieja hasta que alguien vuelva a elegir el mismo auto.
+
+    Mientras el catálogo no llegó no se encuentra nada, y ahí el campo dice que está buscando.
+  */
+  const selected = models.find((model) => model.id === value) ?? null
+
+  const hint =
+    error ??
+    (loading
+      ? 'Buscando los modelos…'
+      : 'Define el conector y la potencia con los que la portada busca estaciones.')
+
+  return (
+    <>
+      <UnderlineField label="Auto" hint={hint}>
+        {(props) => (
+          <button
+            {...props}
+            type="button"
+            disabled={loading || error !== null}
+            onClick={() => {
+              setOpen(true)
+            }}
+            /*
+              `aria-haspopup="dialog"` es lo que convierte a esto en "abre una ventana" y no en
+              "hace algo": sin eso, quien navega con lector de pantalla escucha el nombre del auto
+              y un botón, y no tiene forma de saber que lo que sigue es elegir entre varios.
+            */
+            aria-haspopup="dialog"
+            className={`${props.className} flex cursor-pointer items-center justify-between gap-3 text-left disabled:cursor-not-allowed disabled:opacity-60`}
+          >
+            {/* Apagado cuando no hay auto: el renglón dice qué falta, no un valor. */}
+            <span className={selected === null ? 'text-text-muted/70' : ''}>
+              {selected === null ? 'Todavía no elegí' : vehicleLabelOf(selected)}
+            </span>
+            <ChevronRightIcon className="text-text-muted h-4 w-4 shrink-0" />
+          </button>
+        )}
+      </UnderlineField>
+
+      {open && (
+        <VehicleDialog
+          current={selected}
+          onSelect={(model) => {
+            onChange(model.id)
+            /*
+              Elegir cierra la ventana. **Y no guarda**: como el nombre y el avatar, el auto se
+              aplica al aceptar el formulario, así que Cancelar tiene que devolver la pantalla a
+              como estaba. Ver el comentario del avatar.
+            */
+            setOpen(false)
+          }}
+          onClose={() => {
+            setOpen(false)
+          }}
+        />
+      )}
+    </>
   )
 }
 
