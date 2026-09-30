@@ -9,6 +9,8 @@
 @import "./features/profile/profile.css";
 /* La burbuja de la reserva del celular y las animaciones de achicarla y agrandarla. */
 @import "./features/bookings/bookings.css";
+/* La ventanita de la campanita y los recuadros de aviso que entran solos. */
+@import "./features/notifications/notifications.css";
 
 /*
   Tema de la aplicación (RNF07 y RNF08).

@@ -82,18 +82,23 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     public NotificationFeed getHistory(Long recipientId, Long afterId) {
         List<Notification> items = afterId == null
-                ? repository.findTop50ByRecipientIdOrderByIdDesc(recipientId)
-                : repository.findTop50ByRecipientIdAndIdGreaterThanOrderByIdDesc(recipientId, afterId);
-        return new NotificationFeed(items, repository.countByRecipientIdAndReadAtIsNull(recipientId));
+                ? repository.findTop50ByRecipientIdAndDeletedAtIsNullOrderByIdDesc(recipientId)
+                : repository.findTop50ByRecipientIdAndIdGreaterThanAndDeletedAtIsNullOrderByIdDesc(
+                        recipientId, afterId);
+        return new NotificationFeed(items, repository.countByRecipientIdAndReadAtIsNullAndDeletedAtIsNull(recipientId));
     }
 
     @Override
     public void markAsRead(Long notificationId, Long recipientId) {
-        Notification notification = repository
-                .findById(notificationId)
-                .orElseThrow(() -> new NotificationNotFoundException(notificationId));
-        if (!notification.belongsTo(recipientId)) {
-            throw new NotificationAccessDeniedException(notificationId);
+        Notification notification = mine(notificationId, recipientId);
+        /*
+         * Un aviso borrado no se marca: para la pantalla ya no existe, y el 404 es la respuesta
+         * honesta a "marcá como leído esto que no está en tu buzón". El caso llega solo por una
+         * carrera —la pantalla lo tenía a la vista cuando otra pestaña lo borró— y lo resuelve la
+         * próxima consulta, que ya no lo trae.
+         */
+        if (notification.isDeleted()) {
+            throw new NotificationNotFoundException(notificationId);
         }
         // Idempotente, como cancelar una reserva: marcar dos veces no es un error.
         notification.markReadAt(clock.instant());
@@ -103,5 +108,43 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     public void markAllAsRead(Long recipientId) {
         repository.markAllAsRead(recipientId, clock.instant());
+    }
+
+    /*
+     * Borrar es marcar, no un DELETE. El motivo está en la migración add_notifications_deleted_at y
+     * es de este componente: la fila es la prueba de que el mensaje de la cola ya se procesó, y sin
+     * ella una reentrega reviviría el aviso borrado y le repetiría el mail al conductor.
+     *
+     * No pasa por isDeleted(): borrar lo ya borrado deja todo como está —markDeletedAt conserva la
+     * primera fecha— y contestar 204 es lo que hace que el reintento de una pantalla que perdió la
+     * respuesta no se vea como un error.
+     */
+    @Override
+    public void delete(Long notificationId, Long recipientId) {
+        Notification notification = mine(notificationId, recipientId);
+        notification.markDeletedAt(clock.instant());
+        repository.save(notification);
+    }
+
+    @Override
+    public void deleteAll(Long recipientId) {
+        repository.markAllAsDeleted(recipientId, clock.instant());
+    }
+
+    /**
+     * El aviso pedido, si existe y es de quien lo pide.
+     *
+     * <p>Está separado porque es la misma puerta para marcar y para borrar, y las dos tienen que
+     * contestar lo mismo ante lo mismo: 404 si no existe, 403 si es de otro. Escrito dos veces, un
+     * día una de las dos deja de mirar de quién es.
+     */
+    private Notification mine(Long notificationId, Long recipientId) {
+        Notification notification = repository
+                .findById(notificationId)
+                .orElseThrow(() -> new NotificationNotFoundException(notificationId));
+        if (!notification.belongsTo(recipientId)) {
+            throw new NotificationAccessDeniedException(notificationId);
+        }
+        return notification;
     }
 }

@@ -3,6 +3,7 @@ import { Outlet } from 'react-router'
 import IridescentBackdrop from '@/features/backdrop/IridescentBackdrop'
 import ActiveBookingBanner from '@/features/bookings/ActiveBookingBanner'
 import Navbar from '@/features/navigation/Navbar'
+import NotificationToasts from '@/features/notifications/NotificationToasts'
 
 /**
  * Layout raíz de la aplicación: lo que se ve en todas las pantallas.
@@ -51,6 +52,16 @@ export default function App() {
         de terminar cortado contra ella.
       */}
       <Navbar />
+
+      {/*
+        Los recuadros de aviso, montados una sola vez para toda la aplicación: un aviso puede llegar
+        estando en cualquier pantalla, y ponerlos en cada una sería repetir el mismo montaje cinco
+        veces y olvidarse en la sexta.
+
+        No ocupan lugar en el layout —se dibujan en un portal, anclados a la ventana— así que esta
+        línea no mueve nada de lo de abajo. Ver `NotificationToasts`.
+      */}
+      <NotificationToasts />
 
       {/*
         Columna flex, no un bloque suelto: así una pantalla que quiere ocupar todo el alto

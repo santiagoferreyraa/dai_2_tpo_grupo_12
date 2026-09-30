@@ -1,6 +1,6 @@
 # Procesos de desarrollo. Los levanta `pnpm dev`.
 #
-# mprocs muestra los cuatro en la misma terminal pero SEPARADOS: la lista de procesos queda a
+# mprocs muestra los cinco en la misma terminal pero SEPARADOS: la lista de procesos queda a
 # la izquierda y el log del que esté seleccionado ocupa el resto. Cada uno conserva su
 # propio scroll, así que el log del backend no se mezcla con el de Vite. Las teclas están
 # siempre a la vista, en el recuadro de ayuda de abajo a la izquierda.
@@ -13,12 +13,21 @@
 # y `pnpm dev:back` levantan exactamente lo mismo y no hay dos definiciones que mantener
 # sincronizadas.
 #
-# Son CUATRO, y cada uno es un artefacto desplegable distinto. `charging` es Reservas (8082) y
+# Son CINCO, y cada uno es un artefacto desplegable distinto. `charging` es Reservas (8082) y
 # necesita a `back` arriba: antes de retener un slot le pregunta a core por el conector. `pay` es
-# Pagos, que vive en ecopedia-integration (8083). Ver ARQUITECTURA §6.4.
+# Pagos, que vive en ecopedia-integration (8083). `async` es Notificaciones (8084). Ver
+# ARQUITECTURA §6.4.
 #
-# Para trabajar solo en el mapa o en el ABM alcanza con `back` y `front`; los otros dos hacen
-# falta para reservas y para la pantalla de medios de pago.
+# Para trabajar solo en el mapa o en el ABM alcanza con `back` y `front`; los otros tres hacen
+# falta para reservas, para la pantalla de medios de pago y para los avisos.
+#
+# **`async` es el único que quiere algo que no está acá: el broker.** Los avisos nacen en una cola
+# de Artemis, que vive en `docker-compose.yml`, así que sin `docker compose up -d activemq` este
+# proceso arranca igual —la campanita y la pantalla del perfil contestan— pero no le llega ningún
+# aviso nuevo, y su panel se llena de reintentos de conexión. Estaba fuera de esta lista por eso
+# justamente; está adentro ahora porque un proceso que falta se nota mucho menos que un panel
+# ruidoso, y el que reservaba esperando un aviso no tenía forma de saber por qué no llegaba.
+# El panel es suyo y no molesta a los otros cuatro: para eso están separados.
 #
 # ---
 #
@@ -38,5 +47,7 @@ procs:
     shell: pnpm dev:charging
   pay:
     shell: pnpm dev:pay
+  async:
+    shell: pnpm dev:async
   front:
     shell: pnpm dev:front

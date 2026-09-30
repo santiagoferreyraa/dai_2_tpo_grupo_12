@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
+import { refreshNotificationsSoon } from '@/features/notifications/data/notificationsStore'
 import { ApiError } from '@/lib/api'
 
 import { cancelBooking } from '../data/bookingsRepository'
@@ -54,6 +55,8 @@ export default function CancelBookingDialog({ booking, onClose }: CancelBookingD
     cancelBooking(booking.id).then(
       () => {
         refreshMyBookings()
+        /* Cancelar también genera un aviso. Ver `refreshNotificationsSoon`. */
+        refreshNotificationsSoon()
         onClose()
       },
       (reason: unknown) => {

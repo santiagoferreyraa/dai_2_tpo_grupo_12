@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { refreshNotificationsSoon } from '@/features/notifications/data/notificationsStore'
 import { ApiError } from '@/lib/api'
 
 import { confirmBooking, startHold } from './data/bookingsRepository'
@@ -133,6 +134,11 @@ export function useBookingFlow(connectorId: number): BookingFlow {
         pendingHolds.delete(connectorId)
         /* La franja y el perfil muestran las reservas: se enteran de la nueva sin recargar. */
         refreshMyBookings()
+        /*
+         * Y el buzón, que en un momento va a tener el aviso de esta reserva. No se pide ya mismo:
+         * el aviso pasa por la cola antes de existir. Ver `refreshNotificationsSoon`.
+         */
+        refreshNotificationsSoon()
         if (!mounted.current) return
         setStep({ kind: 'confirmed', booking })
       },
