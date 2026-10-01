@@ -8,9 +8,9 @@ import { EV_FACTS } from '../data/evFacts'
  * Una curiosidad sobre autos eléctricos. Ocupa el lugar del tiempo de carga cuando no hay sesión.
  *
  * **Por qué el tiempo de carga no puede estar ahí sin sesión.** Ese recuadro dice "TU auto tarda
- * tanto", y sin cuenta no hay auto: el número sale de `DRIVER_VEHICLE`, que es la ficha de un
- * vehículo de ejemplo. A quien todavía no entró se le estaba afirmando algo sobre un auto que no
- * declaró tener, con una precisión de minutos. Eso no es un dato incompleto, es un dato de otro.
+ * tanto", y el auto sale del perfil: sin cuenta no hay perfil del que sacarlo. Su cara de "elegí
+ * tu auto" tampoco sirve acá, porque manda al formulario del perfil, que es justamente a donde
+ * quien no entró no puede ir. La curiosidad, en cambio, es cierta para cualquiera.
  *
  * **Y por qué se reemplaza en vez de sacarse.** La fila del medio son tres recuadros y el ancho
  * está repartido entre ellos: quitando uno, los otros dos se estiran y la columna de la derecha
