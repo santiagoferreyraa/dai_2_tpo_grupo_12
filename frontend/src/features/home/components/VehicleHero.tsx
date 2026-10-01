@@ -3,10 +3,9 @@ import { Link } from 'react-router'
 import { useSession } from '@/features/auth/session'
 import { displayNameOf } from '@/lib/displayName'
 
-import { BatteryIcon, BoltIcon, GaugeIcon, PlugIcon } from '@/features/navigation/icons'
-
+import { vehicleImageSrc } from '@/features/vehicles/assets'
+import SpecIcon from '@/features/vehicles/components/SpecIcon'
 import { VEHICLE_IMAGE, specsOf, useDriverVehicle } from '@/features/vehicles/vehicle'
-import type { SpecIcon } from '@/features/vehicles/vehicle'
 
 import { greetingFor } from '../greeting'
 
@@ -29,20 +28,6 @@ import { greetingFor } from '../greeting'
  * ícono gris del navegador en el medio de lo primero que alguien mira.
  */
 
-/**
- * El dibujo de cada dato.
- *
- * La traducción vive acá y no en `vehicle.ts` por lo mismo que explica el tipo: allá están los
- * datos, acá el dibujo. El día que el vehículo venga del backend, el nombre del ícono llega en
- * el JSON y esta tabla no se toca.
- */
-const SPEC_ICONS: Record<SpecIcon, (props: { className?: string }) => React.ReactElement> = {
-  motor: BoltIcon,
-  connector: PlugIcon,
-  power: GaugeIcon,
-  battery: BatteryIcon,
-}
-
 export default function VehicleHero({ className = '' }: { className?: string }) {
   const session = useSession()
   const vehicle = useDriverVehicle()
@@ -57,10 +42,26 @@ export default function VehicleHero({ className = '' }: { className?: string }) 
   const hasSpecs = session !== null && vehicle !== null
 
   /*
-    Una sola imagen para las dos caras. Hubo un `/car-guest.png` aparte para la portada sin
-    sesión, pero era el mismo dibujo byte por byte. Ver `vehicle.ts`.
+    La foto del auto elegido, y el dibujo genérico cuando no hay ninguno.
+
+    **Una sola, no las dos.** Probé ponerlas en dos capas para que el genérico hiciera de
+    reemplazo cuando la foto de un modelo no está —un fondo no tiene `onError`—, y está mal: las
+    fotos del catálogo son PNG con fondo transparente, así que el genérico se veía POR DETRÁS del
+    auto de verdad y la portada mostraba dos autos encimados. Lo que un fondo no puede hacer es
+    enterarse de que no cargó; si la foto falta, el recuadro queda sin auto, que es lo que hacía
+    antes de que hubiera fotos por modelo.
+
+    Sin sesión o sin auto elegido va el genérico. Hubo un `/car-guest.png` aparte para esa cara,
+    pero era el mismo dibujo byte por byte. Ver `vehicle.ts`.
+
+    **El porcentaje de `bg-[length:…]` manda sobre la altura del ARCHIVO, no sobre la del auto**, y
+    por eso las fotos del catálogo están recortadas al ras: si una trae aire transparente arriba y
+    abajo, su auto se dibuja más chico que el de al lado con la misma medida —había fotos con el
+    auto ocupando el 48% del archivo y otras el 97%, o sea el doble—. Recortadas, el mismo
+    porcentaje da el mismo tamaño para los diecinueve, y nada en el código tiene que saber qué
+    margen traía cada una.
   */
-  const image = VEHICLE_IMAGE
+  const image = vehicle === null ? VEHICLE_IMAGE : vehicleImageSrc(vehicle)
 
   /*
    * A qué altura se apoya el auto, y por qué son dos valores y no uno.
@@ -219,7 +220,6 @@ export default function VehicleHero({ className = '' }: { className?: string }) 
           */
           <dl className="grid grid-cols-2 justify-items-center gap-x-3 gap-y-4 sm:grid-cols-4 md:gap-x-4 md:gap-y-5">
             {specsOf(vehicle).map((spec) => {
-              const Icon = SPEC_ICONS[spec.icon]
               return (
                 <div key={spec.label} className="flex items-center gap-2 md:gap-3">
                   {/*
@@ -229,7 +229,10 @@ export default function VehicleHero({ className = '' }: { className?: string }) 
                     sostiene solo el mismo peso, y el aire alrededor hace el trabajo que hacía el
                     borde.
                   */}
-                  <Icon className="text-primary h-8 w-8 shrink-0 md:h-10 md:w-10" />
+                  <SpecIcon
+                    name={spec.icon}
+                    className="text-primary h-8 w-8 shrink-0 md:h-10 md:w-10"
+                  />
 
                   <div>
                     <dt className="text-text-muted text-[11px] font-medium">{spec.label}</dt>

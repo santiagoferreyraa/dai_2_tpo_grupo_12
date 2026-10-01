@@ -1,21 +1,21 @@
 import { useState } from 'react'
 
-import { vehicleImageSrc } from '../assets'
+import { VEHICLE_IMAGE_FALLBACK, vehicleImageSrc } from '../assets'
 import type { VehicleModel } from '../types'
 
 /**
- * La foto de un modelo, con una silueta de auto como reemplazo.
+ * La foto de un modelo, con un reemplazo para cuando el archivo no está.
  *
- * **La silueta va dibujada acá y no es un archivo.** Si el reemplazo de "falta una imagen" fuera a
- * su vez una imagen, bastaría con que ESA no estuviera para volver al ícono roto del navegador.
- * Un SVG en línea no puede faltar.
+ * **El reemplazo tiene dos escalones.** El primero es `car-not-found.png`, un auto genérico que
+ * ocupa el mismo lugar que una foto real; el segundo es una silueta dibujada acá, para el caso de
+ * que ESA imagen tampoco esté. Sin el segundo escalón, bastaría con que faltara el archivo del
+ * reemplazo para volver al ícono roto del navegador, y un SVG en línea no puede faltar.
  *
- * **Se ve apagada a propósito.** Tiene que leerse como "acá va una foto que todavía no está", no
- * como el dibujo del auto: en una grilla de ocho, una silueta con el mismo peso que las fotos
- * reales haría dudar de cuál es cuál.
+ * La silueta se ve apagada a propósito: tiene que leerse como "acá va una foto que todavía no
+ * está", no como el dibujo del auto.
  *
- * El `alt` queda vacío cuando hay foto porque el nombre del modelo está escrito al lado, y
- * repetirlo le haría leer dos veces lo mismo a quien usa un lector de pantalla.
+ * El `alt` queda vacío porque el nombre del modelo está escrito al lado, y repetirlo le haría leer
+ * dos veces lo mismo a quien usa un lector de pantalla.
  */
 export default function VehicleImage({
   model,
@@ -24,9 +24,15 @@ export default function VehicleImage({
   model: VehicleModel
   className?: string
 }) {
-  const [failed, setFailed] = useState(false)
+  /*
+    Cuántos escalones bajó la imagen de ESTE modelo. Va atado al `id` en vez de limpiarse con un
+    efecto: cambiar de modelo tiene que volver a intentar con la foto propia, y comparar contra el
+    id lo resuelve al dibujar, sin un render intermedio mostrando el reemplazo del anterior.
+  */
+  const [failed, setFailed] = useState<{ id: number; step: number } | null>(null)
+  const step = failed !== null && failed.id === model.id ? failed.step : 0
 
-  if (failed) {
+  if (step >= 2) {
     return (
       <svg
         viewBox="0 0 64 28"
@@ -47,10 +53,17 @@ export default function VehicleImage({
 
   return (
     <img
-      key={model.id}
-      src={vehicleImageSrc(model)}
+      /*
+        La `key` lleva el escalón y no solo el modelo: cambiando el `src` sobre el mismo elemento,
+        algunos navegadores no vuelven a disparar `onError` si la segunda dirección también falla,
+        y el reemplazo roto se quedaría puesto.
+      */
+      key={`${String(model.id)}:${String(step)}`}
+      src={step === 0 ? vehicleImageSrc(model) : VEHICLE_IMAGE_FALLBACK}
       alt=""
-      onError={() => setFailed(true)}
+      onError={() => {
+        setFailed({ id: model.id, step: step + 1 })
+      }}
       className={`object-contain ${className}`}
     />
   )

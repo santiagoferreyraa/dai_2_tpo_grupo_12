@@ -60,7 +60,21 @@
   --color-primary: #b9fe70;
   --color-on-primary: #0d111c;
   --color-danger: #fca5a5;
+  --color-selected: #8ed94f;
 }
+
+/*
+  **`--color-selected` es el único color que NO cambia entre temas**, y es a propósito: es el verde
+  con el que se marca el auto del conductor en la grilla del selector, y ese contorno no se apoya
+  sobre el fondo de la aplicación sino sobre el de la ventana modal, que es casi el mismo gris en
+  los dos temas.
+
+  No se usa `--color-primary`, que es el verde que sí cambia, porque el del tema claro es bastante
+  oscuro: de contorno se leía como un gris verdoso y no como "este es el tuyo", que fue justamente
+  lo que había que arreglar. Y es un color que no tiene que llegar a los 4.5 de WCAG porque no hay
+  nada que leer ahí: el cartel que lo acompaña está marcado como decorativo, y lo que anuncia el
+  lector de pantalla es el `aria-pressed` del botón.
+*/
 
 /*
   Los resplandores del fondo (ver `.app-shell`). Van sueltos y no en `@theme` porque no son
@@ -252,6 +266,27 @@
 
 [data-theme="light"] .glass-modal {
   background-color: color-mix(in srgb, var(--color-surface) 96%, transparent);
+}
+
+/*
+  El vidrio que tiene una FOTO atrás y no un fondo: la ficha técnica del selector de auto, que se
+  monta sobre la cola del modelo.
+
+  **El 32% de `.glass-panel` está medido contra el fondo de la aplicación**, que es parejo y de un
+  color conocido. Acá atrás hay un auto: zonas casi negras —una rueda, un vidrio polarizado— y
+  otras casi blancas, en cualquier lugar del panel según el modelo. Sobre las oscuras, el rótulo
+  gris de cada dato se perdía.
+
+  El 80% deja la cola del auto como una sombra detrás del vidrio —que es lo que el montaje quiere
+  decir— y al mismo tiempo acota cuánto puede llegar a oscurecerse el panel: en el peor punto, el
+  texto sigue por encima del 4.5 de WCAG. Es el mismo valor en los dos temas porque el problema no
+  es el tema sino la foto, que es la misma en los dos.
+
+  No alcanzaba con subirlo al valor de `.glass-modal`: ahí el auto desaparece del todo y la ficha
+  deja de estar montada sobre nada.
+*/
+.glass-over-photo {
+  background-color: color-mix(in srgb, var(--color-surface) 80%, transparent);
 }
 
 /*

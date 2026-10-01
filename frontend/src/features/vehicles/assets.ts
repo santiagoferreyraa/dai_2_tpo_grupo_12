@@ -53,7 +53,16 @@ export function brandLogoSrc(brand: string): string {
   return `/vehicles/brands/${brandSlug(brand)}.png`
 }
 
-/** La foto de un modelo. Ver `VehicleImage`, que dibuja una silueta cuando el archivo no está. */
+/** La foto de un modelo. Ver `VehicleImage`, que la reemplaza cuando el archivo no está. */
 export function vehicleImageSrc(model: VehicleModel): string {
   return `/vehicles/models/${model.imageSlug}.png`
 }
+
+/**
+ * La foto que va en lugar de la de un modelo que todavía no tiene archivo.
+ *
+ * **Vive en la misma carpeta que las fotos reales** y no suelta en `public/`: es una foto de auto
+ * más, del mismo tamaño y recortada igual, y separarla haría que quien agrega modelos tenga que
+ * saber de dos lugares en vez de uno.
+ */
+export const VEHICLE_IMAGE_FALLBACK = '/vehicles/models/car-not-found.png'

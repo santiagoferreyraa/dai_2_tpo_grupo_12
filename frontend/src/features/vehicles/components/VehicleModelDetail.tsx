@@ -1,6 +1,6 @@
-import { CONNECTOR_TYPE_LABEL } from '@/features/terminals/format'
-
 import type { VehicleModel } from '../types'
+import { specsOf } from '../vehicle'
+import SpecIcon from './SpecIcon'
 import VehicleImage from './VehicleImage'
 
 /**
@@ -41,12 +41,13 @@ export default function VehicleModelDetail({
   selected: boolean
   onSelect: () => void
 }) {
-  const specs = [
-    { label: 'Motor', value: `${String(model.motorKw)} kW` },
-    { label: 'Conector', value: CONNECTOR_TYPE_LABEL[model.connectorType] },
-    { label: 'Carga máx.', value: `${String(model.maxChargeKw)} kW` },
-    { label: 'Batería', value: `${String(model.batteryKwh)} kWh` },
-  ]
+  /*
+    Los cuatro datos salen de `specsOf` y no de una lista escrita acá: son EXACTAMENTE los que
+    muestra la ficha de la portada, con el mismo rótulo, el mismo redondeo y el mismo dibujo. Los
+    tenía escritos aparte y eso ya había dejado una diferencia —allá "Carga máx." venía con su
+    ícono y acá no—; con una sola fuente, el día que se agregue un dato aparece en los dos lados.
+  */
+  const specs = specsOf(model)
 
   return (
     <div className="relative flex h-full flex-col">
@@ -55,10 +56,20 @@ export default function VehicleModelDetail({
         produce el solapado: en dos columnas cada uno termina donde empieza el otro, y no hay forma
         de que la cola quede por debajo del vidrio sin márgenes negativos peleándose con la grilla.
 
-        Debajo de `md` el montaje se apaga y los dos se apilan: en un teléfono, una ficha encima
-        del auto no deja ver ninguno de los dos.
+        El `justify-center` es del celular: ahora que la ventana tiene alto fijo, el detalle de un
+        modelo no siempre lo llena —depende de cuánto mida la foto—, y pegado arriba dejaba un
+        hueco al pie que se leía como que faltaba algo abajo.
+
+        Debajo de `md` el montaje cambia de eje pero NO se apaga: ahí la ficha es una tarjeta ancha
+        debajo del auto, y sube un poco —`-mt-10`— hasta cruzarle las ruedas. Es el mismo gesto que
+        la barra de la portada, y por el mismo motivo: apoyada debajo con un espacio en el medio,
+        la foto y la ficha se leen como dos tarjetas que casualmente están una arriba de la otra;
+        montada, son el auto y sus datos.
+
+        Lo que sí se apaga es el montaje LATERAL: una ficha encima del auto, en un teléfono, no
+        deja ver ninguno de los dos.
       */}
-      <div className="flex min-h-0 flex-1 flex-col gap-4 md:relative md:block">
+      <div className="flex min-h-0 flex-1 flex-col justify-center md:relative md:block">
         {/*
           El auto, centrado en la parte del panel que no tapa la ficha.
 
@@ -75,13 +86,13 @@ export default function VehicleModelDetail({
             —`right-14`— el centro se corre para el lado del hueco libre y la cola sigue metiéndose
             abajo del vidrio, que es lo único que del solapado tiene que verse.
           */
-          className="h-32 w-full md:absolute md:inset-y-0 md:right-14 md:left-0 md:h-full md:w-auto"
+          className="h-44 w-full md:absolute md:inset-y-0 md:right-14 md:left-0 md:h-full md:w-auto"
         />
 
         {/*
           La barra de vidrio, de pie y de arriba abajo. Mismo `.glass-panel` que la ficha de la
-          portada; lo único que cambia es la orientación, porque acá el lugar libre está al costado
-          del auto y no abajo.
+          portada, con más cuerpo —`.glass-over-photo`, que explica por qué— y en la otra
+          orientación, porque acá el lugar libre está al costado del auto y no abajo.
 
           **Va de borde a borde en vertical —`inset-y-0`— y no es un recuadro flotante.** Ocupando
           solo un pedazo, quedaba una tarjeta suelta apoyada sobre la esquina; llegando arriba y
@@ -91,31 +102,71 @@ export default function VehicleModelDetail({
           `justify-center` mantiene los datos y el botón en el medio de esa franja: pegados arriba,
           el vidrio se vería medio vacío justo en la zona donde no hay auto que mirar a través.
         */}
-        <div className="glass-panel relative z-10 flex flex-col justify-center rounded-2xl p-5 md:absolute md:inset-y-0 md:right-0 md:w-64">
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+        <div className="glass-panel glass-over-photo relative z-10 -mt-10 flex flex-col justify-center rounded-2xl p-5 md:absolute md:inset-y-0 md:right-0 md:mt-0 md:w-64">
+          {/*
+            Los datos van con `my-auto` para que el botón pueda irse al pie de la franja: el espacio
+            libre se reparte arriba y abajo de la ficha, así que los datos quedan centrados —que es
+            lo que pide el vidrio— y el botón apoyado contra el fondo, lejos de ellos. Pegado
+            debajo del último dato se leía como un dato más de la lista.
+
+            En el celular la franja mide lo que pide su contenido, así que no hay espacio libre que
+            repartir y los márgenes automáticos no mueven nada.
+          */}
+          {/*
+            Los cuatro datos, uno debajo del otro y no en dos columnas.
+
+            **En dos columnas el ancho de cada celda es la mitad de una franja que ya es angosta**,
+            y eso obligaba a escribirlos chicos para que "150 kW" entrara sin cortarse. Apilados,
+            cada dato tiene los 16rem enteros: entran con el cuerpo que les corresponde —son LA
+            información de esta pantalla, no una nota al pie— y de paso se leen en orden, que es
+            como se compara una ficha técnica.
+
+            El alto sobra: la franja va de punta a punta del panel y cuatro renglones no lo llenan.
+            Es justamente el espacio que antes quedaba vacío en el medio.
+
+            **En el celular vuelven a ser dos columnas**, y no es una contradicción: ahí la ficha no
+            es una franja de pie al costado del auto sino una tarjeta ancha debajo, así que el que
+            sobra es el ancho y el que falta es el alto. Cuatro renglones apilados empujaban el
+            botón fuera de la pantalla.
+          */}
+          <dl className="my-auto grid grid-cols-2 gap-4 md:grid-cols-1 md:gap-y-4">
             {specs.map((spec) => (
-              <div key={spec.label} className="min-w-0">
-                <dt className="text-text-muted text-[10px] font-medium tracking-wide uppercase">
-                  {spec.label}
-                </dt>
-                <dd className="text-text truncate text-base leading-tight font-extrabold tracking-tight">
-                  {spec.value}
-                </dd>
+              /*
+                Dibujo a la izquierda y, a su derecha, el rótulo arriba del valor: la misma
+                anatomía que la ficha de la portada. Son los mismos cuatro datos del mismo auto,
+                así que verlos acomodados distinto en dos pantallas los haría leer como dos cosas
+                distintas.
+              */
+              <div key={spec.label} className="flex items-center gap-3">
+                <SpecIcon name={spec.icon} className="text-primary h-8 w-8 shrink-0" />
+
+                <div className="min-w-0">
+                  <dt className="text-text-muted text-[11px] font-medium">{spec.label}</dt>
+                  <dd className="text-text truncate text-xl leading-tight font-extrabold tracking-tight">
+                    {spec.value}
+                  </dd>
+                </div>
               </div>
             ))}
           </dl>
 
           {selected ? (
-            <p className="text-text-muted mt-4 rounded-xl px-4 py-2.5 text-center text-sm font-semibold">
+            <p className="text-text-muted mt-5 rounded-xl px-4 py-2.5 text-center text-sm font-semibold md:mt-0">
               Ya es tu auto
             </p>
           ) : (
             <button
               type="button"
               onClick={onSelect}
-              className="brand-fill text-on-brand mt-4 w-full cursor-pointer rounded-xl px-4 py-2.5 text-sm font-semibold"
+              /*
+                El `mt` es para el celular, donde la franja mide lo que pide su contenido: ahí los
+                márgenes automáticos de los datos no tienen espacio libre que repartir y el botón
+                quedaba pegado al último dato. En escritorio sobra alto, el `my-auto` de los datos
+                ya los separa, y un margen extra solo correría el botón hacia arriba.
+              */
+              className="brand-fill text-on-brand mt-5 w-full cursor-pointer rounded-xl px-4 py-2.5 text-sm font-semibold md:mt-0"
             >
-              Elegir este
+              Elegir
             </button>
           )}
         </div>

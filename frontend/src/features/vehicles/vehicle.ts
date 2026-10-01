@@ -86,13 +86,14 @@ export function vehicleLabelOf(vehicle: VehicleModel): string {
 }
 
 /**
- * Dónde vive la imagen del auto. Si el archivo no está, el recuadro se dibuja igual, sin auto.
+ * El dibujo genérico de un auto: el que va cuando no hay ninguno elegido.
  *
- * **Es una sola para todos los modelos, y es una limitación conocida.** El dibujo de
- * `public/car.png` es genérico y no corresponde a ninguna marca real; el catálogo, en cambio, sí
- * tiene marcas reales. Mostrarlo para cualquier modelo es lo honesto que se puede hacer con un
- * solo dibujo: la alternativa —asignarle este dibujo a un fabricante concreto— le atribuiría a
- * una empresa un auto que no hizo. El día que haya una imagen por modelo, la columna va en
- * `vehicle_models` y esta constante pasa a ser un campo más de la ficha.
+ * **Ya no se usa para representar a un modelo concreto.** Cada ficha del catálogo tiene su foto
+ * —ver `vehicleImageSrc`—, así que la portada muestra el auto que el conductor eligió de verdad.
+ * Este dibujo quedó para las dos situaciones en las que no hay modelo del que sacar una foto: la
+ * portada sin sesión y la de quien todavía no eligió.
+ *
+ * Sigue haciendo de reemplazo cuando la foto de un modelo no está, que es un estado posible
+ * porque las fotos son archivos sueltos en `public` y no una columna de la base.
  */
 export const VEHICLE_IMAGE = '/car.png'

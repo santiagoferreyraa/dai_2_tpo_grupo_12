@@ -103,6 +103,17 @@ export default function VehicleDialog({ current, onSelect, onClose }: VehicleDia
   const activeBrand = brands.find(([brand]) => brand === openBrand)?.[0] ?? brands[0]?.[0] ?? null
   const activeModels = brands.find(([brand]) => brand === activeBrand)?.[1] ?? []
 
+  /*
+    El detalle solo se muestra mientras siga abierta SU marca.
+
+    **Es derivado y no un `setDetail(null)` en el buscador.** La marca abierta no la decide solo el
+    riel: filtrar puede sacar del listado a la que estaba abierta y entonces `activeBrand` cae a la
+    primera que quedó. Buscando "chev" con un Renault abierto, el encabezado pasaba a decir
+    Chevrolet y abajo seguía la ficha del Renault, que es el auto de otra marca con el logo de esta.
+    Comparando acá, el detalle y el logo no pueden desacoplarse por ningún camino.
+  */
+  const visibleDetail = detail !== null && detail.brand === activeBrand ? detail : null
+
   const close = useCallback(() => {
     onClose()
   }, [onClose])
@@ -170,11 +181,16 @@ export default function VehicleDialog({ current, onSelect, onClose }: VehicleDia
           event.stopPropagation()
         }}
         /*
-          Alto fijo en pantalla grande y no "el que pida el contenido": la grilla cambia de tamaño
-          con cada marca —Tesla tiene dos modelos y BYD cuatro— y sin un alto estable la ventana
-          crecería y se encogería a cada clic del riel, moviendo el propio riel que se está usando.
+          Alto fijo, **también en el celular**, y no "el que pida el contenido": la grilla cambia de
+          tamaño con cada marca —Tesla tiene dos modelos y BYD cuatro— y el detalle de un modelo
+          mide distinto que la grilla de la que sale. Sin un alto estable, la ventana crece y se
+          encoge a cada toque: en escritorio eso mueve el riel que se está usando, y en el celular
+          mueve la tira de marcas y la cruz, o sea las dos cosas de las que uno se está agarrando.
+
+          `max-h-full` lo acota contra pantallas bajas, así que en un teléfono chico la ventana
+          ocupa lo que haya y sigue siendo siempre la misma.
         */
-        className="glass-panel glass-modal relative flex max-h-full w-full max-w-4xl flex-col overflow-hidden rounded-3xl outline-none md:h-[32rem] md:flex-row"
+        className="glass-panel glass-modal relative flex h-[32rem] max-h-full w-full max-w-4xl flex-col overflow-hidden rounded-3xl outline-none md:flex-row"
       >
         {/*
           La columna izquierda: el buscador arriba, fijo, y debajo la rueda de marcas.
@@ -238,14 +254,23 @@ export default function VehicleDialog({ current, onSelect, onClose }: VehicleDia
         </div>
 
         {/*
-          El bloque de marcas del celular: el mismo buscador y la misma lista, sin la rueda.
+          El bloque de marcas del celular: la misma lista, sin la rueda y **sin el buscador**.
 
           La tira no lleva la escala ni la repetición: las dos necesitan alto para leerse, y acá el
           alto es justo lo que necesitan las fotos.
-        */}
-        <div className="border-border/60 flex shrink-0 flex-col gap-2 border-b p-3 md:hidden">
-          <BrandSearch value={query} onChange={setQuery} />
 
+          **El buscador no está porque en un teléfono cuesta más de lo que ahorra.** Abrirlo levanta
+          el teclado, que se come la mitad de la pantalla —justo la mitad donde están las fotos— y
+          lo que filtra es una tira que se recorre de un pulgar. En la columna de escritorio sí
+          está: ahí las marcas son una rueda larga y el campo no le saca lugar a nada.
+        */}
+        {/*
+          El relleno de la derecha es el lugar de la cruz, que flota encima de esta franja. Va en
+          el contenedor y no en la tira: un `padding` del lado por el que se scrollea lo ignoran
+          varios navegadores en el último elemento, así que la última marca terminaba igual por
+          debajo de la cruz. Achicando la caja, la tira no llega nunca hasta ahí.
+        */}
+        <div className="border-border/60 shrink-0 border-b p-3 pr-14 md:hidden">
           <nav
             ref={mobileStrip}
             aria-label="Marcas"
@@ -260,7 +285,7 @@ export default function VehicleDialog({ current, onSelect, onClose }: VehicleDia
                   openBrandAndCloseDetail(brand)
                 }}
                 className={`shrink-0 cursor-pointer rounded-xl px-3 py-2 text-sm font-extrabold tracking-tight whitespace-nowrap uppercase transition-colors ${
-                  brand === activeBrand ? 'bg-surface/80 text-text' : 'text-text-muted'
+                  brand === activeBrand ? 'bg-surface/80 text-primary' : 'text-text-muted'
                 }`}
               >
                 {brand}
@@ -279,7 +304,20 @@ export default function VehicleDialog({ current, onSelect, onClose }: VehicleDia
             con una sí y con la otra no. Con la banda fija, los dos lados se acomodan contra la
             misma medida. Ver el envoltorio del buscador, que usa este mismo alto.
           */}
-          <header className="flex h-22 shrink-0 items-center gap-4 px-5">
+          <header
+            /*
+              En el celular el encabezado SOLO existe cuando hay un modelo abierto: ahí lleva su
+              nombre. En la grilla no tiene nada que mostrar —el logo está escondido y la cruz
+              flota en la esquina de la ventana—, así que sin alto se colapsa solo y las fotos
+              empiezan pegadas a la tira de marcas, que es de donde vienen.
+
+              En escritorio la banda está siempre, porque siempre tiene el logo adentro y porque
+              su alto es el que alinea los dos lados de la ventana. Ver el buscador de la columna.
+            */
+            className={`flex shrink-0 items-center gap-4 px-5 md:h-22 ${
+              visibleDetail === null ? '' : 'h-14'
+            }`}
+          >
             {/*
               El título accesible dice lo que la pantalla muestra —"Elegí tu auto"— y no lo que dice
               el logo: quien navega con lector de pantalla necesita saber qué es esta ventana antes
@@ -299,7 +337,19 @@ export default function VehicleDialog({ current, onSelect, onClose }: VehicleDia
               el alto, un logotipo alargado se comería el ancho del panel hasta chocar con la cruz.
             */}
             {activeBrand !== null && (
-              <BrandLogo brand={activeBrand} className="max-h-14 max-w-56 shrink-0" />
+              /*
+                El logo no está en el celular. **La tira de marcas de arriba ya dice en cuál está
+                parado el conductor**, y en una pantalla angosta repetirlo le saca a la foto del
+                auto el alto que necesita para leerse. En escritorio no hay esa competencia: la
+                marca abierta se lee en el riel de la izquierda, que está lejos, y el logo es lo
+                que encabeza el panel.
+
+                El envoltorio es lo que se esconde, y no el logo: cuando el archivo no está,
+                `BrandLogo` dibuja el nombre en letras, que no recibe estas clases.
+              */
+              <span className="hidden shrink-0 md:block">
+                <BrandLogo brand={activeBrand} className="max-h-14 max-w-56" />
+              </span>
             )}
 
             {/*
@@ -314,9 +364,9 @@ export default function VehicleDialog({ current, onSelect, onClose }: VehicleDia
               `min-w-0` con `truncate` porque un nombre largo entre un logo ancho y la cruz no
               tiene a dónde crecer: sin esto empuja la cruz fuera del panel.
             */}
-            {detail !== null && (
+            {visibleDetail !== null && (
               <p className="text-text min-w-0 truncate text-2xl leading-none font-extrabold tracking-tight uppercase">
-                {detail.name}
+                {visibleDetail.name}
               </p>
             )}
 
@@ -324,7 +374,15 @@ export default function VehicleDialog({ current, onSelect, onClose }: VehicleDia
               type="button"
               onClick={close}
               aria-label="Cerrar"
-              className="text-text-muted hover:text-text hover:bg-surface/70 focus-visible:outline-primary ml-auto flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors focus-visible:outline-2"
+              /*
+                En el celular la cruz se sale del encabezado y se va a la esquina de la ventana,
+                por encima de la tira de marcas: ahí no le compite el lugar a nada y cae donde el
+                pulgar la busca. Adentro del encabezado quedaba a media altura de la pantalla, con
+                la tira de marcas por encima, que es el último lugar donde uno mira para cerrar.
+
+                En escritorio sigue en el encabezado, alineada con el logo de la marca.
+              */
+              className="text-text-muted hover:text-text hover:bg-surface/70 focus-visible:outline-primary absolute top-2.5 right-2.5 z-20 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors focus-visible:outline-2 md:static md:ml-auto"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -347,12 +405,12 @@ export default function VehicleDialog({ current, onSelect, onClose }: VehicleDia
               </p>
             ) : loading ? (
               <p className="text-text-muted p-4 text-sm">Buscando los modelos…</p>
-            ) : detail !== null ? (
+            ) : visibleDetail !== null ? (
               <VehicleModelDetail
-                model={detail}
-                selected={detail.id === current?.id}
+                model={visibleDetail}
+                selected={visibleDetail.id === current?.id}
                 onSelect={() => {
-                  onSelect(detail)
+                  onSelect(visibleDetail)
                 }}
               />
             ) : (

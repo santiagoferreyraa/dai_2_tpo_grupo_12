@@ -75,8 +75,11 @@ export default function EditProfilePage() {
     Es la misma forma que el nombre, y por el mismo motivo.
   */
   /*
-    El auto, con la misma forma que el nombre y por el mismo motivo: `null` mientras nadie tocó el
-    selector en esta visita, y hasta entonces manda lo que diga la sesión. El perfil llega un
+    El auto, con la misma forma que el nombre: `null` mientras nadie tocó el selector en esta
+    visita, y hasta entonces manda lo que diga la sesión. **Lo que no comparte es el momento de
+    guardar** —el auto se escribe apenas se elige, ver `persistVehicle`—, y el estado sigue
+    existiendo igual: el formulario tiene que mostrar lo elegido antes de que vuelva la respuesta,
+    y lo vuelve a mandar al aceptar por si aquella no se pudo hacer. El perfil llega un
     instante después de entrar —ver `hydrateProfile`—, así que inicializar el estado con él dejaría
     el selector en "Todavía no elegí" para siempre a quien llega rápido a esta pantalla.
 
@@ -107,6 +110,39 @@ export default function EditProfilePage() {
     tres, y ahí sí los tres son obligatorios.
   */
   const changingPassword = currentPassword !== '' || newPassword !== '' || confirmation !== ''
+
+  /**
+   * Guarda el auto en cuanto se elige, sin esperar al botón de abajo.
+   *
+   * **Es la excepción a "acá nada se guarda hasta Aceptar", y la hace la propia pantalla del
+   * selector.** El nombre y el avatar se escriben en un formulario: lo que se ve mientras se
+   * tipea es un borrador, y Cancelar lo descarta. El auto no: se elige adentro de una ventana
+   * que se abre, se recorre y se cierra con un botón que dice "Elegir", y esa ventana cerrándose
+   * ES el gesto de confirmación. Dejándolo esperando al pie del formulario, quien elegía su auto
+   * y se iba a la portada —que es justo lo que invita a hacer, porque la portada es la que usa el
+   * dato— no se llevaba nada: ni la ficha en la portada, ni la elección al recargar.
+   *
+   * **Manda el nombre GUARDADO y no el tipeado**, que es lo que mantiene en pie la regla de
+   * arriba para el resto del formulario: el backend reemplaza el nombre con el que le llegue, así
+   * que mandando el del campo, elegir un auto guardaría de rebote un nombre a medio escribir que
+   * Cancelar ya no podría deshacer.
+   *
+   * Si el perfil todavía no llegó no hay nombre que mandar —y mandar vacío lo rechaza el
+   * backend—, así que ahí no se guarda nada y queda para el envío del formulario, que es lo que
+   * pasaba antes de esto. El selector tampoco se puede abrir hasta que llegue el catálogo, que
+   * tarda lo mismo.
+   */
+  async function persistVehicle(vehicleModelId: number | null): Promise<void> {
+    const savedName = session?.fullName ?? null
+    if (savedName === null || savedName.trim() === '') return
+
+    setFailure(null)
+    try {
+      applyProfile(await updateMyProfile(savedName, vehicleModelId))
+    } catch (cause: unknown) {
+      setFailure(cause instanceof ApiError ? cause.message : 'No se pudo guardar el vehículo')
+    }
+  }
 
   function validate(): boolean {
     const found: Record<string, string | undefined> = {
@@ -219,7 +255,13 @@ export default function EditProfilePage() {
             )}
           </UnderlineField>
 
-          <VehiclePicker value={vehicleModelId} onChange={setPickedVehicle} />
+          <VehiclePicker
+            value={vehicleModelId}
+            onChange={(picked) => {
+              setPickedVehicle(picked)
+              void persistVehicle(picked)
+            }}
+          />
         </fieldset>
 
         <fieldset className="glass-inset flex flex-col gap-5 rounded-3xl p-6">
@@ -419,9 +461,8 @@ function VehiclePicker({
           onSelect={(model) => {
             onChange(model.id)
             /*
-              Elegir cierra la ventana. **Y no guarda**: como el nombre y el avatar, el auto se
-              aplica al aceptar el formulario, así que Cancelar tiene que devolver la pantalla a
-              como estaba. Ver el comentario del avatar.
+              Elegir cierra la ventana, **y guarda**: a diferencia del nombre y del avatar, acá
+              el gesto ya se confirmó adentro del selector. El porqué está en `persistVehicle`.
             */
             setOpen(false)
           }}

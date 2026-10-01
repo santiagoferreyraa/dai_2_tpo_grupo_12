@@ -295,7 +295,7 @@ export default function BrandRail({ brands, activeBrand, onSelect }: BrandRailPr
               style={{ transform: `scale(${String(scale)})` }}
               className={`shrink-0 origin-left cursor-pointer px-5 text-left text-base font-extrabold tracking-tight whitespace-nowrap transition-[transform,color,opacity] duration-200 ${
                 selected
-                  ? 'text-text py-2.5 opacity-100'
+                  ? 'text-primary py-2.5 opacity-100'
                   : 'text-text-muted hover:text-text py-1.5 opacity-70 hover:opacity-100'
               }`}
             >
