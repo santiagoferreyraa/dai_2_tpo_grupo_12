@@ -13,6 +13,7 @@ public interface PaymentDirectory {
      * @param driverId Identificador del conductor
      * @param authToken Token de autenticación del usuario (para propagación si corresponde)
      * @return true si tiene tarjeta registrada y cobrable, false en caso contrario
+     * @throws PaymentMethodsUnavailableException si Pagos no contestó: no se sabe, y no saber no habilita
      */
     boolean hasUsablePaymentMethod(Long driverId, String authToken);
 }
