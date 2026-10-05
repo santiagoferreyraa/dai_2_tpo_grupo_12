@@ -91,6 +91,17 @@ export async function getAvailability(
  * ECO-35: Procesa el checkout de una reserva a través del Facade en /api/checkout/booking.
  * Orquesta la verificación de tolerancia de gracia (RF09), vigencia del slot (RF08),
  * cálculo de seña (RF06) y verificación de medios de pago (RF02).
+ *
+ * Es la única forma de confirmar: la ruta vieja, `POST /api/bookings`, se borró porque confirmaba
+ * sin preguntar por la tarjeta. Desde acá el conector queda bloqueado para el resto durante esa
+ * ventana.
+ *
+ * Errores que la pantalla tiene que tratar aparte:
+ * - **404 / 410**: la retención venció o no existe (las retenciones viven en memoria, y un
+ *   reinicio de Reservas las borra). Hay que volver a elegir el horario.
+ * - **409**: mientras tanto se guardó otra reserva que se cruza.
+ * - **400 con `code`**: `PAYMENT_METHOD_REQUIRED` (no hay tarjeta) o `GRACE_PERIOD_NOT_ACCEPTED`.
+ * - **503 con `code` `PAYMENT_CHECK_UNAVAILABLE`**: Pagos no contestó. La retención sigue en pie.
  */
 export async function checkoutBooking(
   holdId: string,
@@ -122,22 +133,6 @@ export async function checkoutBooking(
       createdAt: response.checkedOutAt,
     },
   ])
-  return booking
-}
-
-/**
- * RF08: convierte la retención en una reserva guardada. Desde acá el conector queda bloqueado
- * para el resto durante esa ventana.
- *
- * Errores que la pantalla tiene que tratar aparte:
- * - **410**: la retención venció antes de confirmar. Hay que volver a elegir el horario.
- * - **404**: la retención no existe; típicamente porque el proceso de Reservas se reinició y las
- *   retenciones viven en memoria.
- * - **409**: mientras tanto se guardó otra reserva que se cruza.
- */
-export async function confirmBooking(holdId: string): Promise<Booking> {
-  const response = await api.post<BookingResponse>('/bookings', { holdId })
-  const [booking] = await withLocations([response])
   return booking
 }
 

@@ -5,6 +5,7 @@ import { ApiError } from '@/lib/api'
 
 import { checkoutBooking, startHold } from './data/bookingsRepository'
 import { refreshMyBookings } from './data/myBookingsStore'
+import { GRACE_MINUTES } from './slots'
 import type { Booking, Hold } from './types'
 
 /**
@@ -30,12 +31,23 @@ export type BookingStep =
   /** La reserva quedó guardada. */
   | { kind: 'confirmed'; booking: Booking }
 
+/**
+ * El problema del último intento, ya en palabras del conductor: nunca un código HTTP ni el texto
+ * del backend, que está escrito para el log.
+ */
+export interface BookingFlowError {
+  message: string
+  /** Falta una tarjeta: además del mensaje, se ofrece el camino para cargarla. */
+  addCard: boolean
+}
+
 export interface BookingFlow {
   step: BookingStep
   /** El problema del último intento, para mostrar en el paso en que quedó. */
-  error: string | null
+  error: BookingFlowError | null
   requestHold: (start: Date, end: Date) => void
-  confirm: () => void
+  /** Recibe si el conductor aceptó la tolerancia: el backend también lo exige. */
+  confirm: (acceptGracePeriod: boolean) => void
   /** Vuelve a elegir el horario sin soltar la retención. Ver `requestHold`. */
   changeWindow: () => void
   /** Lo llama la cuenta regresiva cuando la retención vence sin confirmar. */
@@ -78,7 +90,7 @@ export function pendingHoldFor(connectorId: number, now: Date): Hold | null {
 
 export function useBookingFlow(connectorId: number): BookingFlow {
   const [step, setStep] = useState<BookingStep>({ kind: 'choosing' })
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<BookingFlowError | null>(null)
 
   /* Si el diálogo se cierra con un pedido viajando, la respuesta no tiene a quién actualizar. */
   const mounted = useRef(true)
@@ -114,7 +126,7 @@ export function useBookingFlow(connectorId: number): BookingFlow {
         },
         (reason: unknown) => {
           if (!mounted.current) return
-          setError(holdErrorMessage(reason))
+          setError(plain(holdErrorMessage(reason)))
           setStep({ kind: 'choosing' })
         },
       )
@@ -122,48 +134,52 @@ export function useBookingFlow(connectorId: number): BookingFlow {
     [connectorId],
   )
 
-  const confirm = useCallback(() => {
-    if (step.kind !== 'reviewing') return
-    const { hold } = step
+  const confirm = useCallback(
+    (acceptGracePeriod: boolean) => {
+      if (step.kind !== 'reviewing') return
+      const { hold } = step
 
-    setError(null)
-    setStep({ kind: 'confirming', hold })
+      setError(null)
+      setStep({ kind: 'confirming', hold })
 
-    checkoutBooking(hold.id, null, true).then(
-      (booking) => {
-        pendingHolds.delete(connectorId)
-        /* La franja y el perfil muestran las reservas: se enteran de la nueva sin recargar. */
-        refreshMyBookings()
-        /*
-         * Y el buzón, que en un momento va a tener el aviso de esta reserva. No se pide ya mismo:
-         * el aviso pasa por la cola antes de existir. Ver `refreshNotificationsSoon`.
-         */
-        refreshNotificationsSoon()
-        if (!mounted.current) return
-        setStep({ kind: 'confirmed', booking })
-      },
-      (reason: unknown) => {
-        if (!mounted.current) return
-        const status = reason instanceof ApiError ? reason.status : null
-
-        /*
-         * Vencida, inexistente o pisada por otra reserva: la retención ya no sirve, y volver a la
-         * revisión sería ofrecer confirmar algo que no se puede. Se vuelve a elegir el horario.
-         * Cualquier otro error —la red, el servidor— deja la retención como estaba, y se puede
-         * reintentar desde la revisión mientras no venza.
-         */
-        if (status === 410 || status === 404 || status === 409) {
+      checkoutBooking(hold.id, null, acceptGracePeriod).then(
+        (booking) => {
           pendingHolds.delete(connectorId)
-          setError(confirmErrorMessage(reason))
-          setStep({ kind: 'choosing' })
-          return
-        }
+          /* La franja y el perfil muestran las reservas: se enteran de la nueva sin recargar. */
+          refreshMyBookings()
+          /*
+           * Y el buzón, que en un momento va a tener el aviso de esta reserva. No se pide ya mismo:
+           * el aviso pasa por la cola antes de existir. Ver `refreshNotificationsSoon`.
+           */
+          refreshNotificationsSoon()
+          if (!mounted.current) return
+          setStep({ kind: 'confirmed', booking })
+        },
+        (reason: unknown) => {
+          if (!mounted.current) return
+          const status = reason instanceof ApiError ? reason.status : null
 
-        setError(confirmErrorMessage(reason))
-        setStep({ kind: 'reviewing', hold })
-      },
-    )
-  }, [step, connectorId])
+          /*
+           * Vencida, inexistente o pisada por otra reserva: la retención ya no sirve, y volver a la
+           * revisión sería ofrecer confirmar algo que no se puede. Se vuelve a elegir el horario.
+           * Cualquier otro error —la red, el servidor, Pagos que no contesta, la tarjeta que falta—
+           * deja la retención como estaba, y se puede reintentar desde la revisión mientras no venza.
+           * Si fue la tarjeta, cargarla y volver al mismo horario reusa esta retención.
+           */
+          if (status === 410 || status === 404 || status === 409) {
+            pendingHolds.delete(connectorId)
+            setError(confirmErrorMessage(reason))
+            setStep({ kind: 'choosing' })
+            return
+          }
+
+          setError(confirmErrorMessage(reason))
+          setStep({ kind: 'reviewing', hold })
+        },
+      )
+    },
+    [step, connectorId],
+  )
 
   const changeWindow = useCallback(() => {
     setError(null)
@@ -172,7 +188,7 @@ export function useBookingFlow(connectorId: number): BookingFlow {
 
   const expire = useCallback(() => {
     pendingHolds.delete(connectorId)
-    setError('Se venció el tiempo para confirmar. Elegí el horario de nuevo.')
+    setError(plain('Se venció el tiempo para confirmar. Elegí el horario de nuevo.'))
     setStep({ kind: 'choosing' })
   }, [connectorId])
 
@@ -208,11 +224,45 @@ function holdErrorMessage(reason: unknown): string {
   return commonErrorMessage(reason.status) ?? 'No se pudo reservar. Probá de nuevo.'
 }
 
-function confirmErrorMessage(reason: unknown): string {
-  if (!(reason instanceof ApiError)) return 'No se pudo confirmar. Probá de nuevo.'
-  if (reason.status === 410 || reason.status === 404) {
-    return 'Se venció el tiempo para confirmar. Elegí el horario de nuevo.'
+/**
+ * Los errores de confirmar. A diferencia de retener, acá ningún texto del backend llega a la
+ * pantalla: los rechazos propios del checkout vienen con un `code`, y cada código tiene su frase.
+ */
+function confirmErrorMessage(reason: unknown): BookingFlowError {
+  const retry = plain('No se pudo confirmar. Probá de nuevo.')
+  if (!(reason instanceof ApiError)) return retry
+
+  switch (problemCode(reason)) {
+    case 'PAYMENT_METHOD_REQUIRED':
+      return {
+        message: 'Para confirmar la reserva necesitás una tarjeta registrada.',
+        addCard: true,
+      }
+    case 'PAYMENT_CHECK_UNAVAILABLE':
+      return plain(
+        'No pudimos verificar tu medio de pago. Esperá unos segundos y volvé a intentar: tu horario sigue guardado.',
+      )
+    case 'GRACE_PERIOD_NOT_ACCEPTED':
+      return plain(`Para confirmar, aceptá la tolerancia de ${GRACE_MINUTES} minutos.`)
   }
-  if (reason.status === 409) return 'Mientras confirmabas, alguien reservó ese horario. Elegí otro.'
-  return commonErrorMessage(reason.status) ?? 'No se pudo confirmar. Probá de nuevo.'
+
+  if (reason.status === 410 || reason.status === 404) {
+    return plain('Se venció el tiempo para confirmar. Elegí el horario de nuevo.')
+  }
+  if (reason.status === 409) {
+    return plain('Mientras confirmabas, alguien reservó ese horario. Elegí otro.')
+  }
+  const common = commonErrorMessage(reason.status)
+  return common === null ? retry : plain(common)
+}
+
+/** El `code` que el checkout agrega a sus rechazos, si vino uno. */
+function problemCode(reason: ApiError): string | null {
+  const body = reason.detail
+  if (typeof body !== 'object' || body === null || !('code' in body)) return null
+  return typeof body.code === 'string' ? body.code : null
+}
+
+function plain(message: string): BookingFlowError {
+  return { message, addCard: false }
 }

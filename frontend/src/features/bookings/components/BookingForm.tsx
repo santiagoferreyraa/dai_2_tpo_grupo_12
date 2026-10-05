@@ -25,8 +25,9 @@ import {
 import { dayHasRoom, fits, startIsAvailable, useAvailability } from '../availability'
 import type { Booking, Hold } from '../types'
 import { useDragToScroll } from '../useDragToScroll'
-import { pendingHoldFor, type BookingFlow } from '../useBookingFlow'
+import { pendingHoldFor, type BookingFlow, type BookingFlowError } from '../useBookingFlow'
 import { useNow } from '../useNow'
+import { usePaymentReadiness } from '../usePaymentReadiness'
 
 /**
  * El contenido de reservar un conector: elegir el horario, revisar y confirmar.
@@ -96,6 +97,7 @@ export default function BookingForm({
   onDone,
 }: BookingFormProps) {
   const { step } = flow
+  const payment = usePaymentReadiness()
   const [choice, setChoice] = useState<Choice>({
     day: null,
     start: null,
@@ -117,7 +119,15 @@ export default function BookingForm({
         </p>
       </header>
 
-      {(step.kind === 'choosing' || step.kind === 'holding') && (
+      {(step.kind === 'choosing' || step.kind === 'holding') && payment === 'checking' && (
+        <p className="text-text-muted text-sm">Revisando tus medios de pago…</p>
+      )}
+
+      {(step.kind === 'choosing' || step.kind === 'holding') && payment === 'missing' && (
+        <NoCardNotice onCancel={onCancel} cancelLabel={cancelLabel} />
+      )}
+
+      {(step.kind === 'choosing' || step.kind === 'holding') && payment === 'ready' && (
         <ChooseStep
           stationId={station.stationId}
           connectorId={connector.connectorId}
@@ -158,17 +168,58 @@ export default function BookingForm({
  * la página, detrás de la ventana. Llevarlo al mensaje lo deja adentro, donde sigue quien navega
  * con teclado, y el lector de pantalla lo lee igual por el `role="alert"`.
  */
-function ErrorMessage({ message }: { message: string }) {
-  const ref = useRef<HTMLParagraphElement>(null)
+function ErrorMessage({ error }: { error: BookingFlowError }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const { message, addCard } = error
 
   useEffect(() => {
     ref.current?.focus()
   }, [message])
 
   return (
-    <p ref={ref} role="alert" tabIndex={-1} className="text-danger text-sm outline-none">
-      {message}
-    </p>
+    <div ref={ref} role="alert" tabIndex={-1} className="flex flex-col gap-1 outline-none">
+      <p className="text-danger text-sm">{message}</p>
+      {addCard && (
+        <Link
+          to={ADD_CARD_PATH}
+          className="text-primary focus-visible:outline-primary self-start rounded text-sm font-semibold underline-offset-2 hover:underline focus-visible:outline-2"
+        >
+          Agregar tarjeta
+        </Link>
+      )}
+    </div>
+  )
+}
+
+/** Donde se cargan las tarjetas: la sección de medios de pago del perfil. */
+const ADD_CARD_PATH = '/profile/payment-methods'
+
+/**
+ * En lugar del horario, cuando el conductor no tiene tarjeta.
+ *
+ * Sin tarjeta el checkout rechaza la confirmación (RF02), así que dejarlo elegir horario sería
+ * retenerle un conector diez minutos —y quitárselo a otro— para terminar en un error. Ver
+ * `usePaymentReadiness`.
+ */
+function NoCardNotice({ onCancel, cancelLabel }: { onCancel: () => void; cancelLabel: string }) {
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="border-border bg-surface/40 flex flex-col gap-1 rounded-2xl border px-4 py-3 text-sm">
+        <p className="text-text font-semibold">Para reservar necesitás una tarjeta registrada</p>
+        <p className="text-text-muted">
+          La tarjeta es obligatoria para reservar. Cargala desde tu perfil y volvé a este conector.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <button type="button" onClick={onCancel} className={GHOST_BUTTON}>
+          {cancelLabel}
+        </button>
+        <Link to={ADD_CARD_PATH} className={PRIMARY_BUTTON}>
+          Agregar tarjeta
+        </Link>
+      </div>
+    </div>
   )
 }
 
@@ -184,7 +235,7 @@ interface ChooseStepProps {
   choice: Choice
   onChoiceChange: (choice: Choice) => void
   busy: boolean
-  error: string | null
+  error: BookingFlowError | null
   onSubmit: (start: Date, end: Date) => void
   onCancel: () => void
   cancelLabel: string
@@ -411,9 +462,9 @@ function ChooseStep({
       {availability.status === 'ready' && selectedStart === null && (
         <p className="text-text-muted text-sm">No quedan horarios libres en este conector.</p>
       )}
-      {blocked && <ErrorMessage message={availability.message} />}
+      {blocked && <ErrorMessage error={{ message: availability.message, addCard: false }} />}
 
-      {error !== null && <ErrorMessage message={error} />}
+      {error !== null && <ErrorMessage error={error} />}
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         <button type="button" onClick={onCancel} disabled={busy} className={GHOST_BUTTON}>
@@ -440,8 +491,8 @@ function ChooseStep({
 interface ReviewStepProps {
   hold: Hold
   busy: boolean
-  error: string | null
-  onConfirm: () => void
+  error: BookingFlowError | null
+  onConfirm: (acceptGracePeriod: boolean) => void
   onChangeWindow: () => void
   onExpire: () => void
 }
@@ -468,7 +519,8 @@ function ReviewStep({ hold, busy, error, onConfirm, onChangeWindow, onExpire }: 
    * ESTE horario, y un "acepto" dado para otro no vale para este. Por eso el paso se monta con
    * `key` en la retención, y "Cambiar horario" vuelve a pedirla.
    *
-   * Es un control de pantalla, como el guard de rutas: el backend no registra la aceptación.
+   * Viaja en la confirmación y el checkout la exige: sin ella contesta 400. Lo que todavía no hace
+   * el backend es registrarla.
    */
   const [accepted, setAccepted] = useState(false)
   const deadline = formatTimeAfter(hold.start, graceDeadline(hold.start))
@@ -529,7 +581,7 @@ function ReviewStep({ hold, busy, error, onConfirm, onChangeWindow, onExpire }: 
         </span>
       </label>
 
-      {error !== null && <ErrorMessage message={error} />}
+      {error !== null && <ErrorMessage error={error} />}
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         <button type="button" onClick={onChangeWindow} disabled={busy} className={GHOST_BUTTON}>
@@ -543,7 +595,7 @@ function ReviewStep({ hold, busy, error, onConfirm, onChangeWindow, onExpire }: 
         */}
         <button
           type="button"
-          onClick={onConfirm}
+          onClick={() => onConfirm(accepted)}
           disabled={busy || expired || !accepted}
           className={
             accepted
