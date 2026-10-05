@@ -2,7 +2,7 @@ package com.ecopedia.core.user.service;
 
 import com.ecopedia.core.security.JwtTokenProvider;
 import com.ecopedia.core.user.domain.*;
-import com.ecopedia.core.vehicle.domain.VehicleCatalog;
+import com.ecopedia.core.vehicle.domain.VehicleService;
 import java.util.List;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -15,17 +15,17 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
-    private final VehicleCatalog vehicleCatalog;
+    private final VehicleService vehicleService;
 
     public UserServiceImpl(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
             JwtTokenProvider tokenProvider,
-            VehicleCatalog vehicleCatalog) {
+            VehicleService vehicleService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenProvider = tokenProvider;
-        this.vehicleCatalog = vehicleCatalog;
+        this.vehicleService = vehicleService;
     }
 
     @Override
@@ -98,7 +98,7 @@ public class UserServiceImpl implements UserService {
         if (data.fullName() != null && !data.fullName().isBlank()) {
             user.setFullName(data.fullName());
         }
-        user.setVehicleModel(data.vehicleModelId() == null ? null : vehicleCatalog.getModel(data.vehicleModelId()));
+        user.setVehicleModel(data.vehicleModelId() == null ? null : vehicleService.getModel(data.vehicleModelId()));
         return userRepository.save(user);
     }
 
