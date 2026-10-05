@@ -1,20 +1,20 @@
 package com.ecopedia.core.vehicle.service;
 
-import com.ecopedia.core.vehicle.domain.VehicleCatalog;
 import com.ecopedia.core.vehicle.domain.VehicleModel;
 import com.ecopedia.core.vehicle.domain.VehicleModelNotFoundException;
 import com.ecopedia.core.vehicle.domain.VehicleModelRepository;
+import com.ecopedia.core.vehicle.domain.VehicleService;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Transactional(readOnly = true)
-public class VehicleCatalogImpl implements VehicleCatalog {
+public class VehicleServiceImpl implements VehicleService {
 
     private final VehicleModelRepository modelRepository;
 
-    public VehicleCatalogImpl(VehicleModelRepository modelRepository) {
+    public VehicleServiceImpl(VehicleModelRepository modelRepository) {
         this.modelRepository = modelRepository;
     }
 

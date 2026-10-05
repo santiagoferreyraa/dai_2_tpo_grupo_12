@@ -3,7 +3,7 @@ package com.ecopedia.core.vehicle.domain;
 import java.util.List;
 
 /**
- * Interfaz pública del componente {@code CatalogoDeVehiculos} (stateless).
+ * Interfaz pública del componente {@code Vehiculos} (stateless).
  *
  * <p><b>Es solo de lectura, y esa es la decisión.</b> El catálogo es cerrado: los modelos entran
  * por migración, no por pantalla. Si hubiera un alta acá, el conductor que no encuentra su auto
@@ -11,7 +11,7 @@ import java.util.List;
  * filtran estaciones y estiman cuánto tarda una carga. Un catálogo que cualquiera puede
  * completar deja de ser una fuente de verdad y pasa a ser un campo de texto con más pasos.
  */
-public interface VehicleCatalog {
+public interface VehicleService {
 
     /** Los modelos que se le pueden ofrecer al conductor, ordenados por marca y modelo. */
     List<VehicleModel> listAvailableModels();

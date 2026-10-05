@@ -1,6 +1,6 @@
 package com.ecopedia.core.vehicle.web;
 
-import com.ecopedia.core.vehicle.domain.VehicleCatalog;
+import com.ecopedia.core.vehicle.domain.VehicleService;
 import com.ecopedia.core.vehicle.web.dto.VehicleModelResponse;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
@@ -17,16 +17,16 @@ import org.springframework.web.bind.annotation.RestController;
  * folleto de cada fabricante—. Pedir token para leerlas obligaría a la pantalla de registro a
  * elegir entre no mostrar el auto o llamar con un token que todavía no tiene.
  *
- * <p>Solo lectura: el catálogo se completa por migración. Ver {@link VehicleCatalog}.
+ * <p>Solo lectura: el catálogo se completa por migración. Ver {@link VehicleService}.
  */
 @RestController
 @RequestMapping("/api/vehicle-models")
 public class VehicleModelController {
 
-    private final VehicleCatalog vehicleCatalog;
+    private final VehicleService vehicleService;
 
-    public VehicleModelController(VehicleCatalog vehicleCatalog) {
-        this.vehicleCatalog = vehicleCatalog;
+    public VehicleModelController(VehicleService vehicleService) {
+        this.vehicleService = vehicleService;
     }
 
     /**
@@ -37,7 +37,7 @@ public class VehicleModelController {
      */
     @GetMapping
     public ResponseEntity<List<VehicleModelResponse>> listModels() {
-        List<VehicleModelResponse> models = vehicleCatalog.listAvailableModels().stream()
+        List<VehicleModelResponse> models = vehicleService.listAvailableModels().stream()
                 .map(VehicleModelResponse::fromDomain)
                 .toList();
         return ResponseEntity.ok(models);
