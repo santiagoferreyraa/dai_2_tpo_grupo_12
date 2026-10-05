@@ -72,6 +72,10 @@ ecopedia:
     # valores, no código.
     url: ${ECOPEDIA_CORE_URL:http://localhost:8081}
 
+  integration:
+    # Dónde está ecopedia-integration. Checkout le consulta por medios de pago registrados (RF02).
+    url: ${ECOPEDIA_INTEGRATION_URL:http://localhost:8083}
+
   booking:
     # Cuánto dura una retención de slot antes de vencer sola (ISO-8601: PT10M = 10 minutos).
     # Es el tiempo que tiene el conductor para confirmar. Ver ARQUITECTURA_ECOPEDIA.md §2.3.

@@ -2,6 +2,7 @@ package com.ecopedia.charging.booking.domain;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -51,6 +52,12 @@ public interface BookingService {
      * @throws InvalidBookingRequestException si la ventana ya empezó
      */
     Hold startHold(Long connectorId, TimeWindow window, Long driverId);
+
+    /**
+     * Consulta una retención vigente por id (ECO-35, para uso del Facade de Checkout).
+     * Devuelve vacía si no existe o ya venció.
+     */
+    Optional<Hold> findHold(UUID holdId);
 
     /**
      * Convierte una retención vigente en una reserva guardada (ECO-32).

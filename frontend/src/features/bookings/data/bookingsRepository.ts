@@ -88,6 +88,44 @@ export async function getAvailability(
 }
 
 /**
+ * ECO-35: Procesa el checkout de una reserva a través del Facade en /api/checkout/booking.
+ * Orquesta la verificación de tolerancia de gracia (RF09), vigencia del slot (RF08),
+ * cálculo de seña (RF06) y verificación de medios de pago (RF02).
+ */
+export async function checkoutBooking(
+  holdId: string,
+  paymentMethodId?: number | null,
+  acceptGracePeriod: boolean = true,
+): Promise<Booking> {
+  const response = await api.post<{
+    bookingId: number
+    connectorId: number
+    start: string
+    end: string
+    status: BookingResponse['status']
+    depositAmount: number
+    paymentSummary: string
+    checkedOutAt: string
+  }>('/checkout/booking', {
+    holdId,
+    paymentMethodId: paymentMethodId ?? null,
+    acceptGracePeriod,
+  })
+
+  const [booking] = await withLocations([
+    {
+      id: response.bookingId,
+      connectorId: response.connectorId,
+      start: response.start,
+      end: response.end,
+      status: response.status,
+      createdAt: response.checkedOutAt,
+    },
+  ])
+  return booking
+}
+
+/**
  * RF08: convierte la retención en una reserva guardada. Desde acá el conector queda bloqueado
  * para el resto durante esa ventana.
  *

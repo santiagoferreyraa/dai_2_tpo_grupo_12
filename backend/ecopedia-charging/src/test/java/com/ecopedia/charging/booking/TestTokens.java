@@ -14,11 +14,11 @@ import java.util.Date;
  * recorre el filtro que valida la firma, que es la pieza que une los dos procesos y la que puede
  * romperse en silencio si alguien cambia el secreto de un lado solo.
  */
-final class TestTokens {
+public final class TestTokens {
 
     private TestTokens() {}
 
-    static String bearer(String signingSecret, long userId, String role) {
+    public static String bearer(String signingSecret, long userId, String role) {
         Instant now = Instant.now();
         String token = Jwts.builder()
                 .subject(Long.toString(userId))

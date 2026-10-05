@@ -27,6 +27,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -294,6 +295,15 @@ public class BookingServiceImpl implements BookingService {
     /** Cuántas retenciones hay vigentes. Para los tests: el estado se ve desde afuera sin exponerlo. */
     int activeHoldCount() {
         return holds.size();
+    }
+
+    @Override
+    public Optional<Hold> findHold(UUID holdId) {
+        Hold hold = holds.get(holdId);
+        if (hold == null || hold.isExpiredAt(clock.instant())) {
+            return Optional.empty();
+        }
+        return Optional.of(hold);
     }
 
     @Override
