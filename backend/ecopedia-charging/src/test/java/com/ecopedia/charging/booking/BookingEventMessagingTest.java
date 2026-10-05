@@ -1,6 +1,7 @@
 package com.ecopedia.charging.booking;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -9,11 +10,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.ecopedia.charging.booking.domain.ConnectorCatalog;
 import com.ecopedia.charging.booking.domain.ConnectorSnapshot;
+import com.ecopedia.charging.checkout.domain.PaymentDirectory;
+import com.ecopedia.charging.checkout.domain.TariffDirectory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.jms.ConnectionFactory;
 import jakarta.jms.Message;
 import jakarta.jms.TextMessage;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -60,6 +64,16 @@ class BookingEventMessagingTest {
     @MockitoBean
     private ConnectorCatalog connectorCatalog;
 
+    /*
+     * Confirmar pasa por el checkout, que le pregunta a Pagos por las tarjetas y a core por la seña. Los dos
+     * son otros artefactos: se reemplazan, igual que Terminales.
+     */
+    @MockitoBean
+    private PaymentDirectory paymentDirectory;
+
+    @MockitoBean
+    private TariffDirectory tariffDirectory;
+
     @Value("${ecopedia.jwt.secret}")
     private String secret;
 
@@ -76,6 +90,8 @@ class BookingEventMessagingTest {
     void setUp() {
         when(connectorCatalog.findConnector(anyLong()))
                 .thenAnswer(call -> Optional.of(new ConnectorSnapshot(call.getArgument(0), 1L, "AVAILABLE")));
+        when(paymentDirectory.hasUsablePaymentMethod(anyLong(), any())).thenReturn(true);
+        when(tariffDirectory.calculateDeposit(anyLong())).thenReturn(BigDecimal.ZERO);
         receiver = new JmsTemplate(connectionFactory);
         receiver.setReceiveTimeout(5_000);
     }
@@ -138,17 +154,18 @@ class BookingEventMessagingTest {
     }
 
     private long confirm(String holdId) throws Exception {
-        String response = mockMvc.perform(post("/api/bookings")
+        String response = mockMvc.perform(post("/api/checkout/booking")
                         .header(HttpHeaders.AUTHORIZATION, driver())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"holdId":"%s"}
+                        .content(
                                 """
-                                .formatted(holdId)))
+                                {"holdId":"%s","acceptGracePeriod":true}
+                                """
+                                        .formatted(holdId)))
                 .andExpect(status().isCreated())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        return json.readTree(response).get("id").asLong();
+        return json.readTree(response).get("bookingId").asLong();
     }
 }

@@ -1,6 +1,7 @@
 package com.ecopedia.charging.checkout.data;
 
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
+import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import java.time.Duration;
 import java.util.List;
 import org.slf4j.Logger;
@@ -53,13 +54,16 @@ public class IntegrationPaymentDirectory implements PaymentDirectory {
 
             return cards != null && !cards.isEmpty();
         } catch (RestClientException ex) {
+            /*
+             * Sin respuesta de Pagos no se confirma: la tarjeta es obligatoria para toda transacción, y asumirla
+             * dejaba reservar sin tarjeta con solo tener el 8083 apagado. Es el mismo criterio que con core caído
+             * al retener: 503 y "probá de nuevo en un momento".
+             */
             log.warn(
-                    "No se pudo consultar medios de pago a integration para el conductor {}: {}. Por resiliencia local se asume habilitado.",
+                    "No se pudo consultar medios de pago a integration para el conductor {}: {}",
                     driverId,
                     ex.getMessage());
-            // En caso de corte del servicio de integración, no se bloquea la demo local si el conductor está
-            // autenticado
-            return true;
+            throw new PaymentMethodsUnavailableException(ex);
         }
     }
 

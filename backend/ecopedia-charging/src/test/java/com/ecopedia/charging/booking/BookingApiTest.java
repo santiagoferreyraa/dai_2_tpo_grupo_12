@@ -2,6 +2,7 @@ package com.ecopedia.charging.booking;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -12,8 +13,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.ecopedia.charging.booking.domain.ConnectorCatalog;
 import com.ecopedia.charging.booking.domain.ConnectorSnapshot;
+import com.ecopedia.charging.checkout.domain.PaymentDirectory;
+import com.ecopedia.charging.checkout.domain.TariffDirectory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -63,6 +67,16 @@ class BookingApiTest {
     @MockitoBean
     private ConnectorCatalog connectorCatalog;
 
+    /*
+     * Confirmar pasa por el checkout, que le pregunta a Pagos por las tarjetas y a core por la seña. Los dos
+     * son otros artefactos: se reemplazan, igual que Terminales.
+     */
+    @MockitoBean
+    private PaymentDirectory paymentDirectory;
+
+    @MockitoBean
+    private TariffDirectory tariffDirectory;
+
     @Value("${ecopedia.jwt.secret}")
     private String secret;
 
@@ -80,6 +94,8 @@ class BookingApiTest {
     void connectorExists() {
         when(connectorCatalog.findConnector(anyLong()))
                 .thenAnswer(call -> Optional.of(new ConnectorSnapshot(call.getArgument(0), 1L, "AVAILABLE")));
+        when(paymentDirectory.hasUsablePaymentMethod(anyLong(), any())).thenReturn(true);
+        when(tariffDirectory.calculateDeposit(anyLong())).thenReturn(BigDecimal.ZERO);
     }
 
     private String driver(long userId) {
@@ -134,13 +150,13 @@ class BookingApiTest {
 
     private String confirmBody(String holdId) {
         return """
-                {"holdId":"%s"}
+                {"holdId":"%s","acceptGracePeriod":true}
                 """.formatted(holdId);
     }
 
     /** Confirma la retención y devuelve la reserva creada. */
     private JsonNode confirm(String holdId, long userId) throws Exception {
-        String response = mockMvc.perform(post("/api/bookings")
+        String response = mockMvc.perform(post("/api/checkout/booking")
                         .header(HttpHeaders.AUTHORIZATION, driver(userId))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(confirmBody(holdId)))
@@ -180,7 +196,7 @@ class BookingApiTest {
     void cancellingFreesTheWindow() throws Exception {
         Instant start = nextWindowStart();
         JsonNode booking = confirm(holdSlot(11L, start, DRIVER), DRIVER);
-        long bookingId = booking.get("id").asLong();
+        long bookingId = booking.get("bookingId").asLong();
 
         mockMvc.perform(delete("/api/bookings/{id}", bookingId).header(HttpHeaders.AUTHORIZATION, driver(DRIVER)))
                 .andExpect(status().isNoContent());
@@ -192,7 +208,8 @@ class BookingApiTest {
     @DisplayName("El conductor ve su reserva en el listado, con su ventana y su estado")
     void listsTheDriverBookings() throws Exception {
         Instant start = nextWindowStart();
-        long bookingId = confirm(holdSlot(12L, start, DRIVER), DRIVER).get("id").asLong();
+        long bookingId =
+                confirm(holdSlot(12L, start, DRIVER), DRIVER).get("bookingId").asLong();
 
         mockMvc.perform(get("/api/bookings/mine").header(HttpHeaders.AUTHORIZATION, driver(DRIVER)))
                 .andExpect(status().isOk())
@@ -213,7 +230,7 @@ class BookingApiTest {
         String holdId = holdSlot(13L, nextWindowStart(), DRIVER);
         confirm(holdId, DRIVER);
 
-        mockMvc.perform(post("/api/bookings")
+        mockMvc.perform(post("/api/checkout/booking")
                         .header(HttpHeaders.AUTHORIZATION, driver(DRIVER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(confirmBody(holdId)))
@@ -223,7 +240,7 @@ class BookingApiTest {
     @Test
     @DisplayName("Confirmar una retención inventada recibe 404")
     void rejectsUnknownHold() throws Exception {
-        mockMvc.perform(post("/api/bookings")
+        mockMvc.perform(post("/api/checkout/booking")
                         .header(HttpHeaders.AUTHORIZATION, driver(DRIVER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(confirmBody(UUID.randomUUID().toString())))
@@ -235,7 +252,7 @@ class BookingApiTest {
     void rejectsConfirmingSomeoneElsesHold() throws Exception {
         String holdId = holdSlot(14L, nextWindowStart(), DRIVER);
 
-        mockMvc.perform(post("/api/bookings")
+        mockMvc.perform(post("/api/checkout/booking")
                         .header(HttpHeaders.AUTHORIZATION, driver(OTHER_DRIVER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(confirmBody(holdId)))
@@ -246,7 +263,8 @@ class BookingApiTest {
     @DisplayName("Cancelar la reserva de otro conductor recibe 403 y no la cancela")
     void rejectsCancellingSomeoneElsesBooking() throws Exception {
         Instant start = nextWindowStart();
-        long bookingId = confirm(holdSlot(15L, start, DRIVER), DRIVER).get("id").asLong();
+        long bookingId =
+                confirm(holdSlot(15L, start, DRIVER), DRIVER).get("bookingId").asLong();
 
         mockMvc.perform(delete("/api/bookings/{id}", bookingId).header(HttpHeaders.AUTHORIZATION, driver(OTHER_DRIVER)))
                 .andExpect(status().isForbidden());
@@ -266,7 +284,7 @@ class BookingApiTest {
     @DisplayName("Cancelar dos veces la misma reserva recibe 204 las dos veces")
     void cancellingTwiceIsIdempotent() throws Exception {
         long bookingId = confirm(holdSlot(16L, nextWindowStart(), DRIVER), DRIVER)
-                .get("id")
+                .get("bookingId")
                 .asLong();
 
         for (int attempt = 0; attempt < 2; attempt++) {

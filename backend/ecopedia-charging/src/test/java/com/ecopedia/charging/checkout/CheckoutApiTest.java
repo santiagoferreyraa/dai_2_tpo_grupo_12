@@ -2,6 +2,7 @@ package com.ecopedia.charging.checkout;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -14,6 +15,7 @@ import com.ecopedia.charging.booking.domain.ConnectorSnapshot;
 import com.ecopedia.charging.booking.domain.Hold;
 import com.ecopedia.charging.booking.domain.TimeWindow;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
+import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import com.ecopedia.charging.checkout.domain.TariffDirectory;
 import com.ecopedia.charging.checkout.web.dto.CheckoutBookingHttpRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -105,7 +107,8 @@ class CheckoutApiTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail")
-                        .value("Debe aceptar la tolerancia de 15 minutos (RF09) para confirmar la reserva"));
+                        .value("Debe aceptar la tolerancia de 15 minutos (RF09) para confirmar la reserva"))
+                .andExpect(jsonPath("$.code").value("GRACE_PERIOD_NOT_ACCEPTED"));
     }
 
     @Test
@@ -125,7 +128,39 @@ class CheckoutApiTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail")
-                        .value("Se requiere al menos un medio de pago registrado para confirmar la reserva (RF02)"));
+                        .value("Se requiere al menos un medio de pago registrado para confirmar la reserva (RF02)"))
+                .andExpect(jsonPath("$.code").value("PAYMENT_METHOD_REQUIRED"));
+    }
+
+    /*
+     * Pagos caído no habilita: antes se asumía que el conductor tenía tarjeta, y con el 8083 apagado se
+     * reservaba sin ninguna. Y la retención sigue en pie: vuelto Pagos, la misma retención se confirma.
+     */
+    @Test
+    @DisplayName("POST /api/checkout/booking responde 503 si Pagos no contesta, y la retención sigue en pie")
+    void rejectsWhenPaymentsIsDownAndKeepsTheHold() throws Exception {
+        when(paymentDirectory.hasUsablePaymentMethod(anyLong(), any()))
+                .thenThrow(new PaymentMethodsUnavailableException(new RuntimeException("Connection refused")));
+
+        Instant start = Instant.now().plus(Duration.ofHours(8)).truncatedTo(ChronoUnit.SECONDS);
+        Hold hold = bookingService.startHold(CONNECTOR, new TimeWindow(start, start.plus(Duration.ofHours(1))), DRIVER);
+        String body = objectMapper.writeValueAsString(new CheckoutBookingHttpRequest(hold.id(), null, true));
+
+        mockMvc.perform(post("/api/checkout/booking")
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER, "CONDUCTOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("PAYMENT_CHECK_UNAVAILABLE"));
+
+        // doReturn y no when(): when() llamaría al mock, que todavía está armado para tirar.
+        doReturn(true).when(paymentDirectory).hasUsablePaymentMethod(anyLong(), any());
+
+        mockMvc.perform(post("/api/checkout/booking")
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER, "CONDUCTOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated());
     }
 
     @Test
