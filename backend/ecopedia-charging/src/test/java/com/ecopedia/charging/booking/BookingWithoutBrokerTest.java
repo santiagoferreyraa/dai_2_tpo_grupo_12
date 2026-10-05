@@ -12,7 +12,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.ecopedia.charging.booking.domain.ConnectorCatalog;
 import com.ecopedia.charging.booking.domain.ConnectorSnapshot;
+import com.ecopedia.charging.checkout.domain.PaymentDirectory;
+import com.ecopedia.charging.checkout.domain.TariffDirectory;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
@@ -55,6 +58,16 @@ class BookingWithoutBrokerTest {
     @MockitoBean
     private ConnectorCatalog connectorCatalog;
 
+    /*
+     * Confirmar pasa por el checkout, que le pregunta a Pagos por las tarjetas y a core por la seña. Los dos
+     * son otros artefactos: se reemplazan, igual que Terminales.
+     */
+    @MockitoBean
+    private PaymentDirectory paymentDirectory;
+
+    @MockitoBean
+    private TariffDirectory tariffDirectory;
+
     @MockitoBean
     private JmsTemplate jmsTemplate;
 
@@ -66,6 +79,8 @@ class BookingWithoutBrokerTest {
     void confirmsEvenIfTheBrokerIsDown() throws Exception {
         when(connectorCatalog.findConnector(anyLong()))
                 .thenAnswer(call -> Optional.of(new ConnectorSnapshot(call.getArgument(0), 1L, "AVAILABLE")));
+        when(paymentDirectory.hasUsablePaymentMethod(anyLong(), any())).thenReturn(true);
+        when(tariffDirectory.calculateDeposit(anyLong())).thenReturn(BigDecimal.ZERO);
         doThrow(new UncategorizedJmsException("Connection refused: localhost:61616"))
                 .when(jmsTemplate)
                 .convertAndSend(anyString(), any(Object.class), any(MessagePostProcessor.class));
@@ -86,13 +101,14 @@ class BookingWithoutBrokerTest {
                 .getResponse()
                 .getContentAsString();
 
-        mockMvc.perform(post("/api/bookings")
+        mockMvc.perform(post("/api/checkout/booking")
                         .header(HttpHeaders.AUTHORIZATION, driver)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"holdId":"%s"}
+                        .content(
                                 """
-                                .formatted(json.readTree(hold).get("id").asText())))
+                                {"holdId":"%s","acceptGracePeriod":true}
+                                """
+                                        .formatted(json.readTree(hold).get("id").asText())))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("CONFIRMED"));
 

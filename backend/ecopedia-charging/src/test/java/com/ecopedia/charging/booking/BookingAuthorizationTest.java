@@ -172,25 +172,27 @@ class BookingAuthorizationTest {
     @Test
     @DisplayName("Sin token, confirmar una reserva se rechaza")
     void rejectsAnonymousConfirm() throws Exception {
-        mockMvc.perform(post("/api/bookings")
+        mockMvc.perform(post("/api/checkout/booking")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"holdId":"%s"}
+                        .content(
                                 """
-                                .formatted(UUID.randomUUID())))
+                                {"holdId":"%s","acceptGracePeriod":true}
+                                """
+                                        .formatted(UUID.randomUUID())))
                 .andExpect(status().isForbidden());
     }
 
     @Test
     @DisplayName("Con token de CPO, confirmar una reserva se rechaza")
     void rejectsOperatorConfirm() throws Exception {
-        mockMvc.perform(post("/api/bookings")
+        mockMvc.perform(post("/api/checkout/booking")
                         .header(HttpHeaders.AUTHORIZATION, bearer("CPO"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"holdId":"%s"}
+                        .content(
                                 """
-                                .formatted(UUID.randomUUID())))
+                                {"holdId":"%s","acceptGracePeriod":true}
+                                """
+                                        .formatted(UUID.randomUUID())))
                 .andExpect(status().isForbidden());
     }
 
