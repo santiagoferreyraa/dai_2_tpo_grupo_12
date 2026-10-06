@@ -1,6 +1,7 @@
 package com.ecopedia.charging.checkout.web;
 
 import com.ecopedia.charging.booking.domain.BookingAccessDeniedException;
+import com.ecopedia.charging.booking.domain.DriverAlreadyBookedException;
 import com.ecopedia.charging.booking.domain.HoldExpiredException;
 import com.ecopedia.charging.booking.domain.HoldNotFoundException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
@@ -58,6 +59,17 @@ public class CheckoutExceptionHandler {
     @ExceptionHandler(SlotUnavailableException.class)
     public ProblemDetail handleSlotUnavailable(SlotUnavailableException exception) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+    }
+
+    /**
+     * El conductor quedó con una reserva en curso o con otra que se cruza mientras confirmaba.
+     *
+     * <p>Mismo 409 y mismo {@code code} que en el handler de Reservas: es la misma regla, y el front
+     * la lee igual venga de retener o de confirmar.
+     */
+    @ExceptionHandler(DriverAlreadyBookedException.class)
+    public ProblemDetail handleDriverAlreadyBooked(DriverAlreadyBookedException exception) {
+        return withCode(HttpStatus.CONFLICT, exception.getMessage(), exception.code());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

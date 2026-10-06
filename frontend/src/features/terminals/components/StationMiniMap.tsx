@@ -32,11 +32,14 @@ import type { DeviceLocation } from '../useDeviceLocation'
 /**
  * Zoom del recuadro chico.
  *
- * Más bajo que el `FOCUS_ZOOM` del mapa grande a propósito. Ahí, acercarse hasta la cuadra es
- * lo correcto porque la pantalla es el mapa; acá el recuadro mide unos doscientos píxeles de
- * alto, y a ese zoom la estación elegida quedaría sola en un rectángulo gris sin una sola
- * referencia. A 14 se ven las estaciones de alrededor, que es lo que convierte el recuadro en
- * "acá estás parado" en vez de un cuadrado de mapa cualquiera.
+ * Más bajo que el techo del mapa grande a propósito. Allá, acercarse hasta la cuadra es lo
+ * correcto porque la pantalla es el mapa; acá el recuadro mide unos doscientos píxeles de alto, y
+ * a ese zoom la estación elegida quedaría sola en un rectángulo gris sin una sola referencia. A 14
+ * se ven las estaciones de alrededor, que es lo que convierte el recuadro en "acá estás parado" en
+ * vez de un cuadrado de mapa cualquiera.
+ *
+ * Es un valor fijo y no se mueve: este mapa no se puede manejar —es una foto— así que no hay un
+ * zoom del usuario que respetar, al contrario del grande.
  */
 const MINI_ZOOM = 14
 

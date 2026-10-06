@@ -2,6 +2,7 @@ package com.ecopedia.charging.booking.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.ecopedia.charging.booking.domain.Booking;
@@ -14,6 +15,7 @@ import com.ecopedia.charging.booking.domain.ConnectorCatalog;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
 import com.ecopedia.charging.booking.domain.ConnectorSnapshot;
+import com.ecopedia.charging.booking.domain.DriverAlreadyBookedException;
 import com.ecopedia.charging.booking.domain.Hold;
 import com.ecopedia.charging.booking.domain.HoldExpiredException;
 import com.ecopedia.charging.booking.domain.HoldNotFoundException;
@@ -47,6 +49,14 @@ class BookingServiceImplTest {
     private static final Long CONNECTOR = 7L;
     private static final Long DRIVER = 42L;
     private static final Long OTHER_DRIVER = 43L;
+
+    /**
+     * Un tercero, para las pruebas que necesitan dos retenciones vivas además de la del primero.
+     *
+     * <p>Hace falta porque un conductor tiene UNA retención a la vez: pidiendo dos con el mismo,
+     * la segunda reemplaza a la primera y el conteo no da lo que la prueba quiere mirar.
+     */
+    private static final Long THIRD_DRIVER = 44L;
 
     /** Un conector que existe y está libre. */
     private static final ConnectorCatalog AVAILABLE = id -> Optional.of(new ConnectorSnapshot(id, 1L, "AVAILABLE"));
@@ -134,7 +144,7 @@ class BookingServiceImplTest {
         TimeWindow rightAfter = new TimeWindow(window.end(), window.end().plus(Duration.ofHours(1)));
 
         service.startHold(CONNECTOR, rightAfter, OTHER_DRIVER);
-        service.startHold(CONNECTOR + 1, window, OTHER_DRIVER);
+        service.startHold(CONNECTOR + 1, window, THIRD_DRIVER);
         assertThat(service.activeHoldCount()).isEqualTo(3);
     }
 
@@ -161,8 +171,10 @@ class BookingServiceImplTest {
     @DisplayName("Al destruirse el componente (@PreDestroy) se liberan las retenciones")
     void destroyReleasesPendingHolds() {
         started(AVAILABLE, Duration.ofMinutes(10));
+        /* Dos conductores y no dos retenciones del mismo: cada uno tiene a lo sumo una. */
         service.startHold(CONNECTOR, windowIn(2), DRIVER);
-        service.startHold(CONNECTOR, windowIn(4), DRIVER);
+        service.startHold(CONNECTOR, windowIn(4), OTHER_DRIVER);
+        assertThat(service.activeHoldCount()).isEqualTo(2);
 
         service.stop();
 
@@ -297,7 +309,7 @@ class BookingServiceImplTest {
             TimeWindow rightAfter = new TimeWindow(window.end(), window.end().plus(Duration.ofHours(1)));
 
             service.startHold(CONNECTOR, rightAfter, OTHER_DRIVER);
-            service.startHold(CONNECTOR + 1, window, OTHER_DRIVER);
+            service.startHold(CONNECTOR + 1, window, THIRD_DRIVER);
             assertThat(service.activeHoldCount()).isEqualTo(2);
         }
 
@@ -506,6 +518,132 @@ class BookingServiceImplTest {
         assertThat(mine.get(0).getWindow().start())
                 .isBefore(mine.get(1).getWindow().start());
         assertThat(mine).allMatch(booking -> booking.getDriverId().equals(DRIVER));
+    }
+
+    /**
+     * La otra mitad del bloqueo: la reserva ocupa el conector para el resto y ocupa al conductor
+     * para sí mismo. Son las tres reglas que faltaban y que dejaban al mismo conductor reservando
+     * dos conectores a la misma hora con un solo auto.
+     */
+    @Nested
+    @DisplayName("Un conductor, una reserva por vez")
+    class OneAtATimePerDriver {
+
+        /** El código viaja en el cuerpo del 409 y el front elige el mensaje con él: se prueba. */
+        private String codeOf(Throwable thrown) {
+            assertThat(thrown).isInstanceOf(DriverAlreadyBookedException.class);
+            return ((DriverAlreadyBookedException) thrown).code();
+        }
+
+        @Test
+        @DisplayName("Retener de nuevo reemplaza la retención anterior y libera el slot que tenía")
+        void newHoldReplacesTheDriverPreviousOne() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            TimeWindow first = windowIn(2);
+
+            service.startHold(CONNECTOR, first, DRIVER);
+            service.startHold(CONNECTOR + 1, windowIn(4), DRIVER);
+
+            // Una sola retención viva, y la que soltó dejó el slot libre para cualquier otro.
+            assertThat(service.activeHoldCount()).isEqualTo(1);
+            assertThat(service.startHold(CONNECTOR, first, OTHER_DRIVER).driverId())
+                    .isEqualTo(OTHER_DRIVER);
+        }
+
+        /* El caso que antes contestaba 409 sobre un slot propio y el front tapaba recordando el hold. */
+        @Test
+        @DisplayName("Volver a pedir el mismo horario que uno ya tenía retenido no es un conflicto")
+        void rebookingTheSameWindowIsNotAConflict() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            TimeWindow window = windowIn(2);
+            service.startHold(CONNECTOR, window, DRIVER);
+
+            assertThatCode(() -> service.startHold(CONNECTOR, window, DRIVER)).doesNotThrowAnyException();
+            assertThat(service.activeHoldCount()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("Con el auto cargando no se reserva nada, ni para más tarde")
+        void aBookingInProgressBlocksEverything() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            service.confirmBooking(
+                    service.startHold(CONNECTOR, windowIn(1), DRIVER).id(), DRIVER);
+
+            // El reloj entra en la ventana reservada: la reserva pasa a estar en curso.
+            clock.advance(Duration.ofMinutes(70));
+
+            Throwable thrown = catchThrowable(() -> service.startHold(CONNECTOR + 1, windowIn(5), DRIVER));
+            assertThat(codeOf(thrown)).isEqualTo("DRIVER_CHARGING");
+
+            // Y el conector sigue libre para cualquier otro: lo que está tomado es el conductor.
+            assertThatCode(() -> service.startHold(CONNECTOR + 1, windowIn(5), OTHER_DRIVER))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("No se puede reservar el mismo horario en dos estaciones distintas")
+        void cannotBookTwoConnectorsForTheSameHours() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            TimeWindow window = windowIn(2);
+            service.confirmBooking(service.startHold(CONNECTOR, window, DRIVER).id(), DRIVER);
+
+            Throwable thrown = catchThrowable(() -> service.startHold(CONNECTOR + 1, window, DRIVER));
+            assertThat(codeOf(thrown)).isEqualTo("DRIVER_WINDOW_TAKEN");
+
+            // Media hora de cruce es cruce igual.
+            assertThatThrownBy(() -> service.startHold(
+                            CONNECTOR + 1,
+                            new TimeWindow(
+                                    window.start().plus(Duration.ofMinutes(30)),
+                                    window.end().plus(Duration.ofMinutes(30))),
+                            DRIVER))
+                    .isInstanceOf(DriverAlreadyBookedException.class);
+        }
+
+        /* El bloqueo es por hora y no por conductor a secas: dos cargas en el día son legítimas. */
+        @Test
+        @DisplayName("Dos reservas del mismo conductor en horarios que no se cruzan se permiten")
+        void allowsTwoBookingsAtDifferentHours() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            service.confirmBooking(
+                    service.startHold(CONNECTOR, windowIn(2), DRIVER).id(), DRIVER);
+
+            assertThatCode(() -> service.confirmBooking(
+                            service.startHold(CONNECTOR, windowIn(4), DRIVER).id(), DRIVER))
+                    .doesNotThrowAnyException();
+            assertThat(service.getDriverBookings(DRIVER)).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("Cancelada la reserva, el conductor queda libre para ese horario")
+        void cancellingFreesTheDriver() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            TimeWindow window = windowIn(2);
+            Booking booking =
+                    service.confirmBooking(service.startHold(CONNECTOR, window, DRIVER).id(), DRIVER);
+
+            service.cancelBooking(booking.getId(), DRIVER);
+
+            assertThatCode(() -> service.startHold(CONNECTOR + 1, window, DRIVER)).doesNotThrowAnyException();
+        }
+
+        /*
+         * La regla se vuelve a chequear al confirmar, y no es redundante: entre retener y confirmar
+         * pasan minutos, y en el medio la reserva que el conductor ya tenía puede haber arrancado.
+         */
+        @Test
+        @DisplayName("Si la carga arrancó mientras revisaba, confirmar se rechaza")
+        void confirmRecheckesTheDriver() {
+            started(AVAILABLE, Duration.ofHours(2));
+            service.confirmBooking(
+                    service.startHold(CONNECTOR, windowIn(1), DRIVER).id(), DRIVER);
+            Hold later = service.startHold(CONNECTOR + 1, windowIn(5), DRIVER);
+
+            clock.advance(Duration.ofMinutes(70));
+
+            Throwable thrown = catchThrowable(() -> service.confirmBooking(later.id(), DRIVER));
+            assertThat(codeOf(thrown)).isEqualTo("DRIVER_CHARGING");
+        }
     }
 
     /*

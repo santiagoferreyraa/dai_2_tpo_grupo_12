@@ -5,6 +5,7 @@ import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.ConnectorCatalogUnavailableException;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
+import com.ecopedia.charging.booking.domain.DriverAlreadyBookedException;
 import com.ecopedia.charging.booking.domain.HoldExpiredException;
 import com.ecopedia.charging.booking.domain.HoldNotFoundException;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
@@ -68,6 +69,21 @@ public class BookingExceptionHandler {
     @ExceptionHandler({ConnectorNotBookableException.class, SlotUnavailableException.class})
     public ProblemDetail handleConflict(RuntimeException exception) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+    }
+
+    /**
+     * El conductor ya tiene comprometido ese tiempo: 409 igual que el slot tomado, pero con
+     * {@code code}.
+     *
+     * <p>El código es necesario y no decorativo: los dos conflictos llegan al front como 409 y le
+     * tiene que decir cosas distintas al conductor. "Ese horario ya no está disponible, probá con
+     * otro" sobre una reserva propia que se cruza manda a buscar un conector que no es el problema.
+     */
+    @ExceptionHandler(DriverAlreadyBookedException.class)
+    public ProblemDetail handleDriverAlreadyBooked(DriverAlreadyBookedException exception) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+        problem.setProperty("code", exception.code());
+        return problem;
     }
 
     @ExceptionHandler(ConnectorCatalogUnavailableException.class)
