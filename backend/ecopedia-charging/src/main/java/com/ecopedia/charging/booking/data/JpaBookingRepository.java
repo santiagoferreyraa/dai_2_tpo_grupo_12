@@ -65,4 +65,47 @@ public interface JpaBookingRepository extends JpaRepository<Booking, Long>, Book
             @Param("status") BookingStatus status,
             @Param("start") Instant start,
             @Param("end") Instant end);
+
+    /**
+     * El cruce, pero por conductor y a través de todos los conectores: lo que bloquea al conductor
+     * y no al conector.
+     *
+     * <p>El {@code where} es el mismo de {@link #existsOverlapping} con {@code driverId} en lugar
+     * de {@code connectorId} —si cambia el criterio de cruce, cambian los tres—. Lo resuelve el
+     * índice {@code idx_bookings_driver}.
+     */
+    @Override
+    @Query(
+            """
+            select b from Booking b
+            where b.driverId = :driverId
+              and b.status = :status
+              and b.windowStart < :end
+              and b.windowEnd > :start
+            order by b.windowStart
+            """)
+    List<Booking> findOverlappingForDriver(
+            @Param("driverId") Long driverId,
+            @Param("status") BookingStatus status,
+            @Param("start") Instant start,
+            @Param("end") Instant end);
+
+    /**
+     * Las reservas del conductor que están corriendo en ese instante.
+     *
+     * <p>Mismo criterio semiabierto que el cruce, con un instante en vez de una ventana: en el
+     * instante exacto del fin la reserva ya terminó, así que ya no bloquea.
+     */
+    @Override
+    @Query(
+            """
+            select b from Booking b
+            where b.driverId = :driverId
+              and b.status = :status
+              and b.windowStart <= :at
+              and b.windowEnd > :at
+            order by b.windowStart
+            """)
+    List<Booking> findInProgressForDriver(
+            @Param("driverId") Long driverId, @Param("status") BookingStatus status, @Param("at") Instant at);
 }

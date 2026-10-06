@@ -15,7 +15,6 @@ import {
   ARGENTINA_BOUNDS,
   DEFAULT_CENTER,
   DEFAULT_ZOOM,
-  FOCUS_ZOOM,
   MAX_NATIVE_ZOOM,
   MAX_ZOOM,
   MIN_ZOOM,
@@ -60,11 +59,19 @@ function InvalidateSizeOnResize() {
 }
 
 /**
- * Acerca el mapa a la estación elegida.
+ * Lleva el centro del mapa a la estación elegida. **No toca el zoom.**
  *
  * flyTo y no setView: el desplazamiento animado deja ver hacia dónde se movió el mapa. Con un
  * salto seco, quien viene de elegir una ficha en el carrusel pierde la referencia de dónde
  * estaba parado.
+ *
+ * **La escala la decide el usuario y nadie más.** Acá había dos movimientos automáticos de zoom:
+ * este, que acercaba hasta FOCUS_ZOOM con cada estación elegida, y un encuadre que después
+ * alejaba el mapa hasta que entrara el recorrido entero. Entre los dos, el mapa cambiaba de
+ * escala solo —dos veces— cada vez que se tocaba un pin. Molestaba sobre todo reservando desde
+ * una dirección escrita, que es cuando el conductor ya acomodó el mapa a mano alrededor de ese
+ * punto y la pantalla se lo volvía a mover. Queda el desplazamiento, que es lo mínimo para que
+ * el pin elegido entre en pantalla; acercar y alejar es gesto del usuario.
  *
  * Recibe la estación entera y no su id para que el efecto dependa del objeto: `find` sobre el
  * arreglo devuelve siempre la misma referencia mientras no cambie la selección, así que un
@@ -75,7 +82,7 @@ function InvalidateSizeOnResize() {
  * se mueve hacia una estación que no se ve. Se corrige subiendo el centro la mitad de lo
  * tapado, que es lo que vuelve a dejar el pin en el medio del hueco visible.
  */
-function FlyToStation({
+function PanToStation({
   station,
   bottomInsetPx,
 }: {
@@ -87,68 +94,26 @@ function FlyToStation({
   useEffect(() => {
     if (station === null) return
 
+    /*
+     * El zoom se lee del mapa y se le devuelve igual: `flyTo` pide un nivel, y pasarle el que ya
+     * tiene es la forma de que el viaje sea solo desplazamiento. Se lee adentro del efecto y no
+     * entra en las dependencias a propósito: que el usuario cambie el zoom no es motivo para
+     * volver a centrar el mapa.
+     */
+    const zoom = map.getZoom()
     const target = L.latLng(station.latitude, station.longitude)
     if (bottomInsetPx === 0) {
-      map.flyTo(target, FOCUS_ZOOM)
+      map.flyTo(target, zoom)
       return
     }
 
     /*
-     * La corrección se hace en píxeles y no en grados: cuántos grados son 150 px depende del
-     * zoom y de la latitud, y al zoom de destino, que todavía no es el actual. `project` a ese
-     * zoom convierte una vez y evita las dos cuentas.
+     * La corrección se hace en píxeles y no en grados: cuántos grados son 150 px depende del zoom
+     * y de la latitud. `project` al zoom actual convierte una vez y evita las dos cuentas.
      */
-    const point = map.project(target, FOCUS_ZOOM).add([0, bottomInsetPx / 2])
-    map.flyTo(map.unproject(point, FOCUS_ZOOM), FOCUS_ZOOM)
+    const point = map.project(target, zoom).add([0, bottomInsetPx / 2])
+    map.flyTo(map.unproject(point, zoom), zoom)
   }, [map, station, bottomInsetPx])
-
-  return null
-}
-
-/**
- * Aleja el mapa hasta que entre la ruta completa.
- *
- * Es el gesto que sigue a elegir una estación: la pregunta que contesta no es "dónde está la
- * estación" —eso ya lo contestó FlyToStation— sino "cómo llego y qué tan lejos me queda". Esa
- * pregunta necesita el recorrido entero en pantalla, y por eso acá se ALEJA donde el resto de la
- * pantalla acerca.
- *
- * **El encuadre sale de la geometría de la ruta y no de sus dos puntas.** Una ruta que rodea —un
- * río, una vía, una autopista sin bajada— se sale del recuadro que forman el origen y el destino,
- * y encuadrando las puntas quedaría con el medio del recorrido fuera de la pantalla.
- *
- * `flyToBounds` y no `fitBounds`, por lo mismo que FlyToStation usa `flyTo`: el viaje animado
- * deja ver que el mapa se abrió hacia atrás. Un salto seco desde el zoom 15 hasta ver media
- * provincia es desorientador.
- *
- * El relleno de abajo suma `bottomInsetPx` por el mismo motivo que allá: en celular el panel está
- * abierto justo cuando aparece la ruta, así que sin compensarlo el encuadre mete el destino —o al
- * usuario— detrás del panel. `paddingBottomRight` es la forma que tiene Leaflet de pedir un
- * margen asimétrico, que es exactamente el caso.
- *
- * Depende de `route` y no de sus coordenadas: `useRoute` devuelve el mismo objeto mientras no
- * vuelva a consultar, así que un repintado cualquiera no vuelve a mover el mapa. Y cuando sí
- * consulta de nuevo —porque el usuario se movió 200 m— el reencuadre es lo correcto, porque el
- * recorrido cambió.
- */
-function FitRoute({ route, bottomInsetPx }: { route: Route | null; bottomInsetPx: number }) {
-  const map = useMap()
-
-  useEffect(() => {
-    if (route === null) return
-
-    map.flyToBounds(L.latLngBounds(route.coordinates), {
-      paddingTopLeft: [56, 56],
-      paddingBottomRight: [56, 56 + bottomInsetPx],
-      /*
-       * El techo evita el caso degenerado: con el usuario a media cuadra de la estación, el
-       * recuadro es diminuto y Leaflet se acercaría hasta el máximo que dé el proveedor. La
-       * pantalla quedaría mostrando dos puntos separados por todo el ancho, que es justamente la
-       * lectura contraria a "esto te queda al lado".
-       */
-      maxZoom: FOCUS_ZOOM,
-    })
-  }, [map, route, bottomInsetPx])
 
   return null
 }
@@ -157,7 +122,7 @@ interface StationMapProps {
   stations: StationResult[]
   selectedStationId: number | null
   onSelect: (stationId: number) => void
-  /** Alto que el panel de detalle le tapa al mapa desde abajo. Ver FlyToStation. */
+  /** Alto que el panel de detalle le tapa al mapa desde abajo. Ver PanToStation. */
   bottomInsetPx?: number
   /** Apaga los pines que no son el elegido. Se usa con el panel abierto. */
   dimUnselected?: boolean
@@ -272,13 +237,7 @@ export default function StationMap({
       className="absolute inset-0"
     >
       <InvalidateSizeOnResize />
-      <FlyToStation station={selectedStation} bottomInsetPx={bottomInsetPx} />
-      {/*
-        El encuadre sigue al recorrido de la selección, que es el que acaba de aparecer porque
-        alguien tocó algo. Con la estación reservada elegida no hay tal recorrido —es el punteado—,
-        y ahí se encuadra ese.
-      */}
-      <FitRoute route={route ?? bookedRoute} bottomInsetPx={bottomInsetPx} />
+      <PanToStation station={selectedStation} bottomInsetPx={bottomInsetPx} />
 
       {/*
         Los mosaicos cambian con el tema, y son DOS juegos distintos del mismo proveedor: no es el
