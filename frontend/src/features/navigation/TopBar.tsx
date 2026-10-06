@@ -32,6 +32,18 @@ export default function TopBar() {
   /* Solo las que le corresponden a quien mira. Ver `visibleSections`. */
   const sections = visibleSections(MAIN_SECTIONS, session?.role ?? null)
 
+  /*
+    Si el velo se dibuja. Se apaga en las pantallas de estaciones —el mapa y el ABM— y no por
+    capricho: ahí abajo de la franja no empieza contenido que scrollea sino cosas que no se
+    mueven, la fila de filtros y el borde del mapa. Lo que se queda quieto no tiene nada que
+    desvanecer, así que el velo no le aporta un pasaje: le come el borde de arriba.
+
+    La excepción vive ACÁ y no en esas pantallas a propósito. El velo es de la franja y lo que se
+    decide es si la franja lo usa; repartir la regla en cada pantalla sería hacer que todas
+    tengan que saber de una capa que no es suya.
+  */
+  const fades = !(pathname === '/stations' || pathname.startsWith('/stations/'))
+
   const listRef = useRef<HTMLElement>(null)
   const dotRef = useRef<HTMLSpanElement>(null)
 
@@ -120,7 +132,32 @@ export default function TopBar() {
       1200 y tienen que tapar la navegación.
     */
     <header className="fixed inset-x-0 top-0 z-[1140] hidden md:block">
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-6 px-6 py-4">
+      {/*
+        El velo que desvanece el contenido antes de que llegue hasta acá.
+
+        La franja es transparente y flota sobre la página, así que el contenido de abajo termina
+        contra ella: o le pasa por detrás y se lee mezclado con los rótulos, o lo recorta el
+        `padding` que `App.tsx` le reserva y queda una línea recta a lo ancho de la pantalla.
+
+        **Arranca en el borde de la ventana y no donde empieza el contenido**, y eso es lo único
+        que hay que entender de esta capa. Puesta a la altura del corte, el que se ve es su propio
+        borde de arriba: se cambia un corte por otro, apenas más abajo. Naciendo en el techo, su
+        mitad fuerte queda escondida detrás de esta misma franja —donde no hay nada más que
+        tapar— y lo único que se ve de ella es cómo se apaga, justo sobre el filo que tiene que
+        disimular.
+
+        Vive en la franja y no en cada pantalla porque el problema no es de ninguna pantalla en
+        particular: lo produce esta franja al flotar, así que se arregla donde se origina y vale
+        para todas. Ver `.top-bar__fade` en index.css.
+      */}
+      {fades && <span className="top-bar__fade" aria-hidden="true" />}
+
+      {/*
+        `relative` para que esta fila se dibuje POR ENCIMA del velo. No es decorativo: el velo
+        está posicionado y esta fila no, y entre hermanos lo posicionado se pinta después. Sin
+        esto, el desenfoque le pasaría por arriba a los rótulos y al buscador.
+      */}
+      <div className="relative grid grid-cols-[1fr_auto_1fr] items-center gap-6 px-6 py-4">
         {/*
           El logo y el buscador, juntos a la izquierda.
 

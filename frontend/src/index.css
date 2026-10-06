@@ -1041,3 +1041,65 @@ textarea:-webkit-autofill {
     animation: none;
   }
 }
+
+/* ─────────────────── El velo de la franja de arriba ───────────────────
+
+  La capa que desvanece el contenido contra la franja de navegación. El PORQUÉ y el DÓNDE están
+  en `features/navigation/TopBar.tsx`, que es quien la monta; acá está solo cómo se dibuja.
+
+  Nace en el techo de la ventana y baja 6.25rem. Los primeros 5rem son los de la franja —el mismo
+  `md:pt-20` que `App.tsx` le reserva al `<main>`— y ahí el velo va a fuerza entera, escondido
+  detrás de la franja; lo que se ve es el último centímetro, el que cae sobre el borde donde el
+  contenido se corta.
+
+  **Es SOLO desenfoque: no lleva tinte de ningún color, y eso no es austeridad.** Un velo teñido
+  del color de fondo tapa el fondo, que acá no es un color sino un degradado que se mueve: la
+  franja quedaba apoyada sobre una banda plana, despegada de la pantalla. El desenfoque no tiene
+  ese problema porque desenfocar un degradado suave devuelve casi el mismo degradado —detrás de
+  la franja no se nota nada— y en cambio deshace por completo lo que sí tiene detalle, que es el
+  contenido. Eso es exactamente lo que se busca: que el fondo siga pasando y el contenido no.
+
+  El desenfoque es además lo que ablanda el recorte, y por eso alcanza con él solo: muestrea
+  también lo que está más allá del borde, así que la línea recta donde el contenido termina se
+  mezcla con el fondo de arriba y se vuelve un pasaje en vez de un filo.
+
+  El `mask-image` es lo que evita cambiar un corte por otro: sin él, el desenfoque termina en una
+  línea recta y se lee como un borde. **Y se mantiene parejo hasta 5rem**, que es donde está el
+  corte: una máscara que ya viene bajando lo deja asomar.
+
+  **Termina en 6.25rem y no más abajo** porque debajo de la franja hay pantallas que arrancan con
+  controles y no con contenido que scrollea —la fila de filtros del mapa es la que manda acá—.
+  Lo que no se mueve no necesita desvanecerse, y desenfocarlo es esconder un control.
+
+  El `z-index` no se toca: la capa es hija de la franja, que ya está en 1140, así que hereda su
+  lugar en la pila y queda por encima de cualquier pantalla sin pisar las ventanas modales.
+*/
+.top-bar__fade {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 6.25rem;
+  pointer-events: none;
+
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+
+  /*
+    Los tramos intermedios no son adorno: una máscara de dos puntas se apaga en línea recta, y el
+    quiebre donde empieza a bajar se alcanza a leer como un escalón tenue. Con los puntos de en
+    medio la caída arranca despacio y termina despacio, que es como se apaga una sombra.
+  */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 5rem,
+    rgb(0 0 0 / 0.55) 5.5rem,
+    rgb(0 0 0 / 0.2) 5.9rem,
+    transparent 6.25rem
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black 5rem,
+    rgb(0 0 0 / 0.55) 5.5rem,
+    rgb(0 0 0 / 0.2) 5.9rem,
+    transparent 6.25rem
+  );
+}
