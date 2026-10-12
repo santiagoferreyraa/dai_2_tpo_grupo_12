@@ -2,8 +2,8 @@ package com.ecopedia.charging.booking.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.ecopedia.charging.booking.domain.Booking;
 import com.ecopedia.charging.booking.domain.BookingAccessDeniedException;
@@ -619,12 +619,13 @@ class BookingServiceImplTest {
         void cancellingFreesTheDriver() {
             started(AVAILABLE, Duration.ofMinutes(10));
             TimeWindow window = windowIn(2);
-            Booking booking =
-                    service.confirmBooking(service.startHold(CONNECTOR, window, DRIVER).id(), DRIVER);
+            Booking booking = service.confirmBooking(
+                    service.startHold(CONNECTOR, window, DRIVER).id(), DRIVER);
 
             service.cancelBooking(booking.getId(), DRIVER);
 
-            assertThatCode(() -> service.startHold(CONNECTOR + 1, window, DRIVER)).doesNotThrowAnyException();
+            assertThatCode(() -> service.startHold(CONNECTOR + 1, window, DRIVER))
+                    .doesNotThrowAnyException();
         }
 
         /*
