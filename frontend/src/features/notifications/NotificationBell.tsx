@@ -129,8 +129,9 @@ export default function NotificationBell() {
             porcentaje porque lo que tiene adentro son renglones de texto, y una ventanita que
             cambia de ancho con la pantalla parte los títulos en lugares distintos cada vez.
 
-            1150 la deja por encima de la franja (1140), que es su propio contenedor, y por debajo
-            de las ventanas modales (1200), que tienen que taparla.
+            Este z-index solo ordena dentro de la franja, que es su contexto de apilado: contra el
+            resto de la pantalla —la tira de la reserva activa incluida— compite la franja entera,
+            con su 1150. Ver `TopBar`.
           */
           className="notification-popover glass-panel absolute top-full right-0 z-[1150] mt-2 flex max-h-[min(28rem,calc(100vh-7rem))] w-96 flex-col rounded-3xl p-2.5"
         >

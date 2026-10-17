@@ -1071,11 +1071,13 @@ textarea:-webkit-autofill {
   controles y no con contenido que scrollea —la fila de filtros del mapa es la que manda acá—.
   Lo que no se mueve no necesita desvanecerse, y desenfocarlo es esconder un control.
 
-  El `z-index` no se toca: la capa es hija de la franja, que ya está en 1140, así que hereda su
-  lugar en la pila y queda por encima de cualquier pantalla sin pisar las ventanas modales.
+  Es hermana de la franja y no hija, así que es fija por su cuenta y lleva su propio `z-index`:
+  1140, por encima de cualquier pantalla, por debajo de la tira de la reserva activa (1145) —que
+  si no saldría borroneada— y de la franja (1150). El porqué está en `TopBar.tsx`.
 */
 .top-bar__fade {
-  position: absolute;
+  position: fixed;
+  z-index: 1140;
   inset: 0 0 auto 0;
   height: 6.25rem;
   pointer-events: none;
