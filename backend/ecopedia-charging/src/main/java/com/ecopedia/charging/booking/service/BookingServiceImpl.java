@@ -12,6 +12,7 @@ import com.ecopedia.charging.booking.domain.ConnectorCatalog;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
 import com.ecopedia.charging.booking.domain.ConnectorSnapshot;
+import com.ecopedia.charging.booking.domain.DriverAlreadyBookedException;
 import com.ecopedia.charging.booking.domain.FreeWindows;
 import com.ecopedia.charging.booking.domain.Hold;
 import com.ecopedia.charging.booking.domain.HoldExpiredException;
@@ -67,6 +68,22 @@ import org.springframework.stereotype.Service;
  * Lo primero dura minutos y se pierde con el proceso; lo segundo dura hasta su ventana y
  * sobrevive a un reinicio, porque el conductor ya cuenta con él. Ese par es lo que hace cumplir
  * RF08: confirmada la reserva, el conector queda bloqueado para el resto durante esa ventana.
+ *
+ * <p><b>Y el bloqueo va para los dos lados: la reserva ocupa el conector y ocupa al conductor.</b>
+ * Son tres reglas sobre el conductor, y las tres salen de un hecho del mundo real —tiene un solo
+ * auto y lo enchufa en un solo lado—:
+ *
+ * <ul>
+ *   <li><b>Una retención a la vez.</b> Pedir otra no se rechaza: <b>reemplaza</b> la anterior, que
+ *       queda liberada en el acto. Rechazarla dejaría al conductor que se arrepintió del horario
+ *       esperando diez minutos a que venza su propia retención, y ese es justo el caso normal.
+ *   <li><b>Nada nuevo mientras una reserva está en curso.</b> Con el auto cargando no se reserva,
+ *       ni acá ni para mañana.
+ *   <li><b>Ni dos reservas que compartan horario</b>, aunque sean de estaciones distintas.
+ * </ul>
+ *
+ * Antes faltaban las tres, y el agujero no era teórico: el mismo conductor podía reservar dos
+ * conectores para la misma hora, cada uno libre por su cuenta.
  *
  * <p><b>Por qué las retenciones no van a la base.</b> Duran minutos, vencen solas y no son un
  * compromiso de nadie todavía. Guardarlas sería llenar la base de reservas fantasma y obligar a
@@ -183,7 +200,20 @@ public class BookingServiceImpl implements BookingService {
 
         Hold hold;
         synchronized (holdLock) {
-            requireFreeSlot(connectorId, window, now);
+            /*
+             * El conductor antes que el conector, y el orden no es casual: si las dos cosas fallan,
+             * el rechazo que le sirve es el suyo. "Ya tenés una reserva a esa hora" le dice qué
+             * hacer; "ese slot está tomado" lo manda a probar otro horario que tampoco va a poder.
+             */
+            requireDriverFree(driverId, window, now);
+            requireFreeSlot(connectorId, window, now, driverId);
+
+            /*
+             * Recién acá se suelta la retención anterior del conductor, con todo ya validado: si el
+             * pedido nuevo se hubiera rechazado, el conductor se quedaría sin la que tenía por
+             * haber intentado cambiarla.
+             */
+            releaseHoldsOf(driverId);
 
             hold = new Hold(UUID.randomUUID(), connectorId, driverId, window, now.plus(holdTtl));
             holds.put(hold.id(), hold);
@@ -243,29 +273,29 @@ public class BookingServiceImpl implements BookingService {
         }
     }
 
-    /** Para retener: no hay ninguna retención propia todavía de la que excluirse. */
-    private void requireFreeSlot(Long connectorId, TimeWindow window, Instant now) {
-        requireFreeSlot(connectorId, window, now, null);
-    }
-
     /**
-     * Que nadie tenga comprometida una ventana que se cruce con esta, ni reteniéndola ni
+     * Que nadie MÁS tenga comprometida una ventana que se cruce con esta, ni reteniéndola ni
      * habiéndola reservado. <b>Se invoca siempre con {@link #holdLock} tomado.</b>
      *
-     * <p>{@code ownHoldId} es la retención que el propio pedido ya tiene sobre esa ventana, y que
-     * por eso no cuenta como conflicto: al confirmar, la retención sigue en el mapa —se suelta
-     * recién cuando la reserva está guardada— y sin excluirla el conductor chocaría contra sí
-     * mismo. Es {@code null} cuando todavía no hay ninguna.
+     * <p><b>Las retenciones del propio conductor no cuentan como conflicto</b>, y es correcto en
+     * los dos lugares desde donde se llama, porque el conductor tiene a lo sumo una: al confirmar
+     * es la que se está confirmando —sigue en el mapa hasta que la reserva esté guardada, y sin
+     * excluirla el conductor chocaría contra sí mismo—, y al retener es la que
+     * {@link #releaseHoldsOf} está por soltar. De paso arregla un caso que molestaba: volver a
+     * pedir el mismo horario que uno ya tenía retenido contestaba 409 sobre un slot propio.
      *
-     * @throws SlotUnavailableException si el slot está tomado
+     * <p>Lo que el conductor sí tiene que chocar es su propia reserva CONFIRMADA, y la chequea
+     * {@link #requireDriverFree} con un mensaje que explica de qué se trata.
+     *
+     * @throws SlotUnavailableException si el slot está tomado por otro
      */
-    private void requireFreeSlot(Long connectorId, TimeWindow window, Instant now, UUID ownHoldId) {
+    private void requireFreeSlot(Long connectorId, TimeWindow window, Instant now, Long driverId) {
         /*
          * Una retención vencida no bloquea aunque el reloj todavía no la haya sacado del mapa:
          * el reloj es la limpieza, y la regla es la hora.
          */
         boolean held = holds.values().stream()
-                .filter(other -> !other.id().equals(ownHoldId))
+                .filter(other -> !other.driverId().equals(driverId))
                 .anyMatch(other -> other.connectorId().equals(connectorId)
                         && !other.isExpiredAt(now)
                         && other.window().overlaps(window));
@@ -279,6 +309,59 @@ public class BookingServiceImpl implements BookingService {
         if (booked) {
             throw new SlotUnavailableException(connectorId);
         }
+    }
+
+    /**
+     * Que el CONDUCTOR esté libre: ni cargando ahora, ni con otra reserva a esa misma hora.
+     * <b>Se invoca con {@link #holdLock} tomado</b>, igual que {@link #requireFreeSlot}, para que
+     * dos pedidos del mismo conductor no puedan pasar los dos por acá a la vez.
+     *
+     * <p>Mira solo las reservas CONFIRMADAS y no las retenciones: la retención del conductor no
+     * necesita chequeo porque tiene a lo sumo una y el pedido nuevo la reemplaza (ver
+     * {@link #releaseHoldsOf}). Una reserva cancelada no cuenta, por lo mismo que no cuenta para el
+     * conector: al cancelar queda libre el conector y queda libre él.
+     *
+     * @throws DriverAlreadyBookedException si tiene una reserva en curso o una que se cruza
+     */
+    private void requireDriverFree(Long driverId, TimeWindow window, Instant now) {
+        bookingRepository.findInProgressForDriver(driverId, BookingStatus.CONFIRMED, now).stream()
+                .findFirst()
+                .ifPresent(inProgress -> {
+                    throw DriverAlreadyBookedException.charging(inProgress.getId(), driverId);
+                });
+
+        bookingRepository
+                .findOverlappingForDriver(driverId, BookingStatus.CONFIRMED, window.start(), window.end())
+                .stream()
+                .findFirst()
+                .ifPresent(clashing -> {
+                    throw DriverAlreadyBookedException.overlapping(clashing.getId(), driverId);
+                });
+    }
+
+    /**
+     * Suelta las retenciones del conductor: es lo que mantiene la regla de una sola a la vez.
+     * <b>Se invoca con {@link #holdLock} tomado.</b>
+     *
+     * <p>Son las retenciones en plural por prolijidad, no porque se esperen dos: si alguna vez
+     * quedaran dos por un camino que hoy no existe, esto las deja en una igual.
+     *
+     * <p>No cancela el vencimiento programado de las que saca. No hace falta: {@link #expire} no
+     * encuentra nada y no hace nada. Cancelar el {@code ScheduledFuture} obligaría a guardarlo por
+     * retención para ahorrar un {@code remove} sobre un mapa.
+     */
+    private void releaseHoldsOf(Long driverId) {
+        holds.values().removeIf(hold -> {
+            if (!hold.driverId().equals(driverId)) {
+                return false;
+            }
+            log.info(
+                    "Se libera la retención {} del conector {}: el conductor {} eligió otro horario",
+                    hold.id(),
+                    hold.connectorId(),
+                    driverId);
+            return true;
+        });
     }
 
     /** Lo ejecuta el reloj al cumplirse el plazo. Si ya se confirmó, no queda nada que sacar. */
@@ -342,7 +425,8 @@ public class BookingServiceImpl implements BookingService {
              * el único que puede escribir: una reserva cargada a mano o un segundo proceso
              * alcanzan. Es una consulta indexada contra un tiempo de espera humano.
              */
-            requireFreeSlot(hold.connectorId(), hold.window(), now, holdId);
+            requireDriverFree(driverId, hold.window(), now);
+            requireFreeSlot(hold.connectorId(), hold.window(), now, driverId);
 
             booking = bookingRepository.save(new Booking(hold.connectorId(), driverId, hold.window(), now));
             holds.remove(holdId);

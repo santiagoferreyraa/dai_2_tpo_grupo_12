@@ -191,6 +191,37 @@ class BookingApiTest {
                 .isEqualTo(201);
     }
 
+    /*
+     * La otra mitad del bloqueo, contra la base de verdad: la reserva ocupa al CONDUCTOR, no solo
+     * al conector. Acá importa que la consulta por conductor en JPQL diga lo mismo que el doble en
+     * memoria; si no, aquellas pruebas pasarían sobre una base que igual deja reservar dos veces.
+     */
+    @Test
+    @DisplayName("El mismo conductor no puede reservar la misma hora en dos conectores")
+    void driverCannotBookTwoConnectorsForTheSameHours() throws Exception {
+        Instant start = nextWindowStart();
+        confirm(holdSlot(20L, start, DRIVER), DRIVER);
+
+        String otherConnector = """
+                {"connectorId":21,"start":"%s","end":"%s"}
+                """
+                .formatted(start, start.plus(Duration.ofHours(1)));
+
+        /* 409 con código: es un conflicto del conductor y no del slot, y el front los dice distinto. */
+        mockMvc.perform(post("/api/bookings/holds")
+                        .header(HttpHeaders.AUTHORIZATION, driver(DRIVER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(otherConnector))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DRIVER_WINDOW_TAKEN"));
+
+        // El conector 21 estaba libre: lo que estaba tomado era el conductor.
+        assertThat(holdAttempt(21L, start, OTHER_DRIVER)).isEqualTo(201);
+
+        // Y una hora en la que no tiene nada sigue siendo suya.
+        assertThat(holdAttempt(21L, start.plus(Duration.ofHours(1)), DRIVER)).isEqualTo(201);
+    }
+
     @Test
     @DisplayName("Cancelada la reserva, la ventana vuelve a estar disponible")
     void cancellingFreesTheWindow() throws Exception {

@@ -63,29 +63,40 @@ export interface BookingFlow {
 const REUSE_MARGIN_MS = 15_000
 
 /**
- * Las retenciones conseguidas y todavía sin confirmar, por conector.
+ * La retención conseguida y todavía sin confirmar. **Una sola, no una por conector.**
  *
- * Hace falta porque el backend no tiene forma de soltar una retención: vence sola. Si el
- * conductor vuelve a elegir EL MISMO horario, pedir otra retención choca contra la suya propia y
- * le contesta 409, "horario tomado", sobre un horario que tomó él. Guardándola, el mismo horario
- * la reusa.
+ * Es una y no un mapa porque el backend tiene la misma regla: el conductor tiene una retención a
+ * la vez, y pedir otra reemplaza la anterior (ver `BookingServiceImpl`). Con un mapa por conector,
+ * acá quedarían recordadas retenciones que allá ya no existen, y confirmarlas daría un 404 que se
+ * lee como "se te venció el tiempo" sin que se haya vencido nada.
+ *
+ * Para qué se recuerda: si el conductor vuelve a elegir EL MISMO horario, reusarla evita un viaje
+ * al servidor y conserva la cuenta regresiva que ya venía corriendo.
  *
  * **Vive fuera del componente a propósito.** Adentro se perdería al cerrar el diálogo, y el caso
  * de arriba pasa igual: retener, cerrar sin confirmar, volver a abrir y pedir el mismo horario.
  * Afuera dura lo que dura la pestaña, que es lo mismo que puede durar el recuerdo de quien reservó.
  */
-const pendingHolds = new Map<number, Hold>()
+let pendingHold: Hold | null = null
 
 /**
- * La retención propia todavía vigente sobre un conector, si hay una.
+ * La retención propia todavía vigente sobre ese conector, si la hay.
  *
  * La usa la disponibilidad: el backend cuenta esa retención como ocupada, pero para este conductor
  * ese mismo horario sigue siendo elegible, porque `requestHold` la reusa en vez de pedir otra.
+ *
+ * Pregunta por conector porque quien la usa dibuja la agenda de UN conector, y la única retención
+ * que hay puede ser de otro.
  */
 export function pendingHoldFor(connectorId: number, now: Date): Hold | null {
-  const hold = pendingHolds.get(connectorId)
-  if (hold === undefined || hold.expiresAt.getTime() - now.getTime() <= REUSE_MARGIN_MS) return null
-  return hold
+  if (pendingHold === null || pendingHold.connectorId !== connectorId) return null
+  if (pendingHold.expiresAt.getTime() - now.getTime() <= REUSE_MARGIN_MS) return null
+  return pendingHold
+}
+
+/** Olvida la retención recordada, si es la de ese conector. */
+function forgetHold(connectorId: number) {
+  if (pendingHold?.connectorId === connectorId) pendingHold = null
 }
 
 export function useBookingFlow(connectorId: number): BookingFlow {
@@ -103,12 +114,11 @@ export function useBookingFlow(connectorId: number): BookingFlow {
 
   const requestHold = useCallback(
     (start: Date, end: Date) => {
-      const previous = pendingHolds.get(connectorId)
+      const previous = pendingHoldFor(connectorId, new Date())
       if (
-        previous !== undefined &&
+        previous !== null &&
         previous.start.getTime() === start.getTime() &&
-        previous.end.getTime() === end.getTime() &&
-        previous.expiresAt.getTime() - Date.now() > REUSE_MARGIN_MS
+        previous.end.getTime() === end.getTime()
       ) {
         setError(null)
         setStep({ kind: 'reviewing', hold: previous })
@@ -120,7 +130,7 @@ export function useBookingFlow(connectorId: number): BookingFlow {
 
       startHold(connectorId, start, end).then(
         (hold) => {
-          pendingHolds.set(connectorId, hold)
+          pendingHold = hold
           if (!mounted.current) return
           setStep({ kind: 'reviewing', hold })
         },
@@ -144,7 +154,7 @@ export function useBookingFlow(connectorId: number): BookingFlow {
 
       checkoutBooking(hold.id, null, acceptGracePeriod).then(
         (booking) => {
-          pendingHolds.delete(connectorId)
+          forgetHold(connectorId)
           /* La franja y el perfil muestran las reservas: se enteran de la nueva sin recargar. */
           refreshMyBookings()
           /*
@@ -167,7 +177,7 @@ export function useBookingFlow(connectorId: number): BookingFlow {
            * Si fue la tarjeta, cargarla y volver al mismo horario reusa esta retención.
            */
           if (status === 410 || status === 404 || status === 409) {
-            pendingHolds.delete(connectorId)
+            forgetHold(connectorId)
             setError(confirmErrorMessage(reason))
             setStep({ kind: 'choosing' })
             return
@@ -187,7 +197,7 @@ export function useBookingFlow(connectorId: number): BookingFlow {
   }, [])
 
   const expire = useCallback(() => {
-    pendingHolds.delete(connectorId)
+    forgetHold(connectorId)
     setError(plain('Se venció el tiempo para confirmar. Elegí el horario de nuevo.'))
     setStep({ kind: 'choosing' })
   }, [connectorId])
@@ -206,6 +216,26 @@ export function useBookingFlow(connectorId: number): BookingFlow {
  * ---------------------------------------------------------------------------
  */
 
+/**
+ * Los dos rechazos que son del CONDUCTOR y no del slot, que el backend marca con un `code`.
+ *
+ * Están acá y no en cada función porque llegan por los dos caminos —retener y confirmar— y tienen
+ * que decir lo mismo en los dos. Y hacen falta porque los dos conflictos viajan como 409: sin
+ * mirar el código, al conductor que ya tiene una reserva a esa hora se le contestaba "ese horario
+ * ya no está disponible, probá con otro", que lo manda a buscar un conector cuando el problema no
+ * es ningún conector.
+ */
+function driverBusyMessage(reason: ApiError): string | null {
+  switch (problemCode(reason)) {
+    case 'DRIVER_CHARGING':
+      return 'Ya tenés una carga en curso. Vas a poder reservar de nuevo cuando termine.'
+    case 'DRIVER_WINDOW_TAKEN':
+      return 'Ya tenés una reserva en ese horario. Elegí otro, o cancelá la que tenés desde tu perfil.'
+    default:
+      return null
+  }
+}
+
 function commonErrorMessage(status: number | null): string | null {
   if (status === 0)
     return 'No se pudo conectar con el servidor. Revisá tu conexión y probá de nuevo.'
@@ -217,6 +247,9 @@ function commonErrorMessage(status: number | null): string | null {
 
 function holdErrorMessage(reason: unknown): string {
   if (!(reason instanceof ApiError)) return 'No se pudo reservar. Probá de nuevo.'
+  /* El conductor ocupado antes que el slot ocupado: los dos son 409 y solo el código los separa. */
+  const busy = driverBusyMessage(reason)
+  if (busy !== null) return busy
   if (reason.status === 409)
     return 'Ese horario ya no está disponible en este conector. Probá con otro.'
   if (reason.status === 404) return 'Este conector ya no existe. Elegí otro desde el mapa.'
@@ -231,6 +264,9 @@ function holdErrorMessage(reason: unknown): string {
 function confirmErrorMessage(reason: unknown): BookingFlowError {
   const retry = plain('No se pudo confirmar. Probá de nuevo.')
   if (!(reason instanceof ApiError)) return retry
+
+  const busy = driverBusyMessage(reason)
+  if (busy !== null) return plain(busy)
 
   switch (problemCode(reason)) {
     case 'PAYMENT_METHOD_REQUIRED':

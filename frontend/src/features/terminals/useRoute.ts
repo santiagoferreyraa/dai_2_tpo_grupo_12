@@ -34,6 +34,10 @@ import { fetchRoute, RouteUnavailableError, type Point, type Route } from './rou
  *
  * 200 m es la escala en la que una ruta urbana cambia de verdad: por debajo, el recorrido es el
  * mismo salvo los primeros metros, y redibujarlo no le dice nada nuevo a nadie.
+ *
+ * **Solo se aplica a la deriva del GPS, nunca a un punto de partida elegido a mano.** Ver
+ * `RouteOrigin.kind`: una dirección escrita no oscila, se reemplaza, y filtrarla por distancia
+ * dejaba el recorrido saliendo del lugar anterior.
  */
 const REFETCH_THRESHOLD_M = 200
 
@@ -123,6 +127,20 @@ export interface RouteState {
 export interface RouteOrigin extends Point {
   /** Radio en metros dentro del cual está el usuario, con 95% de confianza. */
   accuracyM: number
+  /**
+   * De dónde salió el punto, cuando quien llama lo sabe.
+   *
+   * Acá adentro decide UNA cosa: si el umbral de REFETCH_THRESHOLD_M se le aplica. El umbral
+   * existe para la oscilación del GPS —el mismo punto medido de nuevo—, y una dirección escrita
+   * nunca es eso: cuando aparece, o cuando se vuelve al dispositivo, el conductor cambió el punto
+   * de partida a propósito y el recorrido tiene que salir del lugar nuevo aunque quede a la vuelta
+   * del anterior. Ese era el error: reservar con una dirección a menos de 200 m de donde estaba el
+   * teléfono dibujaba el tramo saliendo del teléfono.
+   *
+   * Es opcional porque una ubicación del navegador a secas —`DeviceLocation`— entra en este tipo
+   * tal cual, y sin marca se la trata como lo que es: un punto que puede estar oscilando.
+   */
+  kind?: 'device' | 'address'
 }
 
 const IDLE: RouteState = { status: 'idle', route: null, approximate: false }
@@ -187,7 +205,7 @@ export function useRoute(from: RouteOrigin | null, to: Point | null): RouteState
    * estado porque no se dibuja: solo sirve para decidir si la posición nueva justifica otra
    * consulta. En el estado, escribirlo provocaría un repintado por cada aviso del GPS.
    */
-  const routedFrom = useRef<Point | null>(null)
+  const routedFrom = useRef<RouteOrigin | null>(null)
 
   /*
    * El origen que el efecto va a usar, ya filtrado por el umbral. Es un estado y no un ref
@@ -222,8 +240,15 @@ export function useRoute(from: RouteOrigin | null, to: Point | null): RouteState
       return
     }
 
+    /*
+     * El umbral solo vale entre dos mediciones del dispositivo, que es la única pareja de puntos
+     * en la que "se movió poco" quiere decir "es el mismo punto de antes". Con una dirección
+     * elegida en cualquiera de las dos puntas, el cambio lo pidió el conductor y se respeta
+     * siempre. Ver REFETCH_THRESHOLD_M y `RouteOrigin.kind`.
+     */
     const previous = routedFrom.current
-    if (previous !== null && metersBetween(previous, from) < REFETCH_THRESHOLD_M) return
+    const drifting = previous !== null && previous.kind !== 'address' && from.kind !== 'address'
+    if (drifting && metersBetween(previous, from) < REFETCH_THRESHOLD_M) return
 
     routedFrom.current = from
     /* eslint-disable-next-line react/set-state-in-effect -- sincroniza con el GPS; ver arriba. */

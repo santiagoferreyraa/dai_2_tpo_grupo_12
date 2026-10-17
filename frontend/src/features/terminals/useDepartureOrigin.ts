@@ -23,9 +23,11 @@ import type { RouteOrigin } from './useRoute'
 /**
  * El origen, con la marca de de dónde salió.
  *
- * `kind` es para el mapa y nada más: un punto elegido a mano no se dibuja con el disco que late,
- * porque ese dibujo significa "el navegador te está midiendo AHORA" y sobre una dirección escrita
- * sería mentira. Para `useRoute`, en cambio, los dos son exactamente lo mismo —un `RouteOrigin`—,
+ * `kind` lo leen dos: el mapa y `useRoute`, y por motivos distintos. El mapa elige con qué
+ * marcador dibujarlo —un punto elegido a mano no lleva el disco que late, porque ese dibujo
+ * significa "el navegador te está midiendo AHORA" y sobre una dirección escrita sería mentira—.
+ * `useRoute` lo usa para una sola cosa, que es saber si el origen puede estar oscilando: ver
+ * `RouteOrigin.kind`. Fuera de eso los dos orígenes le siguen siendo lo mismo —un `RouteOrigin`—,
  * que es lo que deja que el recorrido no tenga que enterarse de nada de esto.
  */
 export interface DeparturePoint extends RouteOrigin {
