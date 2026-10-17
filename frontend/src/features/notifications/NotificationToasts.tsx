@@ -82,7 +82,7 @@ export default function NotificationToasts() {
       columna entera —incluido el aire entre los recuadros y el hueco de abajo cuando hay uno solo—
       se come los clics de lo que haya debajo, que en el mapa es media pantalla.
 
-      1180 los deja por encima de la franja (1140) y de lo que flota sobre el mapa, y por debajo de
+      1180 los deja por encima de la franja (1150) y de lo que flota sobre el mapa, y por debajo de
       las ventanas modales (1200): un aviso no puede taparle a alguien el botón de confirmar.
     */
     <ul

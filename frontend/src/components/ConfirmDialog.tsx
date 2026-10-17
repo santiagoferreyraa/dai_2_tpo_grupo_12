@@ -90,7 +90,7 @@ export default function ConfirmDialog({
     /*
       Colgado del `body`, el z-index compite con el de TODA la aplicación y no con el de la tarjeta
       donde se escribió. El escalón de las ventanas modales del proyecto es 1200 —por encima de la
-      franja (1140), de la campanita (1150) y de los recuadros de los avisos (1180)—, y este cartel
+      franja (1150) y de los recuadros de los avisos (1180)—, y este cartel
       va diez más arriba.
 
       Esos diez son para el panel que sube desde abajo, que está en 1200 justo: en el celular, el
