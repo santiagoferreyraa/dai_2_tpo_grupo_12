@@ -103,7 +103,7 @@ class UserAuthorizationTest {
     void rejectsBackOfficeForDrivers() throws Exception {
         for (MockHttpServletRequestBuilder request : backOfficeRequests()) {
             mockMvc.perform(request.header(HttpHeaders.AUTHORIZATION, bearer(Role.CONDUCTOR)))
-                    .andExpect(status().isForbidden());
+                    .andExpect(status().isNotFound());
         }
     }
 
@@ -117,7 +117,7 @@ class UserAuthorizationTest {
     void rejectsBackOfficeForOperators() throws Exception {
         for (MockHttpServletRequestBuilder request : backOfficeRequests()) {
             mockMvc.perform(request.header(HttpHeaders.AUTHORIZATION, bearer(Role.CPO)))
-                    .andExpect(status().isForbidden());
+                    .andExpect(status().isNotFound());
         }
     }
 
@@ -201,7 +201,7 @@ class UserAuthorizationTest {
                                 "Bearer "
                                         + tokenProvider.generateToken(
                                                 created.getId(), created.getEmail(), created.getRole())))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     /*

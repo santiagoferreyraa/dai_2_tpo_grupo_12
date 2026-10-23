@@ -104,7 +104,7 @@ class SessionHardeningTest {
         userService.updateRole(user.getId(), Role.CONDUCTOR);
 
         mockMvc.perform(get("/api/users").header(HttpHeaders.AUTHORIZATION, token))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     @Test

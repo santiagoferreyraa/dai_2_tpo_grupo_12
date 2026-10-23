@@ -19,7 +19,7 @@ import StationsPage from './StationsPage'
 /*
  * El ABM es del operador, así que va detrás del guard y además con el rol exigido. Sin el
  * rol, un conductor con sesión entraría a una pantalla donde el listado carga —esa lectura es
- * pública— y después cada botón devuelve 403; por eso el guard lo desvía a la pantalla de acceso
+ * pública— y después cada botón devuelve 404; por eso el guard lo desvía a la pantalla de acceso
  * denegado antes de que este ABM llegue a dibujarse, en vez de dejarlo mirando uno que no puede usar.
  *
  * El backend deja al administrador dar de baja una estación (RF03), pero no crear ni editar,

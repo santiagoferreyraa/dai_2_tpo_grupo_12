@@ -107,7 +107,7 @@ export default function StationsPage() {
     listStations(controller.signal)
       /*
        * Solo las estaciones propias. El listado es público y trae las de toda la red, pero esta
-       * es la pantalla del operador y el backend le rechaza con 403 cualquier cambio sobre una
+       * es la pantalla del operador y el backend le rechaza con 404 cualquier cambio sobre una
        * estación ajena: mostrarlas sería ofrecerle botones que no andan. La regla la hace
        * cumplir el backend; esto solo no la contradice en pantalla.
        */

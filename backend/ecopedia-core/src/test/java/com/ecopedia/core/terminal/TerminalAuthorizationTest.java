@@ -27,13 +27,17 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
@@ -56,7 +60,11 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * pasar todas las URL ({@code anyRequest().permitAll()}) y quien rechaza es la anotación sobre
  * el método, ya dentro del controlador. Es correcto, y conviene saberlo antes de la demo: acá
  * el 403 significa "no autenticado", no "autenticado sin permiso".
+ *
+ * <p><b>Con sesión y sin el rol, la respuesta es un 404</b> igual al de una ruta que no existe
+ * (SEC-05), y el 403 queda solo en el log. Ver {@code NotFoundAccessDeniedHandler}.
  */
+@ExtendWith(OutputCaptureExtension.class)
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("dev")
@@ -173,8 +181,40 @@ class TerminalAuthorizationTest {
     void rejectsTheWholeAbmForDrivers() throws Exception {
         for (MockHttpServletRequestBuilder request : abmRequests()) {
             mockMvc.perform(request.header(HttpHeaders.AUTHORIZATION, bearer(Role.CONDUCTOR)))
-                    .andExpect(status().isForbidden());
+                    .andExpect(status().isNotFound());
         }
+    }
+
+    /*
+     * SEC-05, la evidencia completa: desde afuera, la operación de otro rol no se distingue de
+     * una ruta que no existe; adentro, el log dice quién lo intentó, con qué rol y dónde.
+     */
+    @Test
+    @DisplayName(
+            "Un conductor que da de alta una estación recibe lo mismo que en una ruta inexistente, y queda en el log")
+    void hidesOperatorOperationsFromDrivers(CapturedOutput output) throws Exception {
+        String driver = bearer(Role.CONDUCTOR);
+
+        MvcResult denied = mockMvc.perform(post("/api/stations")
+                        .header(HttpHeaders.AUTHORIZATION, driver)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(STATION_JSON))
+                .andReturn();
+        MvcResult missing = mockMvc.perform(post("/api/no-existe")
+                        .header(HttpHeaders.AUTHORIZATION, driver)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(STATION_JSON))
+                .andReturn();
+
+        assertThat(denied.getResponse().getStatus()).isEqualTo(404);
+        assertThat(denied.getResponse().getStatus())
+                .isEqualTo(missing.getResponse().getStatus());
+        assertThat(denied.getResponse().getContentAsString())
+                .isEqualTo(missing.getResponse().getContentAsString());
+        assertThat(stationRepository.count()).isZero();
+        assertThat(output)
+                .contains(
+                        "Acceso denegado (403, respondido como 404): usuario conductor@ecopedia.test con [ROLE_CONDUCTOR] en POST /api/stations");
     }
 
     /*
@@ -309,7 +349,7 @@ class TerminalAuthorizationTest {
                 delete("/api/stations/" + station.getId()));
 
         for (MockHttpServletRequestBuilder request : onForeignStation) {
-            mockMvc.perform(request.header(HttpHeaders.AUTHORIZATION, other)).andExpect(status().isForbidden());
+            mockMvc.perform(request.header(HttpHeaders.AUTHORIZATION, other)).andExpect(status().isNotFound());
         }
 
         Station after = terminalService.getStation(station.getId());

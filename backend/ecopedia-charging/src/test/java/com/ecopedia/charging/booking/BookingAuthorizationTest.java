@@ -1,5 +1,6 @@
 package com.ecopedia.charging.booking;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -17,10 +18,13 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
@@ -43,6 +47,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * Flyway y la entidad {@code Booking} coinciden: con {@code ddl-auto: validate}, cualquier
  * diferencia aborta el arranque.
  */
+@ExtendWith(OutputCaptureExtension.class)
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("dev")
@@ -96,7 +101,7 @@ class BookingAuthorizationTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer("CPO"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(holdJson()))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     /*
@@ -166,7 +171,8 @@ class BookingAuthorizationTest {
     /*
      * Las operaciones que ECO-32 sumó, con la misma regla que retener: son del conductor. Se
      * prueban con ids que no existen a propósito —lo que se verifica es que el pedido ni siquiera
-     * llegue al servicio, así que tiene que dar 403 y no 404—.
+     * llegue al servicio—. Desde SEC-05 el rechazo por rol también es un 404, así que el status
+     * ya no separa los dos casos: lo que prueba que cortó la autorización es la línea del log.
      */
 
     @Test
@@ -184,7 +190,7 @@ class BookingAuthorizationTest {
 
     @Test
     @DisplayName("Con token de CPO, confirmar una reserva se rechaza")
-    void rejectsOperatorConfirm() throws Exception {
+    void rejectsOperatorConfirm(CapturedOutput output) throws Exception {
         mockMvc.perform(post("/api/checkout/booking")
                         .header(HttpHeaders.AUTHORIZATION, bearer("CPO"))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -193,14 +199,15 @@ class BookingAuthorizationTest {
                                 {"holdId":"%s","acceptGracePeriod":true}
                                 """
                                         .formatted(UUID.randomUUID())))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
+        assertThat(output).contains("Acceso denegado (403, respondido como 404)", "POST /api/checkout/booking");
     }
 
     @Test
     @DisplayName("Con token de CPO, listar reservas de conductor se rechaza")
     void rejectsOperatorListing() throws Exception {
         mockMvc.perform(get("/api/bookings/mine").header(HttpHeaders.AUTHORIZATION, bearer("CPO")))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -240,8 +247,9 @@ class BookingAuthorizationTest {
 
     @Test
     @DisplayName("Con token de CPO, cancelar una reserva se rechaza")
-    void rejectsOperatorCancel() throws Exception {
+    void rejectsOperatorCancel(CapturedOutput output) throws Exception {
         mockMvc.perform(delete("/api/bookings/1").header(HttpHeaders.AUTHORIZATION, bearer("CPO")))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
+        assertThat(output).contains("Acceso denegado (403, respondido como 404)", "DELETE /api/bookings/1");
     }
 }

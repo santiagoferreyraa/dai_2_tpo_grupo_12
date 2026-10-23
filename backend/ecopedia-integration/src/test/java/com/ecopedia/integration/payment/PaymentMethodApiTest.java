@@ -117,13 +117,13 @@ class PaymentMethodApiTest {
     @Test
     @DisplayName("Un operador no puede registrar medios de pago")
     void deniesTheOperator() throws Exception {
-        mockMvc.perform(registerAs(1L, "CPO", VALID_CARD)).andExpect(status().isForbidden());
+        mockMvc.perform(registerAs(1L, "CPO", VALID_CARD)).andExpect(status().isNotFound());
     }
 
     @Test
     @DisplayName("El administrador tampoco: RF03 no le da las tarjetas ajenas")
     void deniesTheAdministrator() throws Exception {
-        mockMvc.perform(registerAs(1L, "ADMIN", VALID_CARD)).andExpect(status().isForbidden());
+        mockMvc.perform(registerAs(1L, "ADMIN", VALID_CARD)).andExpect(status().isNotFound());
     }
 
     @Test
