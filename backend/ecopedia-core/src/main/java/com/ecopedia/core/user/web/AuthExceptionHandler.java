@@ -36,7 +36,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice(basePackageClasses = AuthExceptionHandler.class)
 public class AuthExceptionHandler {
 
-    /** Credenciales inválidas, usuario dado de baja, email ya registrado, id inexistente. */
+    /** Credenciales inválidas (también la cuenta dada de baja), email ya registrado, id inexistente. */
     @ExceptionHandler(IllegalArgumentException.class)
     public ProblemDetail handleInvalidRequest(IllegalArgumentException exception) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());

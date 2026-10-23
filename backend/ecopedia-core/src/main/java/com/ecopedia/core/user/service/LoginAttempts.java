@@ -7,15 +7,20 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
  * Cuenta los logins fallidos por email y bloquea la cuenta un rato cuando son demasiados.
  *
  * <p><b>Por qué existe.</b> Sin límite, se podían probar contraseñas contra una cuenta sin freno:
- * fuerza bruta a la velocidad que diera la red. Con {@value #MAX_FAILURES} fallos seguidos la
- * cuenta queda bloqueada quince minutos ({@link #LOCK}), y mientras dure ni la contraseña
- * correcta entra.
+ * fuerza bruta a la velocidad que diera la red. Con {@value #DEFAULT_MAX_FAILURES} fallos seguidos
+ * la cuenta queda bloqueada quince minutos, y mientras dure ni la contraseña correcta entra.
+ *
+ * <p><b>Los dos números salen de la configuración</b> ({@code ECOPEDIA_LOGIN_MAX_FAILURES} y
+ * {@code ECOPEDIA_LOGIN_LOCK_MINUTES} en el .env), con 5 y 15 por defecto. Sirve para la demo: con
+ * el bloqueo en un minuto se muestra entero sin quedarse afuera un cuarto de hora.
  *
  * <p><b>Se cuenta por email, exista o no la cuenta.</b> Si solo se bloquearan las que existen, el
  * bloqueo le diría a quien prueba qué emails están registrados.
@@ -27,19 +32,44 @@ import org.springframework.stereotype.Component;
 @Component
 public class LoginAttempts {
 
-    static final int MAX_FAILURES = 5;
+    static final int DEFAULT_MAX_FAILURES = 5;
 
-    /** Cuánto dura el bloqueo, y también cuánto se recuerda un fallo suelto. */
-    static final Duration LOCK = Duration.ofMinutes(15);
+    static final Duration DEFAULT_LOCK = Duration.ofMinutes(15);
 
     private final Map<String, Entry> byEmail = new ConcurrentHashMap<>();
+    private final int maxFailures;
+
+    /** Cuánto dura el bloqueo, y también cuánto se recuerda un fallo suelto. */
+    private final Duration lock;
+
     private final Clock clock;
 
+    @Autowired
+    public LoginAttempts(
+            @Value("${ecopedia.login.max-failures:5}") int maxFailures,
+            @Value("${ecopedia.login.lock-minutes:15}") long lockMinutes) {
+        this(maxFailures, Duration.ofMinutes(lockMinutes), Clock.systemUTC());
+    }
+
     public LoginAttempts() {
-        this(Clock.systemUTC());
+        this(DEFAULT_MAX_FAILURES, DEFAULT_LOCK, Clock.systemUTC());
     }
 
     LoginAttempts(Clock clock) {
+        this(DEFAULT_MAX_FAILURES, DEFAULT_LOCK, clock);
+    }
+
+    LoginAttempts(int maxFailures, Duration lock, Clock clock) {
+        // Un cero o un negativo en el .env apagaría el bloqueo sin que nadie se entere: mejor que
+        // core no arranque y el error diga cuál de los dos valores está mal.
+        if (maxFailures < 1) {
+            throw new IllegalArgumentException("ecopedia.login.max-failures tiene que ser al menos 1");
+        }
+        if (lock.isNegative() || lock.isZero()) {
+            throw new IllegalArgumentException("ecopedia.login.lock-minutes tiene que ser al menos 1");
+        }
+        this.maxFailures = maxFailures;
+        this.lock = lock;
         this.clock = clock;
     }
 
@@ -58,10 +88,10 @@ public class LoginAttempts {
         Instant now = clock.instant();
         byEmail.compute(key(email), (ignored, entry) -> {
             // Un fallo viejo no suma: sin esto, cinco errores de tipeo en un mes bloquearían.
-            boolean fresh = entry == null || now.isAfter(entry.firstFailure().plus(LOCK));
+            boolean fresh = entry == null || now.isAfter(entry.firstFailure().plus(lock));
             int failures = fresh ? 1 : entry.failures() + 1;
             Instant first = fresh ? now : entry.firstFailure();
-            return failures >= MAX_FAILURES ? new Entry(0, now, now.plus(LOCK)) : new Entry(failures, first, null);
+            return failures >= maxFailures ? new Entry(0, now, now.plus(lock)) : new Entry(failures, first, null);
         });
     }
 

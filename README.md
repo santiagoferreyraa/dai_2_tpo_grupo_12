@@ -225,13 +225,19 @@ que puedan migrar por separado sin pisarse.
 #### El `.env`
 
 Los secretos viven en un `.env` en la raíz, **que no se versiona**. `pnpm env:init` lo genera a
-partir de `.env.example` con valores al azar, y no pisa uno que ya exista. Tiene tres variables:
+partir de `.env.example` con valores al azar, y no pisa uno que ya exista. Tiene tres secretos y
+dos ajustes:
 
 | Variable | Qué es |
 |---|---|
 | `ECOPEDIA_JWT_SECRET` | La firma de los tokens. La comparten los cuatro backends |
 | `ECOPEDIA_DB_PASSWORD` | La contraseña de PostgreSQL |
 | `ECOPEDIA_BROKER_PASSWORD` | La contraseña de Artemis |
+| `ECOPEDIA_LOGIN_MAX_FAILURES` | Cuántos logins fallidos seguidos bloquean una cuenta. Sin valor, 5 |
+| `ECOPEDIA_LOGIN_LOCK_MINUTES` | Cuántos minutos dura ese bloqueo. Sin valor, 15; para la demo conviene 1 |
+
+Un `.env` generado antes de que existieran los dos ajustes no los tiene, y no hace falta
+regenerarlo: core usa los valores por defecto. Para cambiarlos, se agregan a mano.
 
 `docker compose` lo lee solo, y los scripts del backend lo cargan con `scripts/with-env.mjs`,
 así que no hay que exportar nada a mano. Una variable que ya esté en el entorno le gana al

@@ -54,8 +54,10 @@ public class UserServiceImpl implements UserService {
      *    Ver LoginAttempts.
      * 2. Mail inexistente y contraseña equivocada dan el mismo mensaje y cuentan igual como fallo:
      *    no se le dice a nadie qué cuentas existen.
-     * 3. La baja se informa recién DESPUÉS de verificar la contraseña. Antes se informaba primero,
-     *    y cualquiera averiguaba qué cuentas estaban dadas de baja con solo escribir el mail.
+     * 3. Una cuenta dada de baja también recibe ese mismo mensaje, aunque la contraseña sea la
+     *    correcta. Antes tenía uno propio, y con él cualquiera averiguaba que el mail estaba
+     *    registrado. Al dueño legítimo no le cambia nada: no puede entrar de ninguna de las dos
+     *    formas, y la reactivación la hace un ADMIN.
      */
     @Override
     @Transactional(readOnly = true)
@@ -66,13 +68,11 @@ public class UserServiceImpl implements UserService {
 
         User user = userRepository.findByEmail(credentials.email()).orElse(null);
 
-        if (user == null || !passwordEncoder.matches(credentials.rawPassword(), user.getPasswordHash())) {
+        if (user == null
+                || !passwordEncoder.matches(credentials.rawPassword(), user.getPasswordHash())
+                || !user.isActive()) {
             loginAttempts.recordFailure(credentials.email());
             throw new IllegalArgumentException("Credenciales inválidas");
-        }
-
-        if (!user.isActive()) {
-            throw new IllegalArgumentException("El usuario está dado de baja");
         }
 
         loginAttempts.recordSuccess(credentials.email());

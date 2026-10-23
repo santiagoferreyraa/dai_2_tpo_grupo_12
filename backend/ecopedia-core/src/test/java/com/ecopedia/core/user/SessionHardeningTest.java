@@ -155,8 +155,8 @@ class SessionHardeningTest {
     }
 
     @Test
-    @DisplayName("La baja se informa solo con la contraseña correcta: con una equivocada, el mensaje de siempre")
-    void doesNotRevealDeactivatedAccountsWithoutThePassword() throws Exception {
+    @DisplayName("Una cuenta dada de baja recibe el mensaje de siempre, también con la contraseña correcta")
+    void doesNotRevealDeactivatedAccounts() throws Exception {
         User user = givenUser("dada-de-baja@ecopedia.test", Role.CONDUCTOR);
         userService.deactivateUser(user.getId());
 
@@ -166,6 +166,11 @@ class SessionHardeningTest {
 
         login("dada-de-baja@ecopedia.test", PASSWORD)
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("El usuario está dado de baja"));
+                .andExpect(jsonPath("$.detail").value("Credenciales inválidas"));
+
+        // Y la respuesta es la misma que la de un mail que no existe: no hay forma de separarlas.
+        login("nadie@ecopedia.test", PASSWORD)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Credenciales inválidas"));
     }
 }
