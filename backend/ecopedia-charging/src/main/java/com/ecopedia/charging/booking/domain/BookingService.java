@@ -2,6 +2,7 @@ package com.ecopedia.charging.booking.domain;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -44,13 +45,29 @@ public interface BookingService {
      * comprometida una ventana que se cruce con esta —ni retenida ni ya reservada—. La retención
      * vence sola pasado el plazo configurado ({@code ecopedia.booking.hold-ttl}).
      *
+     * <p><b>También verifica que el conductor esté libre</b>, que es la otra mitad del bloqueo: no
+     * puede retener nada con una reserva en curso, ni con otra reserva que se cruce con la ventana
+     * pedida aunque sea en otra estación.
+     *
+     * <p><b>Y si ya tenía una retención, esta la reemplaza</b>: el conductor tiene una sola a la
+     * vez, y la anterior queda liberada. No se rechaza el pedido, porque cambiar de horario antes
+     * de confirmar es el caso normal y rechazarlo lo dejaría esperando a que venza lo suyo.
+     *
      * @throws ConnectorNotFoundException si el conector no existe
      * @throws ConnectorNotBookableException si el conector está fuera de servicio
-     * @throws SlotUnavailableException si la ventana se cruza con otra retención vigente o con
-     *     una reserva confirmada
+     * @throws SlotUnavailableException si la ventana se cruza con la retención vigente o la reserva
+     *     confirmada de OTRO conductor
+     * @throws DriverAlreadyBookedException si el conductor tiene una reserva en curso o una que se
+     *     cruza con la ventana pedida
      * @throws InvalidBookingRequestException si la ventana ya empezó
      */
     Hold startHold(Long connectorId, TimeWindow window, Long driverId);
+
+    /**
+     * Consulta una retención vigente por id (ECO-35, para uso del Facade de Checkout).
+     * Devuelve vacía si no existe o ya venció.
+     */
+    Optional<Hold> findHold(UUID holdId);
 
     /**
      * Convierte una retención vigente en una reserva guardada (ECO-32).
@@ -67,6 +84,8 @@ public interface BookingService {
      * @throws HoldExpiredException si la retención venció antes de confirmarse
      * @throws BookingAccessDeniedException si la retención es de otro conductor
      * @throws SlotUnavailableException si mientras tanto se guardó otra reserva que se cruza
+     * @throws DriverAlreadyBookedException si mientras tanto el conductor quedó con una reserva en
+     *     curso o con otra que se cruza con esta ventana
      */
     Booking confirmBooking(UUID holdId, Long driverId);
 

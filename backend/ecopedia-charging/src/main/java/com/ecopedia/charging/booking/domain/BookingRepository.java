@@ -47,4 +47,31 @@ public interface BookingRepository {
 
     /** Las reservas de un conductor, de la más próxima a la más lejana (ECO-32). */
     List<Booking> findByDriverIdOrderByWindowStartAsc(Long driverId);
+
+    /**
+     * Las reservas del CONDUCTOR en ese estado que se cruzan con la ventana, sin importar en qué
+     * conector estén.
+     *
+     * <p><b>Es la hermana de {@link #existsOverlapping} mirando al otro lado del mostrador.</b>
+     * Aquella pregunta si el conector está libre; esta, si el conductor lo está. Hacen falta las
+     * dos porque son dos bloqueos distintos: una reserva ocupa un conector para el resto y ocupa
+     * al conductor para sí mismo, y sin la segunda el mismo conductor podía reservar dos
+     * conectores a la misma hora —cada uno libre por su cuenta— con un solo auto.
+     *
+     * <p>Devuelve la lista y no un booleano porque el mensaje del rechazo nombra la reserva con la
+     * que choca: al conductor hay que poder decirle cuál es la que ya tiene.
+     */
+    List<Booking> findOverlappingForDriver(Long driverId, BookingStatus status, Instant start, Instant end);
+
+    /**
+     * Las reservas del conductor en ese estado que están corriendo en ese instante, o vacío.
+     *
+     * <p>No es un caso particular de {@link #findOverlappingForDriver}: bloquea cualquier reserva
+     * nueva, incluso una para mañana. Mientras el auto está cargando el conductor no reserva nada,
+     * y esa regla no depende de con qué horario se cruce lo que pide.
+     *
+     * <p>El criterio es el de la ventana semiabierta, igual que en todos lados: {@code inicio <=
+     * instante} y {@code fin > instante}. Lista y no booleano por lo mismo que arriba.
+     */
+    List<Booking> findInProgressForDriver(Long driverId, BookingStatus status, Instant at);
 }

@@ -59,23 +59,24 @@ panel y Vite ni se entera.
 El frontend queda en http://localhost:5173. **Se navega siempre por el 5173:** el proxy ya está
 configurado y reparte `/api` entre los backends.
 
-**Son tres procesos, porque son tres artefactos desplegables**: `ecopedia-core` en el 8081
-(usuarios, estaciones), `ecopedia-charging` en el 8082 (reservas) y `ecopedia-integration` en el
-8083 (medios de pago). Ver ARQUITECTURA §6.4. El proxy de Vite manda `/api/bookings` al 8082,
-`/api/payment-methods` al 8083 y todo lo demás al 8081, así que desde el navegador se ve como una
+**Son cuatro procesos, porque son cuatro artefactos desplegables**: `ecopedia-core` en el 8081
+(usuarios, estaciones), `ecopedia-charging` en el 8082 (reservas), `ecopedia-integration` en el
+8083 (medios de pago) y `ecopedia-async` en el 8084 (notificaciones). Ver ARQUITECTURA §6.4. El
+proxy de Vite manda `/api/bookings` al 8082, `/api/payment-methods` al 8083,
+`/api/notifications` al 8084 y todo lo demás al 8081, así que desde el navegador se ve como una
 sola API.
 
 | Comando | Qué hace |
 |---------|----------|
-| `pnpm dev` | Los cuatro procesos, cada uno en su panel |
+| `pnpm dev` | Los cinco procesos, cada uno en su panel |
 | `pnpm dev:back` | Solo `ecopedia-core` (8081) |
 | `pnpm dev:charging` | Solo Reservas (`ecopedia-charging`, 8082). Necesita el backend arriba |
 | `pnpm dev:pay` | Solo Pagos (`ecopedia-integration`, 8083), que sirve los medios de pago |
-| `pnpm dev:async` | Solo Notificaciones (`ecopedia-async`, 8084). Necesita el broker: ver "Notificaciones" |
+| `pnpm dev:async` | Solo Notificaciones (`ecopedia-async`, 8084). Para recibir avisos necesita el broker: ver "Notificaciones" |
 | `pnpm dev:front` | Solo el frontend |
-| `pnpm dev:plain` | Los cuatro en una sola tira de logs, con prefijos `[back]`/`[charging]`/`[pay]`/`[front]` |
-| `pnpm dev:mem` | Los cuatro, pero con las bases **en memoria**: se borra todo al bajar |
-| `pnpm demo` | Los cuatro contra **PostgreSQL**. Necesita la infraestructura arriba |
+| `pnpm dev:plain` | Los cuatro de siempre —sin Notificaciones— en una sola tira de logs, con prefijos `[back]`/`[charging]`/`[pay]`/`[front]` |
+| `pnpm dev:mem` | Los cinco, pero con las bases **en memoria**: se borra todo al bajar |
+| `pnpm demo` | Los cinco contra **PostgreSQL**. Necesita la infraestructura arriba |
 | `pnpm free-ports` | Libera el 8081, el 8082, el 8083, el 8084 y el 5173 a mano |
 | `pnpm build` | Empaqueta el frontend adentro del JAR del backend |
 | `pnpm start` | Corre ese JAR |
@@ -85,8 +86,10 @@ disco, sin PostgreSQL instalado y sin Docker.** Lo que cargues sobrevive a bajar
 levantar. Consolas de H2: http://localhost:8081/h2-console, http://localhost:8082/h2-console y
 http://localhost:8083/h2-console
 
-Los tres procesos validan el mismo token, así que tienen que compartir el secreto de firma: sale
-de la variable `ECOPEDIA_JWT_SECRET`, y sin ella los tres usan el mismo valor de desarrollo.
+Los backends validan el mismo token, así que tienen que compartir el secreto de firma: sale de
+la variable `ECOPEDIA_JWT_SECRET`. Con `pnpm dev` y `pnpm dev:mem` no hace falta definirla,
+porque los perfiles `local` y `dev` traen un valor de desarrollo. **Sin perfil no hay valor por
+defecto**: ver "El `.env`", más abajo.
 
 **`pnpm start` todavía no llega a Reservas:** sirve front y API desde el JAR de core, en el 8081,
 y ahí no hay nada escuchando `/api/bookings`. Para probar reservas se usa `pnpm dev`.
@@ -151,6 +154,11 @@ update core.users set role = 'CPO' where email = 'el-tuyo@ejemplo.com';
 En el ambiente propio se hace **una sola vez**. En el descartable, en cada arranque — y ése es
 justo el momento en que algo sale mal delante del docente, así que la demo no se hace ahí.
 
+**Un `CPO` ve y toca solo sus estaciones**: las que dio de alta él. El backend le responde 403
+ante cualquier cambio sobre una ajena, y `/stations` le muestra únicamente las propias. Las 15
+del seed son del usuario con id 1 —el primero que se registró en esa base—; el `ADMIN` las
+administra todas desde `/admin`.
+
 ### Si el puerto quedó tomado
 
 No debería pasar, porque `dev:back` y `dev:front` liberan su puerto antes de arrancar. Pero
@@ -175,14 +183,22 @@ se lo reinicia. `pnpm free-ports` mata únicamente al proceso que escucha el pue
 ### Con PostgreSQL
 
 H2 alcanza para desarrollar, pero **las demos de las entregas corren sobre PostgreSQL**, que es
-lo que se documenta y se defiende. Primero la infraestructura:
+lo que se documenta y se defiende. Primero, una sola vez, el `.env` (ver abajo):
+
+```bash
+pnpm env:init
+```
+
+Después la infraestructura:
 
 ```bash
 docker compose up -d
 ```
 
 Deja arriba PostgreSQL (`localhost:5432`) y ActiveMQ Artemis (`localhost:61616`, consola web en
-http://localhost:8161/console). Y después los cinco procesos:
+http://localhost:8161/console). **Los dos escuchan solo en `127.0.0.1`**: desde otra máquina de la
+red no se llega, y está bien, porque los usan los backends de esta misma. Y después los cinco
+procesos:
 
 ```bash
 pnpm demo
@@ -205,6 +221,45 @@ los dos:
 **Los dos módulos comparten la base pero no el schema.** `core` y `charging` entran a la misma
 base `ecopedia` y cada uno crea el suyo, con su propia `flyway_schema_history`. Es lo que hace
 que puedan migrar por separado sin pisarse.
+
+#### El `.env`
+
+Los secretos viven en un `.env` en la raíz, **que no se versiona**. `pnpm env:init` lo genera a
+partir de `.env.example` con valores al azar, y no pisa uno que ya exista. Tiene tres variables:
+
+| Variable | Qué es |
+|---|---|
+| `ECOPEDIA_JWT_SECRET` | La firma de los tokens. La comparten los cuatro backends |
+| `ECOPEDIA_DB_PASSWORD` | La contraseña de PostgreSQL |
+| `ECOPEDIA_BROKER_PASSWORD` | La contraseña de Artemis |
+
+`docker compose` lo lee solo, y los scripts del backend lo cargan con `scripts/with-env.mjs`,
+así que no hay que exportar nada a mano. Una variable que ya esté en el entorno le gana al
+archivo.
+
+**Sin `.env`**, `docker compose up` se niega a arrancar y dice qué variable falta, y los
+backends sin perfil abortan con `Could not resolve placeholder 'ECOPEDIA_JWT_SECRET'`. Es a
+propósito: el ambiente compartido no puede arrancar con un secreto que está publicado en el repo.
+`pnpm dev` y `pnpm dev:mem` no lo necesitan.
+
+**Si ya tenías los contenedores de antes**, con la contraseña `ecopedia`: los dos guardan la
+contraseña en su volumen al crearse, así que cambiar el `.env` no la cambia adentro. Para
+PostgreSQL, sin perder los datos:
+
+```bash
+docker exec -it ecopedia-postgres psql -U ecopedia -d ecopedia -c "alter user ecopedia password '<la del .env>'"
+```
+
+Para Artemis, que solo guarda mensajes en tránsito, se recrea el volumen:
+
+```bash
+docker compose rm -sf activemq
+docker volume rm dai_2_tpo_activemq-data   # el prefijo es el nombre de la carpeta del repo
+docker compose up -d activemq
+```
+
+**Cambiar `ECOPEDIA_JWT_SECRET` desloguea a todo el mundo:** los tokens ya emitidos dejan de
+verificar. En pantalla se ve como "me sacó la sesión".
 
 #### Si el seed de estaciones choca
 
@@ -233,14 +288,16 @@ entera, así que en el historial no queda ninguna fila fallada.
 
 Docker es el camino cómodo, no un requisito del proyecto. La alternativa es **instalar PostgreSQL**
 en la máquina y crear la base con los mismos valores que declara `docker-compose.yml` —base
-`ecopedia`, usuario `ecopedia`, contraseña `ecopedia`, puerto 5432—. Con eso `pnpm demo` funciona
+`ecopedia`, usuario `ecopedia`, puerto 5432— y la contraseña que diga `ECOPEDIA_DB_PASSWORD` en el
+`.env`. Con eso `pnpm demo` funciona
 igual, porque lo único que le importa es qué hay escuchando en el 5432.
 
 Si preferís otros valores, no hay que tocar código: salen de `ECOPEDIA_DB_URL`, `ECOPEDIA_DB_USER`
 y `ECOPEDIA_DB_PASSWORD`. Ver "Direcciones y configuración".
 
 Y para el ambiente compartido de la Entrega Final vale lo mismo: alcanza con que **una** máquina
-del equipo tenga PostgreSQL, con o sin Docker, y que las demás apunten ahí.
+del equipo tenga PostgreSQL, con o sin Docker. Las demás entran por el frontend de esa máquina,
+no directo a la base.
 
 ### Notificaciones
 
@@ -248,24 +305,30 @@ Al confirmar o cancelar una reserva, Reservas deja un mensaje en la cola
 `notifications.dispatch` de Artemis, y `ecopedia-async` (8084) lo consume, arma el aviso, lo
 guarda y manda el mail. **El mail es simulado:** se escribe en el log.
 
-Necesita el broker, que es el de `docker-compose.yml`. Para probarlo sin tocar PostgreSQL alcanza
-con levantar solo el broker y usar el ambiente propio:
+`pnpm dev` ya levanta `async`, así que lo único que hay que agregar es el broker, que es el de
+`docker-compose.yml`. Para probarlo sin tocar PostgreSQL alcanza con levantar el broker solo, con
+el ambiente propio. El broker también necesita el `.env` (`pnpm env:init`, una vez):
 
 ```bash
 docker compose up -d activemq
-pnpm dev          # core, Reservas, Pagos y front
-pnpm dev:async    # Notificaciones, en otra terminal
+pnpm dev          # core, Reservas, Pagos, Notificaciones y front
 ```
 
-Con `pnpm demo` no hace falta nada de esto: ya levanta los cinco procesos y `docker compose up -d`
-trae el broker.
+**Sin el broker el proceso arranca igual** y la campanita y la sección del perfil contestan —el
+historial es HTTP y no pasa por la cola—, pero no llega ningún aviso nuevo y el panel `async` se
+llena de reintentos de conexión. Si al confirmar una reserva no aparece nada, ese panel y el
+`WARN` de `charging` ("No se pudo publicar el aviso en la cola…") son los dos lugares donde
+mirar primero.
+
+Con `pnpm demo` no hace falta nada aparte: `docker compose up -d` ya trae el broker junto con
+PostgreSQL.
 
 Dónde se ve cada paso, después de confirmar una reserva:
 
 | Qué | Dónde |
 |-----|-------|
 | Reservas publicó | Panel `charging`: `Aviso booking-N-BOOKING_CONFIRMED publicado en la cola notifications.dispatch` |
-| El mensaje pasó por el broker | http://localhost:8161/console (usuario y contraseña `ecopedia`) → *Queues* → `notifications.dispatch`: los contadores de agregados y consumidos |
+| El mensaje pasó por el broker | http://localhost:8161/console (usuario `ecopedia`, contraseña la de `ECOPEDIA_BROKER_PASSWORD` en el `.env`) → *Queues* → `notifications.dispatch`: los contadores de agregados y consumidos |
 | Notificaciones lo recibió y mandó el mail | Panel `async`: `Recibido de la cola...` y la línea `[MAIL SIMULADO]` |
 | Quedó guardado | `GET http://localhost:8084/api/notifications` con el token del conductor, o la consola de H2 en http://localhost:8084/h2-console (tabla `async.notifications`) |
 
@@ -464,7 +527,7 @@ estos módulos, cada uno con su interfaz explícita.
 
 | Módulo | Componentes | Estado |
 |--------|-------------|--------|
-| `ecopedia-core` | TerminalService · UserService · PricingService | 🚧 scaffold |
+| `ecopedia-core` | TerminalService · UserService · PricingService · VehicleService | 🚧 scaffold |
 | `ecopedia-charging` | BookingService · ChargingSessionService *(stateful)* | 🚧 scaffold |
 | `ecopedia-integration` | PaymentService (REST) · PowerGridService (SOAP) | 🚧 scaffold |
 | `ecopedia-async` | NotificationService | 🚧 scaffold |
@@ -511,6 +574,13 @@ url: ${ECOPEDIA_DB_URL:jdbc:postgresql://localhost:5432/ecopedia}
 
 Así el que clona el repo levanta el módulo sin configurar nada, y el ambiente compartido se
 arma exportando variables, sin tocar el código.
+
+**Los secretos son la excepción: no tienen valor por defecto.** La firma del JWT
+(`ECOPEDIA_JWT_SECRET`) y las contraseñas de la base (`ECOPEDIA_DB_PASSWORD`) y del broker
+(`ECOPEDIA_BROKER_PASSWORD`) salen solo del entorno. Un valor escrito en el YAML sería
+público, porque el repo lo es, y con el secreto del JWT a la vista cualquiera se firma un token
+de `ADMIN`. Solo los perfiles `local` y `dev` traen un secreto de desarrollo, para que
+`pnpm dev` y los tests anden sin configurar nada.
 
 Si un módulo necesita hablar con otro, la dirección se declara igual, bajo la clave
 `ecopedia:` del YAML — nunca incrustada donde se hace la llamada. `ecopedia-integration` ya

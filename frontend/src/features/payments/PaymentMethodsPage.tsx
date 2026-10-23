@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 
 import BottomSheet from '@/components/BottomSheet'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { ApiError } from '@/lib/api'
 import { useMediaQuery } from '@/lib/useMediaQuery'
 
 import CardForm from './components/CardForm'
 import CardStack from './components/CardStack'
-import ConfirmDialog from './components/ConfirmDialog'
 import PaymentMethodRow from './components/PaymentMethodRow'
 import { listCards, registerCard, removeCard } from './data/paymentMethodsRepository'
 import { describeCard } from './format'

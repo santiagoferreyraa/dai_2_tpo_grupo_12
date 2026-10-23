@@ -18,7 +18,7 @@
  * no siempre banca, y el círculo es lo que la vuelve honesta.
  */
 
-import { useEffect, useState } from 'react'
+import { useSyncExternalStore } from 'react'
 
 import { ARGENTINA_BOUNDS } from './mapConfig'
 
@@ -143,49 +143,93 @@ function toState(location: DeviceLocation): DeviceLocationState {
   return { status: 'ready', location }
 }
 
-export function useDeviceLocation(): DeviceLocationState {
+/*
+ * ---------------------------------------------------------------------------
+ * Un solo `watchPosition` para toda la aplicación
+ * ---------------------------------------------------------------------------
+ *
+ * **El watcher vive en el módulo y no adentro del hook.** Con el efecto adentro, cada componente
+ * que preguntara dónde está el conductor abría su propia suscripción, y ya hay dos que preguntan a
+ * la vez en la misma pantalla: el mapa, para dibujar el punto y trazar el recorrido, y el campo de
+ * punto de partida de la reserva, para saber si "Tu ubicación" tiene algo detrás. Dos
+ * `watchPosition` con `enableHighAccuracy` son dos mediciones de GPS en paralelo para el mismo
+ * dato: el doble de batería, sin un solo dato de más.
+ *
+ * Se cuenta cuántos están mirando, y la suscripción se abre con el primero y se cierra con el
+ * último. Sin ese cierre el navegador sigue midiendo con el mapa cerrado, que es justo lo que el
+ * `clearWatch` de la versión anterior evitaba.
+ *
+ * Es la misma forma que ya tienen `session` y `myBookingsStore`: estado en el módulo, React
+ * enterándose por `useSyncExternalStore`.
+ */
+
+/**
+ * El valor del primer cuadro, calculado una sola vez al cargar el módulo.
+ *
+ * Arranca en 'unavailable' y no en 'locating' cuando ya se sabe que no se puede: prometer que está
+ * buscando algo que nunca va a llegar es peor que decir que no hay.
+ */
+function initial(): DeviceLocationState {
+  const forced = readDevLocation()
+  if (forced !== null) return toState(forced)
+
+  return { status: isSupported() ? 'locating' : 'unavailable', location: null }
+}
+
+let state: DeviceLocationState = initial()
+const listeners = new Set<() => void>()
+let watchId: number | null = null
+
+function publish(next: DeviceLocationState): void {
+  state = next
+  for (const listener of listeners) listener()
+}
+
+function start(): void {
   /*
-   * Arranca en 'unavailable' y no en 'locating' cuando ya se sabe que no se puede: el estado
-   * inicial es lo que se dibuja en el primer cuadro, y prometer que está buscando algo que
-   * nunca va a llegar es peor que decir que no hay.
+   * Con la ubicación forzada no se suscribe nada: el permiso ni se pide, y sobre todo el primer
+   * arreglo del GPS no llega después a pisar el punto de prueba, que es exactamente el problema
+   * que ese parámetro existe para evitar.
    */
-  const [state, setState] = useState<DeviceLocationState>(() => {
-    const forced = readDevLocation()
-    if (forced !== null) return toState(forced)
+  if (readDevLocation() !== null) return
+  if (!isSupported()) return
 
-    return { status: isSupported() ? 'locating' : 'unavailable', location: null }
-  })
+  watchId = navigator.geolocation.watchPosition(
+    (position) => {
+      const { latitude, longitude, accuracy } = position.coords
+      publish(toState({ latitude, longitude, accuracyM: accuracy }))
+    },
+    (error) => {
+      publish({
+        status: error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable',
+        location: null,
+      })
+    },
+    WATCH_OPTIONS,
+  )
+}
 
-  useEffect(() => {
-    /*
-     * Con la ubicación forzada no se suscribe nada: el permiso ni se pide, y sobre todo el
-     * primer arreglo del GPS no llega después a pisar el punto de prueba, que es exactamente
-     * el problema que este parámetro existe para evitar.
-     *
-     * Se vuelve a leer en vez de compartir el valor con el inicializador de arriba: dejarlo en
-     * una variable del render lo metería en las dependencias del efecto, y un objeto nuevo por
-     * render volvería a suscribir el `watchPosition` cada vez. Leer dos veces un parámetro de la
-     * dirección no cuesta nada.
-     */
-    if (readDevLocation() !== null) return
-    if (!isSupported()) return
+function stop(): void {
+  if (watchId === null) return
 
-    const watchId = navigator.geolocation.watchPosition(
-      (position) => {
-        const { latitude, longitude, accuracy } = position.coords
-        setState(toState({ latitude, longitude, accuracyM: accuracy }))
-      },
-      (error) => {
-        setState({
-          status: error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable',
-          location: null,
-        })
-      },
-      WATCH_OPTIONS,
-    )
+  navigator.geolocation.clearWatch(watchId)
+  watchId = null
+}
 
-    return () => navigator.geolocation.clearWatch(watchId)
-  }, [])
+function subscribe(listener: () => void): () => void {
+  if (listeners.size === 0) start()
+  listeners.add(listener)
 
+  return () => {
+    listeners.delete(listener)
+    if (listeners.size === 0) stop()
+  }
+}
+
+function getSnapshot(): DeviceLocationState {
   return state
+}
+
+export function useDeviceLocation(): DeviceLocationState {
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }

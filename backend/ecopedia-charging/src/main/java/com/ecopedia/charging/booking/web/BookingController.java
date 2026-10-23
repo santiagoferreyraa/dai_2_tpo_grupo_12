@@ -1,10 +1,8 @@
 package com.ecopedia.charging.booking.web;
 
-import com.ecopedia.charging.booking.domain.Booking;
 import com.ecopedia.charging.booking.domain.BookingService;
 import com.ecopedia.charging.booking.domain.Hold;
 import com.ecopedia.charging.booking.web.dto.BookingResponse;
-import com.ecopedia.charging.booking.web.dto.ConfirmBookingRequest;
 import com.ecopedia.charging.booking.web.dto.FreeWindowResponse;
 import com.ecopedia.charging.booking.web.dto.HoldRequest;
 import com.ecopedia.charging.booking.web.dto.HoldResponse;
@@ -56,21 +54,6 @@ public class BookingController {
             @AuthenticationPrincipal AuthenticatedUser driver, @Valid @RequestBody HoldRequest request) {
         Hold hold = bookingService.startHold(request.connectorId(), request.toWindow(), driver.id());
         return ResponseEntity.status(HttpStatus.CREATED).body(HoldResponse.fromDomain(hold));
-    }
-
-    /**
-     * RF08: confirmar la retención y dejar la reserva guardada.
-     *
-     * <p>Es {@code POST /api/bookings} y no {@code POST /api/bookings/holds/{id}/confirm} porque
-     * lo que nace acá es una reserva: el recurso creado es el que nombra la ruta, y por eso la
-     * respuesta es 201 con la reserva en el cuerpo.
-     */
-    @PostMapping
-    @PreAuthorize("hasRole('CONDUCTOR')")
-    public ResponseEntity<BookingResponse> confirm(
-            @AuthenticationPrincipal AuthenticatedUser driver, @Valid @RequestBody ConfirmBookingRequest request) {
-        Booking booking = bookingService.confirmBooking(request.holdId(), driver.id());
-        return ResponseEntity.status(HttpStatus.CREATED).body(BookingResponse.fromDomain(booking));
     }
 
     /** Las reservas del conductor que pregunta. */

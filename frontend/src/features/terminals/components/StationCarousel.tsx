@@ -12,7 +12,9 @@
  * un borde donde la columna se quede vacía. Cómo se consigue está explicado en COPIES.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+
+import { useMediaQuery } from '@/lib/useMediaQuery'
 
 import StationResultCard from './StationResultCard'
 import type { StationResult } from '../types'
@@ -69,6 +71,33 @@ export default function StationCarousel({
 }: StationCarouselProps) {
   const listRef = useRef<HTMLDivElement>(null)
   const itemsRef = useRef(new Map<string, HTMLElement>())
+
+  /*
+   * Si la columna está guardada fuera de la pantalla.
+   *
+   * Vive acá y no en la pantalla que la usa porque es presentación de este componente: quien lo
+   * monta decide SI hay carrusel, no cuánto de él se ve. Subirlo a `StationsMapPage` obligaría a
+   * pasar un par de props que ningún otro componente necesita.
+   *
+   * **No se reabre solo al elegir una estación desde el mapa.** Guardar la columna es una decisión
+   * del usuario sobre cuánto mapa quiere ver, y traerla de vuelta por su cuenta le desharía esa
+   * decisión justo cuando está mirando otra cosa.
+   */
+  const [collapsed, setCollapsed] = useState(false)
+
+  /*
+   * La lengüeta y la columna están en ramas distintas del DOM, así que `aria-controls` es lo único
+   * que le dice a un lector de pantalla qué abre ese botón. `useId` y no una constante porque nada
+   * impide que algún día haya dos carruseles en la misma página.
+   */
+  const listId = useId()
+
+  /*
+   * Con movimiento reducido el carrusel aparece y desaparece de una. El deslizado es lo que explica
+   * A DÓNDE se fue la columna, pero quien pidió menos movimiento ya aceptó perder esa clase de
+   * pista, y el estado final es idéntico.
+   */
+  const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
 
   /*
    * La ficha que tiene el mouse encima, como ref y no como estado: igual que la escala del
@@ -297,28 +326,92 @@ export default function StationCarousel({
   const realCopy = looping ? 1 : 0
 
   return (
-    <>
+    /*
+      Acá había un degradado oscuro detrás de las fichas, para despegarlas del mapa. Se sacó:
+      las fichas ya tienen su propio vidrio y su sombra, así que se sostienen solas, y el
+      degradado apagaba una franja de mapa de casi treinta rem sin dar nada a cambio. Desde que
+      el mapa acompaña al tema, además, oscurecerlo era exactamente lo contrario de lo que hace
+      el tema claro.
+
+      Los z-index altos no son un número al azar. Leaflet le pone z-index a sus propios panes
+      —200 los mosaicos, 600 los marcadores, hasta 1000 los controles— y el contenedor del mapa no
+      crea contexto de apilamiento, así que esos panes compiten directamente con esta capa. Con
+      z-index automático, el carrusel queda DEBAJO de los mosaicos aunque venga después en el DOM:
+      se ve mientras los mosaicos no cargaron y desaparece cuando cargan.
+
+      En celular el carrusel no va. Una columna de 320px sobre una pantalla de 390 no deja mapa:
+      taparía justo lo que se vino a mirar. Ahí el patrón es el panel que sube desde abajo.
+
+      **Este envoltorio existe para el plegado.** Es la pieza que se desplaza, y lleva adentro la
+      columna que scrollea y la lengüeta que la trae de vuelta. Tiene que ser un elemento aparte
+      de la columna por dos motivos: la lengüeta no puede scrollear con las fichas, y el desplazado
+      no puede aplicarse sobre un contenedor con `overflow-y-auto` sin que el navegador le sume
+      una barra horizontal al sacar el contenido de su caja.
+    */
+    <div
+      className={`absolute inset-y-0 right-0 z-[1110] hidden w-80 md:block ${
+        collapsed ? 'translate-x-full' : 'translate-x-0'
+      } ${prefersReducedMotion ? '' : 'transition-transform duration-300 ease-out'}`}
+    >
       {/*
-        Acá había un degradado oscuro detrás de las fichas, para despegarlas del mapa. Se sacó:
-        las fichas ya tienen su propio vidrio y su sombra, así que se sostienen solas, y el
-        degradado apagaba una franja de mapa de casi treinta rem sin dar nada a cambio. Desde que
-        el mapa acompaña al tema, además, oscurecerlo era exactamente lo contrario de lo que hace
-        el tema claro.
+        La lengüeta para esconder y traer el carrusel.
 
-        Los z-index altos que quedan abajo no son un número al azar. Leaflet le pone z-index a sus
-        propios panes —200 los mosaicos, 600 los marcadores, hasta 1000 los controles— y el
-        contenedor del mapa no crea contexto de apilamiento, así que esos panes compiten
-        directamente con esta capa. Con z-index automático, el carrusel queda DEBAJO de los
-        mosaicos aunque venga después en el DOM: se ve mientras los mosaicos no cargaron y
-        desaparece cuando cargan.
+        **Va adentro del envoltorio y corrida hacia afuera con `-translate-x-full`**, y no suelta
+        en la pantalla, porque así la mueve el mismo desplazado que mueve la columna: plegado, el
+        envoltorio se corre sus 320px hacia la derecha y la lengüeta cae justo sobre el borde de la
+        pantalla. Con un `right` animado aparte habría dos animaciones que mantener en sincronía, y
+        la lengüeta se despegaría de la columna en el medio del recorrido.
 
-        En celular el carrusel no va. Una columna de 320px sobre una pantalla de 390 no deja mapa:
-        taparía justo lo que se vino a mirar. Ahí el patrón es el panel que sube desde abajo.
+        Chica a propósito: es un control de la interfaz, no una acción de la pantalla. Lo que sí es
+        grande es el alto, porque es un blanco que se busca con el mouse de costado.
+
+        La flecha apunta a donde va a ir el carrusel —a la derecha para esconderlo, a la izquierda
+        para traerlo—, que es lo que deja adivinar qué hace antes de tocarlo.
       */}
+      <button
+        type="button"
+        onClick={() => setCollapsed((open) => !open)}
+        aria-expanded={!collapsed}
+        aria-controls={listId}
+        aria-label={collapsed ? 'Mostrar lista de estaciones' : 'Ocultar lista de estaciones'}
+        /*
+          El vidrio, el borde y la sombra son los MISMOS que los de `StationResultCard`, a
+          propósito: la lengüeta es parte de la columna, no un control del mapa. Con un fondo
+          propio se leía como una pieza suelta pegada al costado.
+
+          Sin esquinas redondeadas por lo mismo. Las fichas son rectas, y una lengüeta redondeada
+          contra una columna de rectángulos se despega justo en el punto donde tiene que
+          pertenecer.
+        */
+        className="border-border bg-background/95 text-text-muted hover:text-text focus-visible:outline-primary absolute top-1/2 left-0 flex h-16 w-6 -translate-x-full -translate-y-1/2 items-center justify-center border shadow-lg transition-colors focus-visible:-outline-offset-2 focus-visible:outline-2"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="h-4 w-4"
+          aria-hidden="true"
+        >
+          <path d={collapsed ? 'm15 18-6-6 6-6' : 'm9 18 6-6-6-6'} />
+        </svg>
+      </button>
+
       <div
+        id={listId}
         ref={listRef}
         onScroll={handleScroll}
-        className={`station-carousel absolute inset-y-0 right-0 z-[1110] hidden w-80 flex-col gap-3 overflow-y-auto px-4 md:flex ${
+        /*
+          `inset-0` y no `inset-y-0 right-0`: adentro del envoltorio la columna ocupa todo, y el
+          ancho lo fija el envoltorio. Repetirlo acá abriría la puerta a que los dos se separen.
+
+          `aria-hidden` plegado, porque un lector de pantalla no tiene forma de saber que la
+          columna está fuera de la pantalla: la leería entera como si estuviera a la vista.
+        */
+        aria-hidden={collapsed || undefined}
+        className={`station-carousel absolute inset-0 flex flex-col gap-3 overflow-y-auto px-4 ${
           looping ? '' : 'justify-center'
         }`}
       >
@@ -369,6 +462,6 @@ export default function StationCarousel({
           )),
         )}
       </div>
-    </>
+    </div>
   )
 }

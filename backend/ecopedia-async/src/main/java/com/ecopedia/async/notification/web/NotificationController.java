@@ -6,6 +6,7 @@ import com.ecopedia.async.security.AuthenticatedUser;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,7 +19,8 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p><b>Siempre "mis avisos", nunca los de un id que llegue en la URL.</b> El destinatario sale del
  * token, así que no hay forma de pedir los avisos de otro: no existe la ruta. Marcar uno como
- * leído sí recibe un id —el del aviso—, y ahí es el servicio el que verifica que sea tuyo.
+ * leído o borrarlo sí recibe un id —el del aviso—, y ahí es el servicio el que verifica que sea
+ * tuyo.
  *
  * <p>{@code isAuthenticated()} y no {@code hasRole('CONDUCTOR')}: hoy solo los conductores reciben
  * avisos, pero un operador que consulte los suyos no está pidiendo nada indebido —recibe una lista
@@ -59,6 +61,39 @@ public class NotificationController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> markAllAsRead(Authentication authentication) {
         notificationService.markAllAsRead(AuthenticatedUser.idOf(authentication));
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Saca un aviso del buzón.
+     *
+     * <p>{@code DELETE} y no {@code POST .../delete} porque es lo que es: se pide que un recurso deje
+     * de estar. Que por debajo sea una marca y no un {@code DELETE} de SQL —ver {@code
+     * NotificationServiceImpl}— es asunto de la implementación y no del contrato: para quien llama,
+     * el aviso se fue.
+     *
+     * <p>Repetirlo devuelve 204 igual, como manda el método: borrar dos veces deja el buzón en el
+     * mismo estado. Los 404 y 403 son para el aviso que no existe y el que es de otro.
+     */
+    @DeleteMapping("/{notificationId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> delete(Authentication authentication, @PathVariable Long notificationId) {
+        notificationService.delete(notificationId, AuthenticatedUser.idOf(authentication));
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Vacía el buzón.
+     *
+     * <p>Va sobre la colección y no en {@code /delete-all}, que sería el espejo de {@code /read-all}:
+     * marcar todas como leídas no tiene método HTTP propio y necesita inventar una ruta, borrar la
+     * colección sí lo tiene. Con sesión ajena no hay nada que proteger acá porque no hay id que
+     * pasar: se borra el buzón de quien viene en el token y de nadie más.
+     */
+    @DeleteMapping
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> deleteAll(Authentication authentication) {
+        notificationService.deleteAll(AuthenticatedUser.idOf(authentication));
         return ResponseEntity.noContent().build();
     }
 }

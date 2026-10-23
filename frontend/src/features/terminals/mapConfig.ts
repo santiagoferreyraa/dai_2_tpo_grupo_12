@@ -58,6 +58,35 @@ export const TILE_ATTRIBUTION =
   'Mosaicos &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 
 /**
+ * Obligatoria por licencia del servicio de rutas, y es una deuda distinta de la de arriba.
+ *
+ * Los mosaicos y las rutas vienen de dos proveedores que no tienen nada que ver entre sí: el
+ * dibujo del mapa es de Esri, el recorrido lo calcula OSRM sobre los datos de OpenStreetMap. Que
+ * OSM aparezca en las dos no las vuelve la misma línea —acredita dos usos distintos del mismo
+ * dato—, y acreditar solo una deja al otro proveedor sin crédito.
+ *
+ * Va al mismo lugar que TILE_ATTRIBUTION: el pie de página o la pantalla "acerca de" que el
+ * proyecto todavía debe. Ver `routing.ts`, que es donde se explica de dónde sale la ruta.
+ */
+export const ROUTING_ATTRIBUTION =
+  'Rutas por <a href="https://project-osrm.org/">OSRM</a>, con datos de <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> (ODbL)'
+
+/**
+ * Obligatoria por licencia del buscador de direcciones, y es una TERCERA deuda distinta.
+ *
+ * El mapa lo dibuja Esri, el recorrido lo calcula OSRM y las direcciones las busca Photon: tres
+ * proveedores que no tienen nada que ver entre sí y que casualmente comparten los datos de
+ * OpenStreetMap en dos de los tres usos. Que OSM aparezca en varias de estas líneas no las vuelve
+ * la misma: cada una acredita un uso distinto del dato, y acreditar uno solo deja a los otros sin
+ * crédito.
+ *
+ * Va al mismo lugar que las otras dos: el pie de página o la pantalla "acerca de" que el proyecto
+ * todavía debe. Ver `geocoding.ts`, que es donde se explica de dónde salen las direcciones.
+ */
+export const GEOCODING_ATTRIBUTION =
+  'Direcciones por <a href="https://photon.komoot.io/">Photon</a>, con datos de <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> (ODbL)'
+
+/**
  * El servicio tiene mosaicos hasta el zoom 16. Del 17 en adelante devuelve 200 con un mosaico
  * vacío: el mapa se pondría negro sin un solo error que lo explique.
  *
@@ -97,11 +126,9 @@ export const DEFAULT_ZOOM = 12
 /** Alejarse más que esto saca al país entero de escala y no muestra nada útil. */
 export const MIN_ZOOM = 4
 
-/**
- * Zoom al que se acerca el mapa cuando se elige una estación.
- *
- * Atado a MAX_ZOOM a propósito: elegir una estación tiene que dejar el mapa tan cerca como el
- * usuario podría ponerlo a mano, ni más ni menos. Con los dos valores sueltos, mover uno solo
- * dejaba el vuelo y el zoom manual desalineados.
+/*
+ * Acá vivía FOCUS_ZOOM, el zoom al que el mapa se acercaba solo al elegir una estación. Se sacó
+ * junto con el zoom automático: el nivel de acercamiento es del usuario, y elegir una estación
+ * solo desplaza el mapa (ver `PanToStation` en StationMap). MAX_ZOOM sigue siendo el techo de lo
+ * que el usuario puede acercar a mano.
  */
-export const FOCUS_ZOOM = MAX_ZOOM

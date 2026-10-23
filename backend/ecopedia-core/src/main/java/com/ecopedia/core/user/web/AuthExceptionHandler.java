@@ -1,6 +1,7 @@
 package com.ecopedia.core.user.web;
 
 import com.ecopedia.core.user.domain.TooManyLoginAttemptsException;
+import com.ecopedia.core.vehicle.domain.VehicleModelNotFoundException;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -54,6 +55,19 @@ public class AuthExceptionHandler {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header(HttpHeaders.RETRY_AFTER, Long.toString(seconds))
                 .body(ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, exception.getMessage()));
+    }
+
+    /**
+     * El auto elegido no está en el catálogo.
+     *
+     * <p><b>400 y no 404, aunque la excepción diga "not found".</b> Lo que no se encontró no es
+     * el recurso que se pidió —el perfil existe y es el de quien está logueado—, sino un valor
+     * de adentro del cuerpo. Un 404 acá le diría a la pantalla que se equivocó de dirección,
+     * cuando lo que pasó es que mandó un modelo que no se ofrece.
+     */
+    @ExceptionHandler(VehicleModelNotFoundException.class)
+    public ProblemDetail handleUnknownVehicleModel(VehicleModelNotFoundException exception) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
     }
 
     /** Campos que no pasan las anotaciones de validación del DTO. */

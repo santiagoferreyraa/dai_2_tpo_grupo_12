@@ -8,7 +8,7 @@ spring:
   datasource:
     url: ${ECOPEDIA_DB_URL:jdbc:postgresql://localhost:5432/ecopedia}
     username: ${ECOPEDIA_DB_USER:ecopedia}
-    password: ${ECOPEDIA_DB_PASSWORD:ecopedia}
+    password: ${ECOPEDIA_DB_PASSWORD}         # sin valor por defecto: sale del .env
 
   flyway:
     enabled: true
@@ -48,10 +48,10 @@ ecopedia:
 
   # La MISMA clave con la que Usuarios firma en ecopedia-core. Si las dos no coinciden, este
   # módulo rechaza todos los tokens y la pantalla de tarjetas queda inaccesible sin ningún
-  # error que lo explique. En producción la pone la variable de entorno, una sola vez para
-  # los dos artefactos.
+  # error que lo explique. Sin valor por defecto, por lo mismo que en core: ver el comentario
+  # de allá.
   jwt:
-    secret: ${ECOPEDIA_JWT_SECRET:EcopediaSecretKeyForJWTAuthentication2026SuperSecureKey!}
+    secret: ${ECOPEDIA_JWT_SECRET}
 
 ---
 # Perfil de desarrollo: base en memoria, para levantar el módulo sin PostgreSQL instalado.
@@ -78,6 +78,12 @@ spring:
   h2:
     console:
       enabled: true         # http://localhost:8083/h2-console
+
+# El secreto de desarrollo. Existe solo en los perfiles dev y local: sin perfil (`pnpm demo`,
+# el JAR) no hay valor por defecto y el proceso no arranca sin ECOPEDIA_JWT_SECRET.
+ecopedia:
+  jwt:
+    secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
 
 ---
 # Perfil local: la base de este integrante, en un archivo de su propio disco.
@@ -119,3 +125,9 @@ spring:
   h2:
     console:
       enabled: true         # http://localhost:8083/h2-console
+
+# El secreto de desarrollo. Existe solo en los perfiles dev y local: sin perfil (`pnpm demo`,
+# el JAR) no hay valor por defecto y el proceso no arranca sin ECOPEDIA_JWT_SECRET.
+ecopedia:
+  jwt:
+    secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}

@@ -26,17 +26,26 @@ export function fetchMyProfile(): Promise<UserProfile> {
 }
 
 /**
- * Cambia el nombre del usuario del token y devuelve el perfil ya guardado.
+ * Cambia el nombre y el auto del usuario del token, y devuelve el perfil ya guardado.
  *
- * Se devuelve lo que quedó en la base y no lo que se mandó: si algún día el backend recorta o
- * normaliza el nombre, la pantalla muestra el resultado de verdad y no su propia suposición.
+ * Se devuelve lo que quedó en la base y no lo que se mandó: el auto vuelve como ficha completa
+ * —marca, modelo, conector, potencias— a partir del id que se mandó, así que la pantalla muestra
+ * el resultado de verdad y no su propia suposición.
  *
- * El nombre es lo ÚNICO editable, y la lista corta es una regla de negocio: el correo identifica
- * la cuenta y viaja en el token, y el rol es una decisión administrativa. Ver
- * `UpdateProfileRequest` en el backend.
+ * **Los dos campos se mandan SIEMPRE, y con el auto eso importa.** El backend reemplaza lo
+ * editable en vez de parcharlo: `vehicleModelId` en `null` quiere decir "sacate el auto", no
+ * "dejalo como estaba". Es lo que hace posible quedarse sin auto sin inventar un centinela ni un
+ * endpoint aparte para una sola columna, y es el motivo por el que este parámetro no es opcional:
+ * olvidarlo borraría el vehículo en silencio. Ver `UpdateProfileRequest` en el backend.
+ *
+ * El nombre y el auto son lo ÚNICO editable, y la lista corta es una regla de negocio: el correo
+ * identifica la cuenta y viaja en el token, y el rol es una decisión administrativa.
  */
-export function updateMyProfile(fullName: string): Promise<UserProfile> {
-  return api.put<UserProfile>('/users/profile', { fullName })
+export function updateMyProfile(
+  fullName: string,
+  vehicleModelId: number | null,
+): Promise<UserProfile> {
+  return api.put<UserProfile>('/users/profile', { fullName, vehicleModelId })
 }
 
 /**

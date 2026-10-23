@@ -9,6 +9,7 @@ import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -27,28 +28,39 @@ import org.springframework.web.bind.annotation.*;
  * {@code "ROLE_" + role.name()} sobre el enum {@link com.ecopedia.core.user.domain.Role}, que
  * dice {@code CPO}. El documento de arquitectura nombra el rol {@code OPERATOR}: la
  * divergencia entre documento y código es una decisión tomada, no un descuido.
+ *
+ * <p><b>Un operador toca solo lo suyo.</b> El rol no alcanza: sin el chequeo de dueño, cualquier
+ * {@code CPO} editaba o borraba la estación de otro. Las operaciones sobre una estación o un
+ * conector que ya existen piden ser {@code ADMIN} o ser el {@code CPO} dueño, y el dueño lo
+ * resuelve {@link TerminalAccess} desde la misma anotación. El alta deja como dueño a quien la
+ * hace. Si la estación no existe, el operador recibe 403 y no 404: no le confirma a nadie qué ids
+ * hay.
  */
 @RestController
 @RequestMapping("/api")
 public class TerminalController {
 
     private final TerminalService terminalService;
+    private final TerminalAccess terminalAccess;
 
-    public TerminalController(TerminalService terminalService) {
+    public TerminalController(TerminalService terminalService, TerminalAccess terminalAccess) {
         this.terminalService = terminalService;
+        this.terminalAccess = terminalAccess;
     }
 
     /** RF04: Alta de una estación de carga. */
     @PostMapping("/stations")
-    @PreAuthorize("hasAnyRole('CPO','ADMIN')")
-    public ResponseEntity<StationResponse> createStation(@Valid @RequestBody StationRequest request) {
-        Station created = terminalService.createStation(request.toDomainData());
+    @PreAuthorize("hasAnyRole('CPO','ADMIN') and @terminalAccess.userIdOf(authentication) != null")
+    public ResponseEntity<StationResponse> createStation(
+            Authentication authentication, @Valid @RequestBody StationRequest request) {
+        Long ownerId = terminalAccess.userIdOf(authentication);
+        Station created = terminalService.createStation(ownerId, request.toDomainData());
         return ResponseEntity.status(HttpStatus.CREATED).body(StationResponse.fromDomain(created));
     }
 
     /** RF04: Edición de datos de una estación. */
     @PutMapping("/stations/{id}")
-    @PreAuthorize("hasAnyRole('CPO','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or (hasRole('CPO') and @terminalAccess.ownsStation(#id, authentication))")
     public ResponseEntity<StationResponse> updateStation(
             @PathVariable Long id, @Valid @RequestBody StationRequest request) {
         Station updated = terminalService.updateStation(id, request.toDomainData());
@@ -57,7 +69,7 @@ public class TerminalController {
 
     /** RF04: Baja lógica de una estación. */
     @DeleteMapping("/stations/{id}")
-    @PreAuthorize("hasAnyRole('CPO','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or (hasRole('CPO') and @terminalAccess.ownsStation(#id, authentication))")
     public ResponseEntity<Void> deactivateStation(@PathVariable Long id) {
         terminalService.deactivateStation(id);
         return ResponseEntity.noContent().build();
@@ -65,7 +77,7 @@ public class TerminalController {
 
     /** RF05: Alta de un conector sobre una estación existente. */
     @PostMapping("/stations/{stationId}/connectors")
-    @PreAuthorize("hasAnyRole('CPO','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or (hasRole('CPO') and @terminalAccess.ownsStation(#stationId, authentication))")
     public ResponseEntity<ConnectorResponse> addConnector(
             @PathVariable Long stationId, @Valid @RequestBody ConfigureConnectorRequest request) {
         Connector created = terminalService.addConnector(stationId, request.connectorType(), request.maxPowerKw());
@@ -74,7 +86,7 @@ public class TerminalController {
 
     /** RF05: Parametrizar tipo y potencia máxima de un conector que ya existe. */
     @PostMapping("/connectors/{id}/configure")
-    @PreAuthorize("hasAnyRole('CPO','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or (hasRole('CPO') and @terminalAccess.ownsConnector(#id, authentication))")
     public ResponseEntity<ConnectorResponse> configureConnector(
             @PathVariable Long id, @Valid @RequestBody ConfigureConnectorRequest request) {
         Connector configured = terminalService.configureConnector(id, request.connectorType(), request.maxPowerKw());
@@ -83,7 +95,7 @@ public class TerminalController {
 
     /** RF05: Cambiar el estado operativo de un conector. */
     @PatchMapping("/connectors/{id}/status")
-    @PreAuthorize("hasAnyRole('CPO','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or (hasRole('CPO') and @terminalAccess.ownsConnector(#id, authentication))")
     public ResponseEntity<Void> changeOperationalStatus(
             @PathVariable Long id, @Valid @RequestBody ChangeStatusRequest request) {
         terminalService.changeOperationalStatus(id, request.operationalStatus());
@@ -148,7 +160,7 @@ public class TerminalController {
 
     /** Eliminar un conector por ID. */
     @DeleteMapping("/connectors/{id}")
-    @PreAuthorize("hasAnyRole('CPO','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or (hasRole('CPO') and @terminalAccess.ownsConnector(#id, authentication))")
     public ResponseEntity<Void> removeConnector(@PathVariable Long id) {
         terminalService.removeConnector(id);
         return ResponseEntity.noContent().build();

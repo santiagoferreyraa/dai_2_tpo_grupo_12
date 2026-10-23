@@ -1,5 +1,6 @@
 package com.ecopedia.core.terminal;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -272,6 +273,71 @@ class TerminalAuthorizationTest {
     }
 
     /*
+     * El agujero que tapa TerminalAccess: con el rol solo, cualquier CPO editaba, apagaba o
+     * borraba la estación de otro. El dueño la crea por la API; el otro operador prueba las seis
+     * operaciones sobre lo ajeno y todas rebotan, y al final la estación y el conector siguen
+     * intactos.
+     */
+    @Test
+    @DisplayName("Un CPO no puede tocar la estación ni los conectores de otro CPO")
+    void rejectsOperatorsOnStationsTheyDoNotOwn() throws Exception {
+        String owner = bearerFor("duenio@ecopedia.test", Role.CPO);
+        String other = bearerFor("otro@ecopedia.test", Role.CPO);
+
+        mockMvc.perform(post("/api/stations")
+                        .header(HttpHeaders.AUTHORIZATION, owner)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(STATION_JSON))
+                .andExpect(status().isCreated());
+        Station station = terminalService.getAllStations().get(0);
+        Connector connector = terminalService.addConnector(station.getId(), ConnectorType.CCS2, new BigDecimal("50"));
+
+        List<MockHttpServletRequestBuilder> onForeignStation = List.of(
+                put("/api/stations/" + station.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(STATION_JSON.replace("Estación de prueba", "Cambiada por otro")),
+                post("/api/stations/" + station.getId() + "/connectors")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CONNECTOR_JSON),
+                post("/api/connectors/" + connector.getId() + "/configure")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CONNECTOR_JSON),
+                patch("/api/connectors/" + connector.getId() + "/status")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(STATUS_JSON),
+                delete("/api/connectors/" + connector.getId()),
+                delete("/api/stations/" + station.getId()));
+
+        for (MockHttpServletRequestBuilder request : onForeignStation) {
+            mockMvc.perform(request.header(HttpHeaders.AUTHORIZATION, other)).andExpect(status().isForbidden());
+        }
+
+        Station after = terminalService.getStation(station.getId());
+        assertThat(after.getName()).isEqualTo("Estación de prueba");
+        assertThat(after.isActive()).isTrue();
+        assertThat(terminalService.getConnectorsByStation(station.getId())).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("El alta deja como dueño al operador que la hace, no a un id fijo")
+    void recordsTheCreatorAsOwner() throws Exception {
+        bearerFor("relleno@ecopedia.test", Role.CONDUCTOR);
+        String operator = bearerFor("operador@ecopedia.test", Role.CPO);
+        Long operatorId = userRepository
+                .findByEmail("operador@ecopedia.test")
+                .orElseThrow()
+                .getId();
+
+        mockMvc.perform(post("/api/stations")
+                        .header(HttpHeaders.AUTHORIZATION, operator)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(STATION_JSON))
+                .andExpect(status().isCreated());
+
+        assertThat(terminalService.getAllStations().get(0).getOwnerId()).isEqualTo(operatorId);
+    }
+
+    /*
      * La contracara: cerrar el ABM no puede cerrarle la búsqueda al conductor, que según §2.3
      * es pública y es RF07. Si esta prueba se pone en rojo, la pantalla del mapa dejó de
      * funcionar para todo el mundo.
@@ -280,7 +346,7 @@ class TerminalAuthorizationTest {
     @DisplayName("La búsqueda y la lectura siguen abiertas sin token")
     void keepsSearchAndReadsOpen() throws Exception {
         Station station = terminalService.createStation(
-                new StationData("Estación pública", "Av. San Juan 2901", -34.603754, -58.381659, List.of()));
+                1L, new StationData("Estación pública", "Av. San Juan 2901", -34.603754, -58.381659, List.of()));
         terminalService.addConnector(station.getId(), ConnectorType.CCS2, new BigDecimal("50"));
         Connector connector = connectorRepository.findAll().get(0);
 

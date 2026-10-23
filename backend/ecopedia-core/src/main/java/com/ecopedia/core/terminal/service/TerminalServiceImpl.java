@@ -22,18 +22,40 @@ public class TerminalServiceImpl implements TerminalService {
     }
 
     @Override
-    public Station createStation(StationData data) {
+    public Station createStation(Long ownerId, StationData data) {
         Station station = new Station();
         station.setName(data.name());
         station.setAddress(data.address());
         station.setLatitude(data.latitude());
         station.setLongitude(data.longitude());
         station.setPhotoUrls(data.photoUrls() != null ? data.photoUrls() : new ArrayList<>());
-        station.setOwnerId(1L); // Identificador provisorio de operador
+        station.setOwnerId(ownerId);
         station.setActive(true);
         Station saved = stationRepository.save(station);
         Hibernate.initialize(saved.getPhotoUrls());
         return saved;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isStationOwner(Long stationId, Long userId) {
+        return stationRepository
+                .findById(stationId)
+                .map(station -> station.getOwnerId().equals(userId))
+                .orElse(false);
+    }
+
+    /*
+     * Adentro de la transacción a propósito: la estación del conector es LAZY, y fuera de acá
+     * leerle el dueño explotaría con LazyInitializationException.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isConnectorOwner(Long connectorId, Long userId) {
+        return connectorRepository
+                .findById(connectorId)
+                .map(connector -> connector.getStation().getOwnerId().equals(userId))
+                .orElse(false);
     }
 
     @Override

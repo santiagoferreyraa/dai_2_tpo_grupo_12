@@ -19,7 +19,7 @@ public interface JpaNotificationRepository extends JpaRepository<Notification, L
     boolean existsByEventId(String eventId);
 
     @Override
-    List<Notification> findByRecipientIdOrderByCreatedAtDesc(Long recipientId);
+    List<Notification> findByRecipientIdAndDeletedAtIsNullOrderByCreatedAtDesc(Long recipientId);
 
     /*
      * Por id y no por fecha de creación: el id crece con cada aviso guardado, así que "posterior a
@@ -27,22 +27,39 @@ public interface JpaNotificationRepository extends JpaRepository<Notification, L
      * consulta de "lo nuevo desde tal fecha" perdería o repetiría uno.
      */
     @Override
-    List<Notification> findTop50ByRecipientIdOrderByIdDesc(Long recipientId);
+    List<Notification> findTop50ByRecipientIdAndDeletedAtIsNullOrderByIdDesc(Long recipientId);
 
     @Override
-    List<Notification> findTop50ByRecipientIdAndIdGreaterThanOrderByIdDesc(Long recipientId, Long afterId);
+    List<Notification> findTop50ByRecipientIdAndIdGreaterThanAndDeletedAtIsNullOrderByIdDesc(
+            Long recipientId, Long afterId);
 
     @Override
-    long countByRecipientIdAndReadAtIsNull(Long recipientId);
+    long countByRecipientIdAndReadAtIsNullAndDeletedAtIsNull(Long recipientId);
 
     /*
      * Un UPDATE en la base y no "traer todos, marcarlos y guardarlos": con cien avisos sin leer
      * serían cien UPDATE sueltos. Solo toca los que no tienen lectura, así que la primera lectura
      * de cada aviso se conserva.
+     *
+     * Los borrados quedan afuera: marcar como leído algo que ya no está en el buzón no cambia nada
+     * que se vea —el contador tampoco los cuenta— y escribirles la fecha de lectura ensuciaría el
+     * registro de lo que el conductor leyó de verdad.
      */
     @Override
     @Modifying
     @Transactional
-    @Query("update Notification n set n.readAt = :when where n.recipientId = :recipientId and n.readAt is null")
+    @Query("update Notification n set n.readAt = :when"
+            + " where n.recipientId = :recipientId and n.readAt is null and n.deletedAt is null")
     int markAllAsRead(@Param("recipientId") Long recipientId, @Param("when") Instant when);
+
+    /*
+     * El "borrar todas" de la pantalla, por lo mismo que el de arriba: un UPDATE y no un viaje por
+     * aviso. Solo toca los que están en el buzón, así que la fecha del primer borrado se conserva.
+     */
+    @Override
+    @Modifying
+    @Transactional
+    @Query("update Notification n set n.deletedAt = :when"
+            + " where n.recipientId = :recipientId and n.deletedAt is null")
+    int markAllAsDeleted(@Param("recipientId") Long recipientId, @Param("when") Instant when);
 }

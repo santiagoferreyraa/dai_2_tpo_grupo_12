@@ -1,12 +1,16 @@
 package com.ecopedia.core.user.domain;
 
+import com.ecopedia.core.vehicle.domain.VehicleModel;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
@@ -39,6 +43,24 @@ public class User {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
+
+    /**
+     * El auto del conductor, o {@code null} si todavía no eligió ninguno.
+     *
+     * <p><b>{@code null} es un estado legítimo y no un dato que falta.</b> Toda cuenta nace sin
+     * auto y cualquiera puede sacárselo, así que las pantallas tienen que saber decir "todavía
+     * no elegiste tu vehículo" en vez de dibujar una ficha con guiones.
+     *
+     * <p><b>{@code EAGER} y no {@code LAZY}, al revés que las otras relaciones del módulo.</b>
+     * El perfil se lee de a uno y la ficha del auto se muestra junto con el nombre: con carga
+     * diferida, armar {@code UserProfileResponse} en el controlador —ya fuera de la transacción
+     * del servicio— reventaría al tocar el proxy. La alternativa sería mapear adentro del
+     * servicio, que es meter la capa de presentación en la de negocio para ahorrar un JOIN sobre
+     * una tabla de decenas de filas.
+     */
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "vehicle_model_id")
+    private VehicleModel vehicleModel;
 
     public Long getId() {
         return id;
@@ -94,5 +116,13 @@ public class User {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public VehicleModel getVehicleModel() {
+        return vehicleModel;
+    }
+
+    public void setVehicleModel(VehicleModel vehicleModel) {
+        this.vehicleModel = vehicleModel;
     }
 }

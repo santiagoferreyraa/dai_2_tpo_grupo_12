@@ -15,16 +15,16 @@ import {
   ARGENTINA_BOUNDS,
   DEFAULT_CENTER,
   DEFAULT_ZOOM,
-  FOCUS_ZOOM,
   MAX_NATIVE_ZOOM,
   MAX_ZOOM,
   MIN_ZOOM,
   TILES,
 } from '../mapConfig'
 import StationHoverCard from './StationHoverCard'
-import { DEVICE_PIN } from '../devicePin'
+import { DEPARTURE_PIN, DEVICE_PIN } from '../devicePin'
 import { stationPin } from '../stationPin'
-import type { DeviceLocation } from '../useDeviceLocation'
+import type { Route } from '../routing'
+import type { DeparturePoint } from '../useDepartureOrigin'
 import type { StationResult } from '../types'
 
 /**
@@ -59,11 +59,19 @@ function InvalidateSizeOnResize() {
 }
 
 /**
- * Acerca el mapa a la estación elegida.
+ * Lleva el centro del mapa a la estación elegida. **No toca el zoom.**
  *
  * flyTo y no setView: el desplazamiento animado deja ver hacia dónde se movió el mapa. Con un
  * salto seco, quien viene de elegir una ficha en el carrusel pierde la referencia de dónde
  * estaba parado.
+ *
+ * **La escala la decide el usuario y nadie más.** Acá había dos movimientos automáticos de zoom:
+ * este, que acercaba hasta FOCUS_ZOOM con cada estación elegida, y un encuadre que después
+ * alejaba el mapa hasta que entrara el recorrido entero. Entre los dos, el mapa cambiaba de
+ * escala solo —dos veces— cada vez que se tocaba un pin. Molestaba sobre todo reservando desde
+ * una dirección escrita, que es cuando el conductor ya acomodó el mapa a mano alrededor de ese
+ * punto y la pantalla se lo volvía a mover. Queda el desplazamiento, que es lo mínimo para que
+ * el pin elegido entre en pantalla; acercar y alejar es gesto del usuario.
  *
  * Recibe la estación entera y no su id para que el efecto dependa del objeto: `find` sobre el
  * arreglo devuelve siempre la misma referencia mientras no cambie la selección, así que un
@@ -74,7 +82,7 @@ function InvalidateSizeOnResize() {
  * se mueve hacia una estación que no se ve. Se corrige subiendo el centro la mitad de lo
  * tapado, que es lo que vuelve a dejar el pin en el medio del hueco visible.
  */
-function FlyToStation({
+function PanToStation({
   station,
   bottomInsetPx,
 }: {
@@ -86,89 +94,26 @@ function FlyToStation({
   useEffect(() => {
     if (station === null) return
 
+    /*
+     * El zoom se lee del mapa y se le devuelve igual: `flyTo` pide un nivel, y pasarle el que ya
+     * tiene es la forma de que el viaje sea solo desplazamiento. Se lee adentro del efecto y no
+     * entra en las dependencias a propósito: que el usuario cambie el zoom no es motivo para
+     * volver a centrar el mapa.
+     */
+    const zoom = map.getZoom()
     const target = L.latLng(station.latitude, station.longitude)
     if (bottomInsetPx === 0) {
-      map.flyTo(target, FOCUS_ZOOM)
+      map.flyTo(target, zoom)
       return
     }
 
     /*
-     * La corrección se hace en píxeles y no en grados: cuántos grados son 150 px depende del
-     * zoom y de la latitud, y al zoom de destino, que todavía no es el actual. `project` a ese
-     * zoom convierte una vez y evita las dos cuentas.
+     * La corrección se hace en píxeles y no en grados: cuántos grados son 150 px depende del zoom
+     * y de la latitud. `project` al zoom actual convierte una vez y evita las dos cuentas.
      */
-    const point = map.project(target, FOCUS_ZOOM).add([0, bottomInsetPx / 2])
-    map.flyTo(map.unproject(point, FOCUS_ZOOM), FOCUS_ZOOM)
+    const point = map.project(target, zoom).add([0, bottomInsetPx / 2])
+    map.flyTo(map.unproject(point, zoom), zoom)
   }, [map, station, bottomInsetPx])
-
-  return null
-}
-
-/**
- * Aleja el mapa hasta que entren el dispositivo y la estación.
- *
- * Es el gesto de la reserva: la pregunta que contesta no es "dónde está la estación" —eso ya lo
- * contestó FlyToStation al elegirla— sino "qué tan lejos me queda". Esa pregunta necesita las
- * dos puntas en pantalla al mismo tiempo, y por eso acá se ALEJA donde el resto de la pantalla
- * acerca.
- *
- * `flyToBounds` y no `fitBounds`, por lo mismo que FlyToStation usa `flyTo`: el viaje animado
- * deja ver que el mapa se abrió hacia atrás. Un salto seco desde el zoom 15 hasta ver media
- * provincia es desorientador, y encima se comería el arranque de la línea.
- *
- * El relleno de abajo suma `bottomInsetPx` por el mismo motivo que allá: en celular el panel
- * está abierto justo cuando se toca Reservar, así que sin compensarlo el encuadre mete la
- * estación —o al usuario— detrás del panel. `paddingBottomRight` es la forma que tiene Leaflet
- * de pedir un margen asimétrico, que es exactamente el caso.
- *
- * **El origen se lee de un ref y no de las dependencias.** `watchPosition` avisa cada vez que
- * el usuario se mueve, así que `from` cambia de identidad seguido; si estuviera en las
- * dependencias, cada arreglo del GPS volvería a disparar el vuelo y el mapa quedaría
- * reencuadrándose solo durante los 2,5 segundos que dura la línea. El encuadre tiene que pasar
- * UNA vez, cuando aparece el destino.
- */
-function FitTrace({
-  from,
-  to,
-  bottomInsetPx,
-}: {
-  from: DeviceLocation | null
-  to: StationResult | null
-  bottomInsetPx: number
-}) {
-  const map = useMap()
-
-  const fromRef = useRef(from)
-
-  /*
-   * El ref se sincroniza en un efecto y no durante el render —React pide no tocar `current`
-   * mientras se renderiza—, y este efecto va declarado ANTES del de abajo a propósito: los
-   * efectos corren en orden de declaración, así que cuando el de abajo lee el ref ya tiene la
-   * posición de ESTE render y no la del anterior. Invertidos, el encuadre saldría de una
-   * posición vieja por un arreglo del GPS.
-   */
-  useEffect(() => {
-    fromRef.current = from
-  }, [from])
-
-  useEffect(() => {
-    const origin = fromRef.current
-    if (to === null || origin === null) return
-
-    const bounds = L.latLngBounds([origin.latitude, origin.longitude], [to.latitude, to.longitude])
-
-    map.flyToBounds(bounds, {
-      paddingTopLeft: [56, 56],
-      paddingBottomRight: [56, 56 + bottomInsetPx],
-      /*
-       * El techo evita el caso degenerado: con el usuario a media cuadra de la estación, el
-       * recuadro es diminuto y Leaflet se acercaría hasta el máximo que dé el proveedor. La
-       * reserva quedaría mostrando dos puntos separados por toda la pantalla, que es
-       * justamente la lectura contraria a "esto te queda al lado".
-       */
-      maxZoom: FOCUS_ZOOM,
-    })
-  }, [map, to, bottomInsetPx])
 
   return null
 }
@@ -177,19 +122,55 @@ interface StationMapProps {
   stations: StationResult[]
   selectedStationId: number | null
   onSelect: (stationId: number) => void
-  /** Alto que el panel de detalle le tapa al mapa desde abajo. Ver FlyToStation. */
+  /** Alto que el panel de detalle le tapa al mapa desde abajo. Ver PanToStation. */
   bottomInsetPx?: number
   /** Apaga los pines que no son el elegido. Se usa con el panel abierto. */
   dimUnselected?: boolean
-  /** Dónde está el dispositivo, si el navegador lo dijo. Ver useDeviceLocation. */
-  deviceLocation?: DeviceLocation | null
   /**
-   * Estación hacia la que se traza la línea desde el dispositivo, o null para no trazar nada.
+   * Desde dónde sale el conductor: la ubicación del dispositivo o la dirección que escribió.
    *
-   * Quién la prende y por cuánto tiempo NO se decide acá: lo decide la pantalla, que es la que
-   * sabe qué acción la disparó. Este componente solo dibuja lo que le pasan.
+   * Es un `DeparturePoint` y no la ubicación del navegador a secas porque el origen dejó de ser
+   * uno solo (ver `useDepartureOrigin`). Acá el `kind` decide UNA cosa: qué marcador se dibuja.
+   * El disco que late dice "el navegador te está midiendo ahora", y sobre una dirección tecleada
+   * eso sería falso.
    */
-  traceTo?: StationResult | null
+  origin?: DeparturePoint | null
+  /**
+   * Dónde está el dispositivo AHORA, independientemente de desde dónde salga el recorrido.
+   *
+   * **Se dibuja siempre que se sepa, incluso con una dirección elegida como punto de partida.** El
+   * disco que late contesta "dónde estoy", y esa pregunta no deja de tener respuesta porque el
+   * recorrido arranque en otro lado: con el punto apagado, quien puso una dirección para reservar
+   * se quedaba sin la única referencia de dónde está parado sobre el mapa. Con los dos, el alfiler
+   * dice desde dónde sale el viaje y el disco dice dónde está el conductor.
+   *
+   * Cuando el punto de partida ES el dispositivo los dos marcadores caerían en el mismo lugar, y
+   * ahí va el disco solo: `origin` no dibuja nada en ese caso.
+   */
+  deviceLocation?: { latitude: number; longitude: number } | null
+  /**
+   * El recorrido por calles desde el punto de partida hasta la estación elegida, o null si todavía
+   * no llegó, no se pudo calcular o no hay estación elegida.
+   *
+   * Cuándo se pide y contra qué servicio NO se decide acá: lo decide la pantalla con `useRoute`.
+   * Este componente solo dibuja lo que le pasan, que es lo que deja cambiar de proveedor de rutas
+   * sin tocar el mapa.
+   */
+  route?: Route | null
+  /**
+   * El recorrido hasta la estación que el conductor YA tiene reservada.
+   *
+   * **Es otro recorrido y no un modo del anterior**, y por eso es otra prop. `route` es el de la
+   * estación que se está mirando y cambia con cada pin; este es el del viaje comprometido y se
+   * queda en pantalla mientras la reserva esté vigente, se mire lo que se mire. Los dos pueden
+   * estar a la vez, que es el caso normal: la línea llena hacia donde hay que ir y la punteada
+   * hacia la estación que se está espiando.
+   *
+   * Se dibuja LLENO, y el de la selección punteado (ver `.station-route--tentative`): mismo verde
+   * y misma forma los dos, lo único que los separa es el trazo. El lleno va para el viaje
+   * reservado porque es el único que está decidido; el punteado dice "esto es un tanteo".
+   */
+  bookedRoute?: Route | null
 }
 
 export default function StationMap({
@@ -198,8 +179,10 @@ export default function StationMap({
   onSelect,
   bottomInsetPx = 0,
   dimUnselected = false,
+  origin = null,
   deviceLocation = null,
-  traceTo = null,
+  route = null,
+  bookedRoute = null,
 }: StationMapProps) {
   const theme = useTheme()
   const [hoveredStationId, setHoveredStationId] = useState<number | null>(null)
@@ -254,8 +237,7 @@ export default function StationMap({
       className="absolute inset-0"
     >
       <InvalidateSizeOnResize />
-      <FlyToStation station={selectedStation} bottomInsetPx={bottomInsetPx} />
-      <FitTrace from={deviceLocation} to={traceTo} bottomInsetPx={bottomInsetPx} />
+      <PanToStation station={selectedStation} bottomInsetPx={bottomInsetPx} />
 
       {/*
         Los mosaicos cambian con el tema, y son DOS juegos distintos del mismo proveedor: no es el
@@ -309,60 +291,91 @@ export default function StationMap({
         </Marker>
       ))}
 
+      {/*
+        El punto y nada más: el círculo de precisión que había acá se sacó por decisión de
+        producto.
+
+        Vale saber qué se perdió, porque el dato sigue estando en `accuracyM`. El círculo era
+        el margen de error que informa el navegador, y su función era impedir que un punto
+        solo afirmara una exactitud que la medición no tiene: sin GPS la ubicación sale de la
+        red y puede errarle un kilómetro. El costo era que en ese mismo caso —el peor— tapaba
+        media pantalla, que es lo que lo volvía intolerable justo cuando más decía.
+
+        Si alguna vez se quiere el aviso sin el manchón, la forma es dibujarlo solo cuando la
+        precisión es MALA de verdad (por encima de unos 500 m): ahí el círculo es una
+        advertencia y no un adorno permanente.
+
+        `interactive={false}`: el marcador se dibuja encima de los pines de estación y sin
+        esto se queda con los clics de cualquiera que le caiga debajo. La ubicación no es
+        algo que se elija, así que no tiene por qué capturar el mouse.
+      */}
       {deviceLocation !== null && (
-        <>
-          {/*
-            El punto y nada más: el círculo de precisión que había acá se sacó por decisión de
-            producto.
+        <Marker
+          position={[deviceLocation.latitude, deviceLocation.longitude]}
+          icon={DEVICE_PIN}
+          interactive={false}
+          /*
+            Por encima de los pines de estación. Leaflet ordena los marcadores por latitud
+            —el que está más al sur tapa al que está más al norte—, y con ese criterio la
+            ubicación propia desaparece detrás de cualquier estación que le quede al sur.
+          */
+          zIndexOffset={1000}
+        />
+      )}
 
-            Vale saber qué se perdió, porque el dato sigue estando en `accuracyM`. El círculo era
-            el margen de error que informa el navegador, y su función era impedir que un punto
-            solo afirmara una exactitud que la medición no tiene: sin GPS la ubicación sale de la
-            red y puede errarle un kilómetro. El costo era que en ese mismo caso —el peor— tapaba
-            media pantalla, que es lo que lo volvía intolerable justo cuando más decía.
+      {/*
+        El alfiler del punto de partida, solo cuando es una dirección escrita. Cuando el punto de
+        partida es el dispositivo ya lo dibujó el disco de arriba, y los dos marcadores caerían
+        exactamente en el mismo lugar.
 
-            Si alguna vez se quiere el aviso sin el manchón, la forma es dibujarlo solo cuando la
-            precisión es MALA de verdad (por encima de unos 500 m): ahí el círculo es una
-            advertencia y no un adorno permanente.
+        Un escalón por debajo del disco —999 contra 1000— porque cuando quedan cerca el que tiene
+        que leerse entero es el "estás acá": el alfiler se entiende igual con la cabeza asomando,
+        y el disco con un pedazo tapado deja de leerse como un punto.
+      */}
+      {origin !== null && origin.kind === 'address' && (
+        <Marker
+          position={[origin.latitude, origin.longitude]}
+          icon={DEPARTURE_PIN}
+          interactive={false}
+          zIndexOffset={999}
+        />
+      )}
 
-            `interactive={false}`: el marcador se dibuja encima de los pines de estación y sin
-            esto se queda con los clics de cualquiera que le caiga debajo. La ubicación no es
-            algo que se elija, así que no tiene por qué capturar el mouse.
-          */}
-          <Marker
-            position={[deviceLocation.latitude, deviceLocation.longitude]}
-            icon={DEVICE_PIN}
-            interactive={false}
-            /*
-              Por encima de los pines de estación. Leaflet ordena los marcadores por latitud
-              —el que está más al sur tapa al que está más al norte—, y con ese criterio la
-              ubicación propia desaparece detrás de cualquier estación que le quede al sur.
-            */
-            zIndexOffset={1000}
-          />
+      {/*
+        El recorrido por calles hasta la estación elegida, y mientras siga elegida.
 
-          {/*
-            La línea recta hasta la estación reservada.
+        Es una línea quieta a propósito: dice por dónde se va, así que se tiene que leer como el
+        camino a hacer. Punteada la de la estación que se está mirando, llena la de la reserva: ver
+        `bookedRoute`.
 
-            Recta y NO un recorrido por calles: no hay grafo vial en el proyecto, así que esto
-            dice dirección y distancia, no por dónde ir. Que sea punteada y titile es justamente
-            lo que la despega de una ruta trazada —una línea llena y quieta se leería como el
-            camino a hacer— y lo que la vuelve un gesto que pasa en vez de una capa del mapa.
+        **Y si no hay recorrido no se dibuja nada.** Acá hubo una recta punteada de respaldo,
+        para cuando el servicio de rutas no contestaba; se sacó porque una recta entre dos
+        puntos NO es una respuesta más pobre a la misma pregunta, es la respuesta a otra: con
+        una avenida de por medio puede quedar a la mitad de lo que hay que manejar. Quien la
+        mira no tiene cómo saber cuál de las dos está viendo, así que lo único honesto es no
+        dibujarla. Que faltó se dice con palabras, en el panel de detalle.
 
-            Se desmonta sola cuando la pantalla apaga `traceTo`; el desvanecido del final lo
-            hace la animación de CSS, sincronizada con ese plazo. Ver `.station-trace`.
-          */}
-          {traceTo !== null && (
-            <Polyline
-              positions={[
-                [deviceLocation.latitude, deviceLocation.longitude],
-                [traceTo.latitude, traceTo.longitude],
-              ]}
-              interactive={false}
-              pathOptions={{ className: 'station-trace' }}
-            />
-          )}
-        </>
+        El estilo vive en `.station-route`, en index.css.
+      */}
+      {/*
+        El punteado va PRIMERO y el lleno encima. Los dos suelen salir del mismo lugar, así que las
+        primeras cuadras se pisan, y ahí el que tiene que ganar es el de la reserva: al revés, los
+        guiones del tanteo se dibujarían sobre la línea llena y no se vería ni uno ni el otro.
+      */}
+      {route !== null && (
+        <Polyline
+          positions={route.coordinates}
+          interactive={false}
+          pathOptions={{ className: 'station-route station-route--tentative' }}
+        />
+      )}
+
+      {bookedRoute !== null && (
+        <Polyline
+          positions={bookedRoute.coordinates}
+          interactive={false}
+          pathOptions={{ className: 'station-route' }}
+        />
       )}
     </MapContainer>
   )

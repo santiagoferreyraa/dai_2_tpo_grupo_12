@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react'
 import { setToken } from '@/lib/api'
 
 import { fetchMyProfile } from './data/userRepository'
-import type { AuthResponse, Session } from './types'
+import type { AuthResponse, Session, UserProfile } from './types'
 
 /**
  * La sesión del usuario: dónde vive, cómo sobrevive a un F5 y quién se entera cuando cambia.
@@ -37,8 +37,9 @@ function toSession(auth: AuthResponse): Session {
     email: auth.email,
     role: auth.role,
     expiresAt: Date.now() + auth.expiresInSeconds * 1000,
-    /* El login no manda el nombre. Lo trae `hydrateFullName` un instante después. */
+    /* El login no manda ni el nombre ni el auto. Los trae `hydrateProfile` un instante después. */
     fullName: null,
+    vehicle: null,
   }
 }
 
@@ -60,22 +61,24 @@ function persist(): void {
 }
 
 /**
- * Pregunta el nombre real y lo guarda en la sesión.
+ * Pregunta el perfil real —el nombre y el auto— y lo guarda en la sesión.
  *
- * **Por qué hace falta.** `AuthResponse` trae token, id, correo y rol, pero no el nombre: ése
- * vive en `UserProfileResponse`, que es otra llamada. Sin esto, las tres pantallas que saludan
- * al usuario tienen que inventarlo a partir del correo, y `j.perez@…` da "J.perez".
+ * **Por qué hace falta.** `AuthResponse` trae token, id, correo y rol, pero ni el nombre ni el
+ * vehículo: ésos viven en `UserProfileResponse`, que es otra llamada. Sin esto, las tres
+ * pantallas que saludan al usuario tienen que inventar el nombre a partir del correo —y
+ * `j.perez@…` da "J.perez"—, y la portada no tendría con qué contar estaciones compatibles.
  *
- * **Por qué no se espera.** Nada de lo que hay en pantalla depende del nombre: el saludo, la
- * ficha y el perfil se dibujan igual con el provisorio. Bloquear el login contra una segunda
- * llamada haría más lento entrar para cambiar un renglón de texto. Cuando la respuesta llega,
- * la suscripción vuelve a renderizar y el nombre se corrige solo.
+ * **Por qué no se espera.** Nada de lo que hay en pantalla depende de esto: el saludo se dibuja
+ * con el nombre provisorio y los recuadros del auto tienen su cara de "todavía no elegiste
+ * vehículo", que es la misma que ve quien de verdad no eligió ninguno. Bloquear el login contra
+ * una segunda llamada haría más lento entrar. Cuando la respuesta llega, la suscripción vuelve a
+ * renderizar y las dos cosas se corrigen solas.
  *
  * **Si falla, no pasa nada.** Puede fallar por red o porque el token no sirve —y de lo segundo
  * ya se ocupa `clearSessionIfExpired` desde el cliente HTTP—. Quedarse sin el nombre real no es
  * motivo para cerrarle la sesión a nadie: se sigue con el provisorio.
  */
-function hydrateFullName(): void {
+function hydrateProfile(): void {
   const opened = session
   if (opened === null) return
 
@@ -87,7 +90,7 @@ function hydrateFullName(): void {
         tenerlo, así que se compara el token antes de tocar nada.
       */
       if (session === null || session.token !== opened.token) return
-      session = { ...session, fullName: profile.fullName }
+      session = { ...session, fullName: profile.fullName, vehicle: profile.vehicle }
       persist()
       notify()
     })
@@ -97,18 +100,20 @@ function hydrateFullName(): void {
 }
 
 /**
- * Guarda en la sesión el nombre que acaba de quedar en la base.
+ * Guarda en la sesión el perfil que acaba de quedar en la base.
  *
- * La usa la pantalla de perfil después de editarlo. **Es lo mismo que hace `hydrateFullName`,
- * sin la llamada**: el nombre nuevo ya volvió en la respuesta del guardado, así que volver a
+ * La usa la pantalla de perfil después de editarlo. **Es lo mismo que hace `hydrateProfile`, sin
+ * la llamada**: el perfil nuevo ya volvió en la respuesta del guardado, así que volver a
  * preguntarlo sería un viaje de ida y vuelta para traer lo que está acá al lado.
  *
- * Sin esto, el nombre cambiado se vería solo en el perfil: la ficha de la franja de arriba y el
- * saludo de la portada leen de la sesión, y seguirían mostrando el anterior hasta recargar.
+ * Sin esto, lo cambiado se vería solo en el perfil: la ficha de la franja de arriba, el saludo y
+ * los recuadros del auto leen de la sesión, y seguirían mostrando lo anterior hasta recargar.
+ * Con el vehículo se nota más que con el nombre: cambiar de auto cambia el conteo de estaciones
+ * compatibles de la portada entera.
  */
-export function applyFullName(fullName: string): void {
+export function applyProfile(profile: UserProfile): void {
   if (session === null) return
-  session = { ...session, fullName }
+  session = { ...session, fullName: profile.fullName, vehicle: profile.vehicle }
   persist()
   notify()
 }
@@ -141,10 +146,10 @@ export function restoreSession(): void {
     session = candidate
     setToken(candidate.token)
     /*
-      Se vuelve a pedir aunque lo guardado ya traiga nombre: el perfil pudo cambiar desde la
-      última vez, y una sesión de un formato viejo no lo tiene.
+      Se vuelve a pedir aunque lo guardado ya traiga nombre y auto: el perfil pudo cambiar desde
+      la última vez —desde otra máquina, incluso—, y una sesión de un formato viejo no los tiene.
     */
-    hydrateFullName()
+    hydrateProfile()
   } catch {
     // Lo guardado no es una sesión válida (versión vieja del formato, o basura). Se descarta.
     clearSession()
@@ -157,7 +162,7 @@ export function openSession(auth: AuthResponse): Session {
   setToken(session.token)
   persist()
   notify()
-  hydrateFullName()
+  hydrateProfile()
   return session
 }
 

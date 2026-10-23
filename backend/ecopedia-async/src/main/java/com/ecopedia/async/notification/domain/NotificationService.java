@@ -33,4 +33,15 @@ public interface NotificationService {
 
     /** Marca como leídos todos los avisos del conductor. */
     void markAllAsRead(Long recipientId);
+
+    /**
+     * Saca un aviso del buzón del conductor. Solo su destinatario puede hacerlo.
+     *
+     * <p>Idempotente: borrar dos veces el mismo aviso es el mismo pedido repetido. Lo que no es
+     * idempotente es borrar el de otro, que sigue siendo un 403.
+     */
+    void delete(Long notificationId, Long recipientId);
+
+    /** Vacía el buzón del conductor de una sola vez. */
+    void deleteAll(Long recipientId);
 }

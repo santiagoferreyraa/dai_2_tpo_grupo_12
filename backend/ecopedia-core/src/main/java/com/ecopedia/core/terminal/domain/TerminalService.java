@@ -22,8 +22,22 @@ import java.util.List;
  */
 public interface TerminalService {
 
-    /** Alta de una estación. La publica el operador que la registra (RF04). */
-    Station createStation(StationData data);
+    /**
+     * Alta de una estación. La publica el operador que la registra (RF04), y ese operador
+     * queda como su dueño: es quien después la puede editar y dar de baja.
+     */
+    Station createStation(Long ownerId, StationData data);
+
+    /**
+     * Si la estación es del usuario. Falso también si la estación no existe.
+     *
+     * <p>La consulta la autorización del ABM antes de dejar pasar a un operador: un {@code CPO}
+     * solo toca lo suyo. Ver {@code TerminalAccess}.
+     */
+    boolean isStationOwner(Long stationId, Long userId);
+
+    /** Si el conector cuelga de una estación del usuario. Falso también si no existe. */
+    boolean isConnectorOwner(Long connectorId, Long userId);
 
     /** Edición de los datos de una estación existente (RF04). */
     Station updateStation(Long stationId, StationData data);
