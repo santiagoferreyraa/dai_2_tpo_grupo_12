@@ -7,6 +7,8 @@ import com.ecopedia.integration.payment.domain.PaymentMethodRepository;
 import com.ecopedia.integration.payment.domain.PaymentService;
 import com.ecopedia.integration.payment.domain.TokenizedCard;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional
 public class PaymentServiceImpl implements PaymentService {
+
+    private static final Logger log = LoggerFactory.getLogger(PaymentServiceImpl.class);
 
     /**
      * Tope de tarjetas vigentes por conductor.
@@ -78,7 +82,17 @@ public class PaymentServiceImpl implements PaymentService {
     public void removeCard(Long driverId, Long cardId) {
         PaymentMethod card = paymentMethodRepository
                 .findById(cardId)
-                .filter(found -> found.getDriverId().equals(driverId))
+                .filter(found -> {
+                    boolean mine = found.getDriverId().equals(driverId);
+                    if (!mine) {
+                        // La respuesta no lo dice, el log sí (SEC-06).
+                        log.warn(
+                                "Acceso denegado: el conductor {} quiso dar de baja la tarjeta {}, que es de otro",
+                                driverId,
+                                cardId);
+                    }
+                    return mine;
+                })
                 .filter(PaymentMethod::isActive)
                 /*
                  * "No encontrada" también cuando existe pero es de otro, y es a propósito. Un

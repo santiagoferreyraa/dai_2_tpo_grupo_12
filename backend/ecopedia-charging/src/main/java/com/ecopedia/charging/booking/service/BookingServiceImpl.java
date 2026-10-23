@@ -1,7 +1,6 @@
 package com.ecopedia.charging.booking.service;
 
 import com.ecopedia.charging.booking.domain.Booking;
-import com.ecopedia.charging.booking.domain.BookingAccessDeniedException;
 import com.ecopedia.charging.booking.domain.BookingEvent;
 import com.ecopedia.charging.booking.domain.BookingEventPublisher;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
@@ -411,8 +410,16 @@ public class BookingServiceImpl implements BookingService {
                 throw new HoldNotFoundException(holdId);
             }
             if (!hold.driverId().equals(driverId)) {
-                // Sin sacarla del mapa: la retención sigue siendo válida para su dueño.
-                throw BookingAccessDeniedException.forHold(holdId);
+                /*
+                 * Sin sacarla del mapa: la retención sigue siendo válida para su dueño. Y se
+                 * contesta como si no existiera (SEC-06): "existe pero no es tuya" ya le cuenta
+                 * algo a quien prueba ids. El motivo real queda en el log.
+                 */
+                log.warn(
+                        "Acceso denegado: el conductor {} quiso confirmar la retención {}, que es de otro",
+                        driverId,
+                        holdId);
+                throw new HoldNotFoundException(holdId);
             }
             if (hold.isExpiredAt(now)) {
                 holds.remove(holdId);
@@ -456,7 +463,12 @@ public class BookingServiceImpl implements BookingService {
         Booking booking =
                 bookingRepository.findById(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
         if (!booking.belongsTo(driverId)) {
-            throw BookingAccessDeniedException.forBooking(bookingId);
+            // Como si no existiera, igual que la retención ajena (SEC-06). El motivo, al log.
+            log.warn(
+                    "Acceso denegado: el conductor {} quiso cancelar la reserva {}, que es de otro",
+                    driverId,
+                    bookingId);
+            throw new BookingNotFoundException(bookingId);
         }
         if (booking.isCancelled()) {
             // Idempotente: lo que el conductor pidió ya está hecho, así que no es un error.

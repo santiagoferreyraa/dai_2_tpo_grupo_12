@@ -2,7 +2,6 @@ package com.ecopedia.async.notification.service;
 
 import com.ecopedia.async.notification.domain.EmailSender;
 import com.ecopedia.async.notification.domain.Notification;
-import com.ecopedia.async.notification.domain.NotificationAccessDeniedException;
 import com.ecopedia.async.notification.domain.NotificationFeed;
 import com.ecopedia.async.notification.domain.NotificationNotFoundException;
 import com.ecopedia.async.notification.domain.NotificationRepository;
@@ -135,15 +134,19 @@ public class NotificationServiceImpl implements NotificationService {
      * El aviso pedido, si existe y es de quien lo pide.
      *
      * <p>Está separado porque es la misma puerta para marcar y para borrar, y las dos tienen que
-     * contestar lo mismo ante lo mismo: 404 si no existe, 403 si es de otro. Escrito dos veces, un
-     * día una de las dos deja de mirar de quién es.
+     * contestar lo mismo ante lo mismo: 404 si no existe, y también si es de otro (SEC-06), con el
+     * motivo real en el log. Escrito dos veces, un día una de las dos deja de mirar de quién es.
      */
     private Notification mine(Long notificationId, Long recipientId) {
         Notification notification = repository
                 .findById(notificationId)
                 .orElseThrow(() -> new NotificationNotFoundException(notificationId));
         if (!notification.belongsTo(recipientId)) {
-            throw new NotificationAccessDeniedException(notificationId);
+            log.warn(
+                    "Acceso denegado: el conductor {} quiso tocar el aviso {}, que es de otro",
+                    recipientId,
+                    notificationId);
+            throw new NotificationNotFoundException(notificationId);
         }
         return notification;
     }

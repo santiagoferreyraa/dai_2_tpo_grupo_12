@@ -73,7 +73,8 @@ public class NotificationController {
      * el aviso se fue.
      *
      * <p>Repetirlo devuelve 204 igual, como manda el método: borrar dos veces deja el buzón en el
-     * mismo estado. Los 404 y 403 son para el aviso que no existe y el que es de otro.
+     * mismo estado. El 404 es para el aviso que no existe y también para el que es de otro
+     * (SEC-06): desde afuera no se distinguen.
      */
     @DeleteMapping("/{notificationId}")
     @PreAuthorize("isAuthenticated()")

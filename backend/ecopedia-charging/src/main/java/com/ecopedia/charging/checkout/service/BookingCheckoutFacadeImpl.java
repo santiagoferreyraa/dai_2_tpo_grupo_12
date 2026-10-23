@@ -1,7 +1,6 @@
 package com.ecopedia.charging.checkout.service;
 
 import com.ecopedia.charging.booking.domain.Booking;
-import com.ecopedia.charging.booking.domain.BookingAccessDeniedException;
 import com.ecopedia.charging.booking.domain.BookingService;
 import com.ecopedia.charging.booking.domain.Hold;
 import com.ecopedia.charging.booking.domain.HoldExpiredException;
@@ -98,7 +97,12 @@ public class BookingCheckoutFacadeImpl implements CheckoutFacade {
                 .orElseThrow(() -> new HoldNotFoundException(request.holdId()));
 
         if (!hold.driverId().equals(driverId)) {
-            throw BookingAccessDeniedException.forHold(request.holdId());
+            // La retención de otro se contesta como inexistente (SEC-06); el motivo, al log.
+            log.warn(
+                    "Acceso denegado: el conductor {} quiso confirmar la retención {}, que es de otro",
+                    driverId,
+                    request.holdId());
+            throw new HoldNotFoundException(request.holdId());
         }
         if (hold.isExpiredAt(now)) {
             throw new HoldExpiredException(request.holdId());

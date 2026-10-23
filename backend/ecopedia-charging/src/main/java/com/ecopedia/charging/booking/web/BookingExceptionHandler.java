@@ -1,6 +1,5 @@
 package com.ecopedia.charging.booking.web;
 
-import com.ecopedia.charging.booking.domain.BookingAccessDeniedException;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.ConnectorCatalogUnavailableException;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
@@ -25,9 +24,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * core: un advice suelto atraparía también las excepciones de SesionesDeCarga cuando exista.
  *
  * <p>Cada caso tiene su código, y no es por prolijidad: el front decide qué decirle al conductor
- * según el número. 404 es "elegiste un conector que no existe", 409 es "ese slot no se puede",
- * 410 es "se te venció el tiempo para confirmar", 403 es "eso no es tuyo" y 503 es "probá de
- * nuevo en un rato".
+ * según el número. 404 es "eso no existe" —un conector, una reserva o una retención; también la
+ * de otro conductor, que desde afuera no se distingue (SEC-06)—, 409 es "ese slot no se puede",
+ * 410 es "se te venció el tiempo para confirmar" y 503 es "probá de nuevo en un rato".
  */
 @RestControllerAdvice(basePackageClasses = BookingExceptionHandler.class)
 public class BookingExceptionHandler {
@@ -52,18 +51,6 @@ public class BookingExceptionHandler {
     @ExceptionHandler(HoldExpiredException.class)
     public ProblemDetail handleExpiredHold(HoldExpiredException exception) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.GONE, exception.getMessage());
-    }
-
-    /**
-     * Una reserva o una retención de otro conductor.
-     *
-     * <p>403 y no 404: el usuario está autenticado y la operación existe, lo que falla es que el
-     * recurso no es suyo. Esconderlo detrás de un 404 dejaría el mismo código que "ese id no
-     * existe" y convertiría cualquier error de programación en una búsqueda a ciegas.
-     */
-    @ExceptionHandler(BookingAccessDeniedException.class)
-    public ProblemDetail handleSomeoneElsesBooking(BookingAccessDeniedException exception) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, exception.getMessage());
     }
 
     @ExceptionHandler({ConnectorNotBookableException.class, SlotUnavailableException.class})

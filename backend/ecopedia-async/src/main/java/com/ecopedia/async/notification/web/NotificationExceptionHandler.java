@@ -1,6 +1,5 @@
 package com.ecopedia.async.notification.web;
 
-import com.ecopedia.async.notification.domain.NotificationAccessDeniedException;
 import com.ecopedia.async.notification.domain.NotificationNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -19,10 +18,5 @@ public class NotificationExceptionHandler {
     @ExceptionHandler(NotificationNotFoundException.class)
     public ProblemDetail handleNotFound(NotificationNotFoundException exception) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, exception.getMessage());
-    }
-
-    @ExceptionHandler(NotificationAccessDeniedException.class)
-    public ProblemDetail handleSomeoneElses(NotificationAccessDeniedException exception) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, exception.getMessage());
     }
 }
