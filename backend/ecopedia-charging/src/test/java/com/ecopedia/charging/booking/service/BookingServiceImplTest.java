@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.ecopedia.charging.booking.domain.Booking;
-import com.ecopedia.charging.booking.domain.BookingAccessDeniedException;
 import com.ecopedia.charging.booking.domain.BookingEvent;
 import com.ecopedia.charging.booking.domain.BookingEventType;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
@@ -340,8 +339,9 @@ class BookingServiceImplTest {
             started(AVAILABLE, Duration.ofMinutes(10));
             Hold hold = service.startHold(CONNECTOR, windowIn(2), DRIVER);
 
+            // Como si no existiera (SEC-06): "existe pero no es tuya" ya es contar algo.
             assertThatThrownBy(() -> service.confirmBooking(hold.id(), OTHER_DRIVER))
-                    .isInstanceOf(BookingAccessDeniedException.class);
+                    .isInstanceOf(HoldNotFoundException.class);
 
             // Y el intento fallido no le arruina la retención a su dueño.
             assertThat(service.activeHoldCount()).isEqualTo(1);
@@ -397,7 +397,7 @@ class BookingServiceImplTest {
                     service.startHold(CONNECTOR, windowIn(2), DRIVER).id(), DRIVER);
 
             assertThatThrownBy(() -> service.cancelBooking(booking.getId(), OTHER_DRIVER))
-                    .isInstanceOf(BookingAccessDeniedException.class);
+                    .isInstanceOf(BookingNotFoundException.class);
             assertThat(booking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
         }
 
@@ -496,7 +496,7 @@ class BookingServiceImplTest {
                     service.startHold(CONNECTOR, windowIn(2), DRIVER).id(), DRIVER);
 
             assertThatThrownBy(() -> service.cancelBooking(booking.getId(), OTHER_DRIVER))
-                    .isInstanceOf(BookingAccessDeniedException.class);
+                    .isInstanceOf(BookingNotFoundException.class);
             assertThat(events.published())
                     .extracting(BookingEvent::type)
                     .containsExactly(BookingEventType.BOOKING_CONFIRMED);

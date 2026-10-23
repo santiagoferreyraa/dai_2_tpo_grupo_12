@@ -1,5 +1,6 @@
 package com.ecopedia.async.notification;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -7,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ecopedia.async.notification.domain.Notification;
+import com.ecopedia.async.notification.domain.NotificationNotFoundException;
 import com.ecopedia.async.notification.domain.NotificationRepository;
 import com.ecopedia.async.notification.domain.NotificationToDispatch;
 import com.ecopedia.async.notification.domain.NotificationType;
@@ -14,10 +16,13 @@ import java.time.Instant;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -36,6 +41,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * <p>Cada prueba usa conductores propios, porque el contexto de Spring —y con él la base— se
  * comparte con las otras clases de test.
  */
+@ExtendWith(OutputCaptureExtension.class)
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("dev")
@@ -125,12 +131,16 @@ class NotificationApiTest {
 
     @Test
     @DisplayName("Nadie marca como leído el aviso de otro conductor")
-    void cannotMarkSomeoneElses() throws Exception {
+    void cannotMarkSomeoneElses(CapturedOutput output) throws Exception {
         Notification notification = saved(1005L);
 
+        // Lo mismo que un aviso inexistente (SEC-06); el motivo real, al log.
         mockMvc.perform(post("/api/notifications/{id}/read", notification.getId())
                         .header(HttpHeaders.AUTHORIZATION, driver(1006L)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail")
+                        .value(new NotificationNotFoundException(notification.getId()).getMessage()));
+        assertThat(output).contains("Acceso denegado: el conductor 1006 quiso tocar el aviso " + notification.getId());
 
         mockMvc.perform(get("/api/notifications").header(HttpHeaders.AUTHORIZATION, driver(1005L)))
                 .andExpect(jsonPath("$.unreadCount").value(1));
@@ -196,12 +206,15 @@ class NotificationApiTest {
 
     @Test
     @DisplayName("Nadie borra el aviso de otro conductor")
-    void cannotDeleteSomeoneElses() throws Exception {
+    void cannotDeleteSomeoneElses(CapturedOutput output) throws Exception {
         Notification notification = saved(1012L);
 
         mockMvc.perform(delete("/api/notifications/{id}", notification.getId())
                         .header(HttpHeaders.AUTHORIZATION, driver(1013L)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail")
+                        .value(new NotificationNotFoundException(notification.getId()).getMessage()));
+        assertThat(output).contains("Acceso denegado: el conductor 1013 quiso tocar el aviso " + notification.getId());
 
         mockMvc.perform(get("/api/notifications").header(HttpHeaders.AUTHORIZATION, driver(1012L)))
                 .andExpect(jsonPath("$.items.length()").value(1));

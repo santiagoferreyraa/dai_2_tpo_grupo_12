@@ -111,7 +111,7 @@ class PricingAuthorizationTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(other))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(schemeFor(connector)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
 
         assertThat(pricingSchemeRepository.findAll()).isEmpty();
     }

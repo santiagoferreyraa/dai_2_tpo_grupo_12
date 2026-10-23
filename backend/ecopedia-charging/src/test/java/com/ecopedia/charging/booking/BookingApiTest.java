@@ -11,8 +11,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.ConnectorCatalog;
 import com.ecopedia.charging.booking.domain.ConnectorSnapshot;
+import com.ecopedia.charging.booking.domain.HoldNotFoundException;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
 import com.ecopedia.charging.checkout.domain.TariffDirectory;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -26,10 +28,13 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
@@ -50,6 +55,7 @@ import org.springframework.test.web.servlet.ResultActions;
  * <p>Terminales se reemplaza con un mock de {@link ConnectorCatalog}: la prueba es de este
  * artefacto, y no tiene por qué necesitar a core corriendo.
  */
+@ExtendWith(OutputCaptureExtension.class)
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("dev")
@@ -279,26 +285,33 @@ class BookingApiTest {
     }
 
     @Test
-    @DisplayName("Confirmar la retención de otro conductor recibe 403")
-    void rejectsConfirmingSomeoneElsesHold() throws Exception {
+    @DisplayName("Confirmar la retención de otro conductor recibe lo mismo que una inexistente, y queda en el log")
+    void rejectsConfirmingSomeoneElsesHold(CapturedOutput output) throws Exception {
         String holdId = holdSlot(14L, nextWindowStart(), DRIVER);
 
         mockMvc.perform(post("/api/checkout/booking")
                         .header(HttpHeaders.AUTHORIZATION, driver(OTHER_DRIVER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(confirmBody(holdId)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value(new HoldNotFoundException(UUID.fromString(holdId)).getMessage()));
+
+        assertThat(output)
+                .contains("Acceso denegado: el conductor " + OTHER_DRIVER + " quiso confirmar la retención " + holdId);
     }
 
     @Test
-    @DisplayName("Cancelar la reserva de otro conductor recibe 403 y no la cancela")
-    void rejectsCancellingSomeoneElsesBooking() throws Exception {
+    @DisplayName("Cancelar la reserva de otro conductor recibe lo mismo que una inexistente, y no la cancela")
+    void rejectsCancellingSomeoneElsesBooking(CapturedOutput output) throws Exception {
         Instant start = nextWindowStart();
         long bookingId =
                 confirm(holdSlot(15L, start, DRIVER), DRIVER).get("bookingId").asLong();
 
         mockMvc.perform(delete("/api/bookings/{id}", bookingId).header(HttpHeaders.AUTHORIZATION, driver(OTHER_DRIVER)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value(new BookingNotFoundException(bookingId).getMessage()));
+        assertThat(output)
+                .contains("Acceso denegado: el conductor " + OTHER_DRIVER + " quiso cancelar la reserva " + bookingId);
 
         // Y sigue bloqueando el slot, que es lo que probaría que de verdad no se canceló.
         assertThat(holdAttempt(15L, start, OTHER_DRIVER)).isEqualTo(409);

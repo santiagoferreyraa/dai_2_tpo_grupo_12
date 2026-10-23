@@ -80,9 +80,9 @@ public interface BookingService {
      * no se cobra la seña, así que la tarjeta todavía no tiene para qué viajar. El conductor sí,
      * porque solo quien retuvo el slot lo puede confirmar.
      *
-     * @throws HoldNotFoundException si no hay ninguna retención con ese id
+     * @throws HoldNotFoundException si no hay ninguna retención con ese id, o si es de otro
+     *     conductor: desde afuera no se distingue (SEC-06)
      * @throws HoldExpiredException si la retención venció antes de confirmarse
-     * @throws BookingAccessDeniedException si la retención es de otro conductor
      * @throws SlotUnavailableException si mientras tanto se guardó otra reserva que se cruza
      * @throws DriverAlreadyBookedException si mientras tanto el conductor quedó con una reserva en
      *     curso o con otra que se cruza con esta ventana
@@ -96,8 +96,8 @@ public interface BookingService {
      * que el conductor pidió —que la reserva no valga— ya se cumplió. Importa para el front, que
      * puede reintentar un pedido que se cortó sin tener que preguntar antes cómo quedó.
      *
-     * @throws BookingNotFoundException si no hay ninguna reserva con ese id
-     * @throws BookingAccessDeniedException si la reserva es de otro conductor
+     * @throws BookingNotFoundException si no hay ninguna reserva con ese id, o si es de otro
+     *     conductor: desde afuera no se distingue (SEC-06)
      * @throws InvalidBookingRequestException si la ventana ya terminó: no hay nada que liberar
      */
     void cancelBooking(Long bookingId, Long driverId);

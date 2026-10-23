@@ -9,7 +9,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.ecopedia.charging.booking.domain.Booking;
-import com.ecopedia.charging.booking.domain.BookingAccessDeniedException;
 import com.ecopedia.charging.booking.domain.BookingService;
 import com.ecopedia.charging.booking.domain.Hold;
 import com.ecopedia.charging.booking.domain.HoldExpiredException;
@@ -130,8 +129,9 @@ class BookingCheckoutFacadeImplTest {
 
         CheckoutBookingRequest request = new CheckoutBookingRequest(holdId, 1L, true);
 
+        // La de otro se contesta como inexistente (SEC-06).
         assertThatThrownBy(() -> facade.processBookingCheckout(DRIVER_ID, request, AUTH_TOKEN))
-                .isInstanceOf(BookingAccessDeniedException.class);
+                .isInstanceOf(HoldNotFoundException.class);
 
         verify(bookingService, never()).confirmBooking(any(), any());
     }

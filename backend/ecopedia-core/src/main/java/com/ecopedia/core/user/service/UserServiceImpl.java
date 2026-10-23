@@ -15,16 +15,19 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
+    private final LoginAttempts loginAttempts;
     private final VehicleService vehicleService;
 
     public UserServiceImpl(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
             JwtTokenProvider tokenProvider,
+            LoginAttempts loginAttempts,
             VehicleService vehicleService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenProvider = tokenProvider;
+        this.loginAttempts = loginAttempts;
         this.vehicleService = vehicleService;
     }
 
@@ -44,20 +47,35 @@ public class UserServiceImpl implements UserService {
         return userRepository.save(user);
     }
 
+    /*
+     * Tres cosas, en este orden:
+     *
+     * 1. Si la cuenta está bloqueada por intentos fallidos, se rechaza sin mirar la contraseña.
+     *    Ver LoginAttempts.
+     * 2. Mail inexistente y contraseña equivocada dan el mismo mensaje y cuentan igual como fallo:
+     *    no se le dice a nadie qué cuentas existen.
+     * 3. Una cuenta dada de baja también recibe ese mismo mensaje, aunque la contraseña sea la
+     *    correcta. Antes tenía uno propio, y con él cualquiera averiguaba que el mail estaba
+     *    registrado. Al dueño legítimo no le cambia nada: no puede entrar de ninguna de las dos
+     *    formas, y la reactivación la hace un ADMIN.
+     */
     @Override
     @Transactional(readOnly = true)
     public AuthToken authenticate(Credentials credentials) {
-        User user = userRepository
-                .findByEmail(credentials.email())
-                .orElseThrow(() -> new IllegalArgumentException("Credenciales inválidas"));
+        loginAttempts.lockRemaining(credentials.email()).ifPresent(remaining -> {
+            throw new TooManyLoginAttemptsException(remaining);
+        });
 
-        if (!user.isActive()) {
-            throw new IllegalArgumentException("El usuario está dado de baja");
-        }
+        User user = userRepository.findByEmail(credentials.email()).orElse(null);
 
-        if (!passwordEncoder.matches(credentials.rawPassword(), user.getPasswordHash())) {
+        if (user == null
+                || !passwordEncoder.matches(credentials.rawPassword(), user.getPasswordHash())
+                || !user.isActive()) {
+            loginAttempts.recordFailure(credentials.email());
             throw new IllegalArgumentException("Credenciales inválidas");
         }
+
+        loginAttempts.recordSuccess(credentials.email());
 
         String token = tokenProvider.generateToken(user.getId(), user.getEmail(), user.getRole());
         long expiresInSeconds = tokenProvider.getExpirationMs() / 1000;

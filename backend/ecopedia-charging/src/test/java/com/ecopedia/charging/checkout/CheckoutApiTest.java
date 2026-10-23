@@ -175,7 +175,7 @@ class CheckoutApiTest {
     }
 
     @Test
-    @DisplayName("POST /api/checkout/booking rechaza con 403 si el rol no es CONDUCTOR (ej. CPO)")
+    @DisplayName("POST /api/checkout/booking responde 404 si el rol no es CONDUCTOR (ej. CPO)")
     void rejectsNonDriver() throws Exception {
         CheckoutBookingHttpRequest request = new CheckoutBookingHttpRequest(UUID.randomUUID(), 1L, true);
 
@@ -183,6 +183,6 @@ class CheckoutApiTest {
                         .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, 99L, "CPO"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 }

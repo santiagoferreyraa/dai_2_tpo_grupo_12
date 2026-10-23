@@ -38,7 +38,7 @@ public interface NotificationService {
      * Saca un aviso del buzón del conductor. Solo su destinatario puede hacerlo.
      *
      * <p>Idempotente: borrar dos veces el mismo aviso es el mismo pedido repetido. Lo que no es
-     * idempotente es borrar el de otro, que sigue siendo un 403.
+     * idempotente es borrar el de otro, que se contesta como inexistente (SEC-06).
      */
     void delete(Long notificationId, Long recipientId);
 

@@ -1,5 +1,6 @@
 package com.ecopedia.integration.payment;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -16,10 +17,13 @@ import javax.crypto.SecretKey;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
@@ -39,6 +43,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * elimine las tarjetas de otro. {@code hasRole('CONDUCTOR')} los deja pasar a los dos; lo que separa
  * a uno de otro es el id que sale del token, y eso solo se verifica ejerciéndolo.
  */
+@ExtendWith(OutputCaptureExtension.class)
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("dev")
@@ -117,13 +122,13 @@ class PaymentMethodApiTest {
     @Test
     @DisplayName("Un operador no puede registrar medios de pago")
     void deniesTheOperator() throws Exception {
-        mockMvc.perform(registerAs(1L, "CPO", VALID_CARD)).andExpect(status().isForbidden());
+        mockMvc.perform(registerAs(1L, "CPO", VALID_CARD)).andExpect(status().isNotFound());
     }
 
     @Test
     @DisplayName("El administrador tampoco: RF03 no le da las tarjetas ajenas")
     void deniesTheAdministrator() throws Exception {
-        mockMvc.perform(registerAs(1L, "ADMIN", VALID_CARD)).andExpect(status().isForbidden());
+        mockMvc.perform(registerAs(1L, "ADMIN", VALID_CARD)).andExpect(status().isNotFound());
     }
 
     @Test
@@ -166,7 +171,7 @@ class PaymentMethodApiTest {
 
     @Test
     @DisplayName("Un conductor no puede eliminar la tarjeta de otro")
-    void deniesRemovingSomeoneElsesCard() throws Exception {
+    void deniesRemovingSomeoneElsesCard(CapturedOutput output) throws Exception {
         String created = mockMvc.perform(registerAs(1L, "CONDUCTOR", VALID_CARD))
                 .andReturn()
                 .getResponse()
@@ -179,6 +184,8 @@ class PaymentMethodApiTest {
                 // confirmaría que ese id existe. Ver PaymentExceptionHandler.
                 .andExpect(status().isBadRequest())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("No se encontró")));
+        // La respuesta no lo dice; el log sí (SEC-06).
+        assertThat(output).contains("Acceso denegado: el conductor 2 quiso dar de baja la tarjeta " + cardId);
 
         // Y sigue estando para su dueño.
         mockMvc.perform(get("/api/payment-methods").header(HttpHeaders.AUTHORIZATION, bearer(1L, "CONDUCTOR")))

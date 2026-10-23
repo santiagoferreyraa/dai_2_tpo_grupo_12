@@ -1,6 +1,7 @@
 package com.ecopedia.async.config;
 
 import com.ecopedia.async.security.JwtAuthenticationFilter;
+import com.ecopedia.async.security.NotFoundAccessDeniedHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -24,9 +25,12 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final NotFoundAccessDeniedHandler accessDeniedHandler;
 
-    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
+    public SecurityConfig(
+            JwtAuthenticationFilter jwtAuthenticationFilter, NotFoundAccessDeniedHandler accessDeniedHandler) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.accessDeniedHandler = accessDeniedHandler;
     }
 
     @Bean
@@ -41,6 +45,9 @@ public class SecurityConfig {
                         .permitAll()
                         .anyRequest()
                         .permitAll())
+                // Con sesión y sin el rol, un 404 como el de una ruta que no existe; el 403 va
+                // al log. Ver NotFoundAccessDeniedHandler.
+                .exceptionHandling(errors -> errors.accessDeniedHandler(accessDeniedHandler))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }

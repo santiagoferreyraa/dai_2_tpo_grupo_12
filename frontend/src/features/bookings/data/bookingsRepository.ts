@@ -29,8 +29,8 @@ import type {
  *   busca en la red que ya carga el buscador (`fetchAllStations`), que la pide una sola vez y la
  *   recuerda: resolver la ubicación no agrega ninguna llamada al backend.
  *
- * **Todas piden rol CONDUCTOR.** Con otro rol el backend contesta 403. No cierra la sesión —el
- * cliente solo la cierra si el token venció—, pero no tiene sentido pedirlas: quien las use tiene
+ * **Todas piden rol CONDUCTOR.** Con otro rol el backend contesta 404, como si la ruta no
+ * existiera (SEC-05). No cierra la sesión, pero no tiene sentido pedirlas: quien las use tiene
  * que mirar el rol antes.
  *
  * Los errores salen como `ApiError` con el mensaje del backend, que ya viene en castellano y

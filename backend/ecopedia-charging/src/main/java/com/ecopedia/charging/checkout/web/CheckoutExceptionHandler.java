@@ -1,6 +1,5 @@
 package com.ecopedia.charging.checkout.web;
 
-import com.ecopedia.charging.booking.domain.BookingAccessDeniedException;
 import com.ecopedia.charging.booking.domain.DriverAlreadyBookedException;
 import com.ecopedia.charging.booking.domain.HoldExpiredException;
 import com.ecopedia.charging.booking.domain.HoldNotFoundException;
@@ -49,11 +48,6 @@ public class CheckoutExceptionHandler {
     @ExceptionHandler(HoldExpiredException.class)
     public ProblemDetail handleHoldExpired(HoldExpiredException exception) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.GONE, exception.getMessage());
-    }
-
-    @ExceptionHandler(BookingAccessDeniedException.class)
-    public ProblemDetail handleAccessDenied(BookingAccessDeniedException exception) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, exception.getMessage());
     }
 
     @ExceptionHandler(SlotUnavailableException.class)

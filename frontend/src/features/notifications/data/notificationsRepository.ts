@@ -52,9 +52,8 @@ export async function listMyNotifications(
  * Marca un aviso propio como leído. Responde 204 sin cuerpo.
  *
  * Errores que la pantalla tiene que tratar aparte:
- * - **404**: el aviso no existe.
- * - **403**: el aviso es de otro. No debería pasar desde la interfaz, que solo muestra los
- *   propios, y por eso no tiene un mensaje pensado: si aparece, hay algo mal más arriba.
+ * - **404**: el aviso no existe, o es de otro: el backend no los distingue (SEC-06). Lo segundo
+ *   no debería pasar desde la interfaz, que solo muestra los propios.
  */
 export function markNotificationAsRead(notificationId: number): Promise<void> {
   return api.post<void>(`/notifications/${String(notificationId)}/read`, undefined)
@@ -70,7 +69,7 @@ export function markAllNotificationsAsRead(): Promise<void> {
  *
  * **Borrar dos veces el mismo aviso no falla**: el backend contesta 204 igual, porque el buzón
  * queda en el mismo estado. Eso es lo que hace que reintentar sea seguro. Los errores que sí
- * pueden llegar son los mismos que en `markNotificationAsRead`: 404 si no existe, 403 si es de
+ * pueden llegar son los mismos que en `markNotificationAsRead`: 404 si no existe o si es de
  * otro.
  *
  * Que del otro lado el aviso se marque como borrado en vez de desaparecer de la tabla es asunto
