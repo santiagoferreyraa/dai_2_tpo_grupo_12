@@ -1,4 +1,4 @@
-# Los mismos cinco procesos que `pnpm dev`, pero con la base EN MEMORIA. Los levanta
+# Los mismos seis procesos que `pnpm dev`, pero con la base EN MEMORIA. Los levanta
 # `pnpm dev:mem`.
 #
 # Cuándo sirve: cuando querés empezar de cero sin borrar nada, o cuando estás tocando una
@@ -15,5 +15,7 @@ procs:
     shell: pnpm dev:mem:pay
   async:
     shell: pnpm dev:mem:async
+  gateway:
+    shell: pnpm dev:mem:gateway
   front:
     shell: pnpm dev:front

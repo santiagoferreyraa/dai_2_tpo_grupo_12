@@ -1,6 +1,9 @@
 package com.ecopedia.integration.payment;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -9,12 +12,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ecopedia.integration.payment.data.JpaPaymentMethodRepository;
+import com.ecopedia.integration.payment.domain.CardBrand;
+import com.ecopedia.integration.payment.domain.PaymentGatewayPort;
+import com.ecopedia.integration.payment.domain.PaymentGatewayUnavailableException;
+import com.ecopedia.integration.payment.domain.TokenizedCard;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.UUID;
 import javax.crypto.SecretKey;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,6 +36,7 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -59,6 +69,20 @@ class PaymentMethodApiTest {
 
     @Autowired
     private JpaPaymentMethodRepository paymentMethodRepository;
+
+    /*
+     * La pasarela es otro proceso, y este test es de Pagos: se reemplaza el puerto, no se la
+     * levanta. Lo que ella valida lo prueban sus propios tests (simulation/payment-gateway), y la
+     * traducción de sus respuestas, PaymentGatewayRestClientTest.
+     */
+    @MockitoBean
+    private PaymentGatewayPort paymentGateway;
+
+    @BeforeEach
+    void gatewayAcceptsCards() {
+        when(paymentGateway.tokenize(any()))
+                .thenAnswer(call -> new TokenizedCard(CardBrand.VISA, "1111", "tok_" + UUID.randomUUID()));
+    }
 
     @Value("${ecopedia.jwt.secret}")
     private String secret;
@@ -212,6 +236,9 @@ class PaymentMethodApiTest {
     @Test
     @DisplayName("Un número mal copiado devuelve 400 con el motivo, no un 500")
     void explainsARejectedCard() throws Exception {
+        when(paymentGateway.tokenize(argThat(card -> card.number().endsWith("2"))))
+                .thenThrow(new IllegalArgumentException(
+                        "El número de tarjeta no es válido. Revisá que esté bien copiado"));
         String typo =
                 """
                 {"number":"4111111111111112","expiryMonth":9,"expiryYear":2029,\
@@ -232,5 +259,19 @@ class PaymentMethodApiTest {
         mockMvc.perform(registerAs(1L, "CONDUCTOR", missingHolder))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("titular")));
+    }
+
+    @Test
+    @DisplayName("Con la pasarela caída, 503 con su código y un mensaje para probar en un rato; no se guarda nada")
+    void gatewayUnavailable() throws Exception {
+        when(paymentGateway.tokenize(any()))
+                .thenThrow(new PaymentGatewayUnavailableException(new java.io.IOException("Connection refused")));
+
+        mockMvc.perform(registerAs(1L, "CONDUCTOR", VALID_CARD))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("PAYMENT_GATEWAY_UNAVAILABLE"))
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("Probá de nuevo")));
+
+        assertThat(paymentMethodRepository.count()).isZero();
     }
 }

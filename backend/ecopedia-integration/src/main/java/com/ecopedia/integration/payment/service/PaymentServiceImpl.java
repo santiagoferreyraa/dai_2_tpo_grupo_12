@@ -112,8 +112,8 @@ public class PaymentServiceImpl implements PaymentService {
      * Rechaza registrar dos veces la misma tarjeta.
      *
      * <p><b>La comparación es aproximada, y no se puede hacer mejor.</b> Lo exacto sería comparar
-     * números, pero el número no se guarda (RF02) y el token es distinto en cada tokenización — ver
-     * {@code LocalPaymentGateway}. Así que se compara por lo que sí tenemos: misma marca, mismos
+     * números, pero el número no se guarda (RF02) y la pasarela emite un token distinto en cada
+     * tokenización. Así que se compara por lo que sí tenemos: misma marca, mismos
      * cuatro últimos dígitos y mismo vencimiento. Dos tarjetas distintas que coincidan en las tres
      * cosas existen en teoría; en el conjunto de tarjetas de una persona, no.
      *

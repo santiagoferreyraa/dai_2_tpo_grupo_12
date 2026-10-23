@@ -66,22 +66,27 @@ proxy de Vite manda `/api/bookings` al 8082, `/api/payment-methods` al 8083,
 `/api/notifications` al 8084 y todo lo demás al 8081, así que desde el navegador se ve como una
 sola API.
 
+**El sexto proceso no es Ecopedia:** es la pasarela de pagos simulada, en el 8086 (`gateway` en el
+panel). Es el sistema externo al que Pagos le habla por REST, y el navegador nunca le habla
+directo. Ver "La pasarela de pagos simulada", más abajo.
+
 | Comando | Qué hace |
 |---------|----------|
-| `pnpm dev` | Los cinco procesos, cada uno en su panel |
+| `pnpm dev` | Los seis procesos, cada uno en su panel |
 | `pnpm dev:back` | Solo `ecopedia-core` (8081) |
 | `pnpm dev:charging` | Solo Reservas (`ecopedia-charging`, 8082). Necesita el backend arriba |
 | `pnpm dev:pay` | Solo Pagos (`ecopedia-integration`, 8083), que sirve los medios de pago |
 | `pnpm dev:async` | Solo Notificaciones (`ecopedia-async`, 8084). Para recibir avisos necesita el broker: ver "Notificaciones" |
+| `pnpm dev:gateway` | Solo la pasarela de pagos simulada (8086). Pagos la necesita para cargar tarjetas |
 | `pnpm dev:front` | Solo el frontend |
-| `pnpm dev:plain` | Los cuatro de siempre —sin Notificaciones— en una sola tira de logs, con prefijos `[back]`/`[charging]`/`[pay]`/`[front]` |
-| `pnpm dev:mem` | Los cinco, pero con las bases **en memoria**: se borra todo al bajar |
-| `pnpm demo` | Los cinco contra **PostgreSQL**. Necesita la infraestructura arriba |
-| `pnpm free-ports` | Libera el 8081, el 8082, el 8083, el 8084 y el 5173 a mano |
+| `pnpm dev:plain` | Todos menos Notificaciones en una sola tira de logs, con prefijos `[back]`/`[charging]`/`[pay]`/`[gateway]`/`[front]` |
+| `pnpm dev:mem` | Los seis, pero con las bases **en memoria**: se borra todo al bajar |
+| `pnpm demo` | Los seis contra **PostgreSQL** (la pasarela, con su propia base en archivo). Necesita la infraestructura arriba |
+| `pnpm free-ports` | Libera el 8081, el 8082, el 8083, el 8084, el 8086 y el 5173 a mano |
 | `pnpm build` | Empaqueta el frontend adentro del JAR del backend |
 | `pnpm start` | Corre ese JAR |
 
-`pnpm dev` levanta los tres backends con el perfil `local`: **bases H2 en un archivo de tu
+`pnpm dev` levanta los backends y la pasarela con el perfil `local`: **bases H2 en un archivo de tu
 disco, sin PostgreSQL instalado y sin Docker.** Lo que cargues sobrevive a bajar y volver a
 levantar. Consolas de H2: http://localhost:8081/h2-console, http://localhost:8082/h2-console y
 http://localhost:8083/h2-console
@@ -197,7 +202,7 @@ docker compose up -d
 
 Deja arriba PostgreSQL (`localhost:5432`) y ActiveMQ Artemis (`localhost:61616`, consola web en
 http://localhost:8161/console). **Los dos escuchan solo en `127.0.0.1`**: desde otra máquina de la
-red no se llega, y está bien, porque los usan los backends de esta misma. Y después los cinco
+red no se llega, y está bien, porque los usan los backends de esta misma. Y después los seis
 procesos:
 
 ```bash
@@ -225,7 +230,7 @@ que puedan migrar por separado sin pisarse.
 #### El `.env`
 
 Los secretos viven en un `.env` en la raíz, **que no se versiona**. `pnpm env:init` lo genera a
-partir de `.env.example` con valores al azar, y no pisa uno que ya exista. Tiene tres secretos y
+partir de `.env.example` con valores al azar, y no pisa uno que ya exista. Tiene cuatro secretos y
 dos ajustes:
 
 | Variable | Qué es |
@@ -233,11 +238,19 @@ dos ajustes:
 | `ECOPEDIA_JWT_SECRET` | La firma de los tokens. La comparten los cuatro backends |
 | `ECOPEDIA_DB_PASSWORD` | La contraseña de PostgreSQL |
 | `ECOPEDIA_BROKER_PASSWORD` | La contraseña de Artemis |
+| `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN` | La clave con la que Pagos se presenta ante la pasarela simulada. La leen los dos |
 | `ECOPEDIA_LOGIN_MAX_FAILURES` | Cuántos logins fallidos seguidos bloquean una cuenta. Sin valor, 5 |
 | `ECOPEDIA_LOGIN_LOCK_MINUTES` | Cuántos minutos dura ese bloqueo. Sin valor, 15; para la demo conviene 1 |
 
 Un `.env` generado antes de que existieran los dos ajustes no los tiene, y no hace falta
 regenerarlo: core usa los valores por defecto. Para cambiarlos, se agregan a mano.
+
+**La clave de la pasarela, en cambio, es un secreto:** un `.env` anterior no la tiene, y sin ella
+`pnpm demo` no levanta ni la pasarela ni Pagos (`Could not resolve placeholder
+'ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN'`). Se agrega a mano una línea
+`ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN=` con cualquier valor largo al azar, o se borra el `.env` y
+se corre `pnpm env:init` de nuevo (eso cambia también los demás secretos). `pnpm dev` y
+`pnpm dev:mem` no la necesitan.
 
 `docker compose` lo lee solo, y los scripts del backend lo cargan con `scripts/with-env.mjs`,
 así que no hay que exportar nada a mano. Una variable que ya esté en el entorno le gana al
@@ -349,6 +362,39 @@ Dos cosas que conviene reconocer:
 - **Sin el broker, Reservas reserva igual**, y en su panel aparece en WARN
   `No se pudo publicar el aviso`, con el aviso entero. Ese aviso no se reenvía solo.
 
+### La pasarela de pagos simulada
+
+Pagos no valida ni cobra tarjetas por su cuenta: le habla por REST a la pasarela, un proceso
+aparte en `simulation/payment-gateway` (8086), con su propia base y su propio contrato (RNF04).
+La API imita la forma de la de Mercado Pago (`/v1/card_tokens`, `/v1/payments`,
+`/v1/payments/{id}/refunds`). `pnpm dev` ya la levanta; sin ella, cargar una tarjeta responde
+"No pudimos comunicarnos con el procesador de pagos".
+
+**Solo acepta tarjetas de prueba.** Cualquier otro número —aunque sea una tarjeta real y
+válida— se rechaza antes de tokenizar. Cada una se comporta distinto, para poder mostrar las
+fallas a pedido:
+
+| Número | Marca | Qué hace |
+|--------|-------|----------|
+| `4242 4242 4242 4242` | VISA | Aprueba todo |
+| `4111 1111 1111 1111` | VISA | Aprueba todo |
+| `5555 5555 5555 4444` | Mastercard | Aprueba todo |
+| `3782 822463 10005` | American Express | Aprueba todo |
+| `4000 0000 0000 0002` | VISA | Rechaza el cobro y la validación |
+| `4000 0000 0000 9995` | VISA | La validación da que sí, pero el cobro se rechaza por fondos |
+| `4000 0000 0000 0077` | VISA | Aprueba, pero tarda 8 s: más que el timeout de Pagos (5 s) |
+
+Vencimiento futuro cualquiera y cualquier nombre.
+
+**La pasarela no guarda el número de la tarjeta**, ni en la base ni en el log: guarda marca,
+últimos cuatro, vencimiento y cómo se comporta la tarjeta de prueba. Se ve en la consola de H2,
+http://localhost:8086/h2-console, tabla `card_tokens` (la URL de conexión es la que imprime el
+log). La base está en `simulation/payment-gateway/data/`, que no se versiona.
+
+Dos cosas más: **escucha solo en `127.0.0.1`** y **pide una clave en cada llamada**
+(`Authorization: Bearer`), la de `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN`. Con `pnpm dev` y
+`pnpm dev:mem` los dos lados traen la misma de desarrollo.
+
 ### Producción: un solo artefacto
 
 ```bash
@@ -397,6 +443,7 @@ Cada artefacto tiene su puerto fijo, así los cuatro pueden estar levantados a l
 | `ecopedia-charging` | 8082 | `mvn -pl backend/ecopedia-charging spring-boot:run` |
 | `ecopedia-integration` | 8083 | `mvn -pl backend/ecopedia-integration spring-boot:run` |
 | `ecopedia-async` | 8084 | `mvn -pl backend/ecopedia-async spring-boot:run` *(consume del broker; por HTTP solo sirve el historial de avisos)* |
+| `simulation/payment-gateway` | 8086 | `mvn -pl simulation/payment-gateway spring-boot:run` *(la pasarela simulada; no es Ecopedia)* |
 
 Sin perfil apuntan a PostgreSQL. Para el ambiente propio y persistente va
 `-Dspring-boot.run.profiles=local`, y para el descartable en memoria,
@@ -519,6 +566,8 @@ dai_2_tpo/
 │   ├── ecopedia-charging/    # Reservas · Sesiones de carga (stateful)
 │   ├── ecopedia-integration/ # Pagos (REST) · Red Eléctrica (SOAP)
 │   └── ecopedia-async/       # Notificaciones (consumidor JMS + historial por REST)
+├── simulation/                # Los sistemas externos simulados: no son Ecopedia
+│   └── payment-gateway/       # La pasarela de pagos (REST/JSON, 8086)
 ├── frontend/                  # React + TypeScript + Vite
 │   ├── vite.config.ts         # proxy a /api, alias @/, plugin de Tailwind
 │   ├── .prettierrc.json       # Formato compartido
@@ -537,9 +586,9 @@ estos módulos, cada uno con su interfaz explícita.
 | `ecopedia-charging` | BookingService · ChargingSessionService *(stateful)* | 🚧 scaffold |
 | `ecopedia-integration` | PaymentService (REST) · PowerGridService (SOAP) | 🚧 scaffold |
 | `ecopedia-async` | NotificationService | 🚧 scaffold |
-| `distribuidora-soap` | Simulador del sistema legado — publica el WSDL | ⬜ pendiente |
-| `pasarela-simulada` | Simulador del partner de pagos — expone la API REST | ⬜ pendiente |
-| `cargador-simulador` | Simulador de hardware — publica telemetría al tópico | ⬜ pendiente |
+| `simulation/payment-gateway` | La pasarela de pagos — expone la API REST | ✅ |
+| `simulation/power-grid` | La distribuidora, el sistema legado — publica el WSDL | ⬜ pendiente |
+| `simulation/charger` | El cargador — publica telemetría al tópico | ⬜ pendiente |
 
 ---
 
@@ -582,8 +631,9 @@ Así el que clona el repo levanta el módulo sin configurar nada, y el ambiente 
 arma exportando variables, sin tocar el código.
 
 **Los secretos son la excepción: no tienen valor por defecto.** La firma del JWT
-(`ECOPEDIA_JWT_SECRET`) y las contraseñas de la base (`ECOPEDIA_DB_PASSWORD`) y del broker
-(`ECOPEDIA_BROKER_PASSWORD`) salen solo del entorno. Un valor escrito en el YAML sería
+(`ECOPEDIA_JWT_SECRET`), las contraseñas de la base (`ECOPEDIA_DB_PASSWORD`) y del broker
+(`ECOPEDIA_BROKER_PASSWORD`) y la clave de la pasarela (`ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN`)
+salen solo del entorno. Un valor escrito en el YAML sería
 público, porque el repo lo es, y con el secreto del JWT a la vista cualquiera se firma un token
 de `ADMIN`. Solo los perfiles `local` y `dev` traen un secreto de desarrollo, para que
 `pnpm dev` y los tests anden sin configurar nada.
