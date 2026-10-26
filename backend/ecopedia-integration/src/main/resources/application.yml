@@ -38,11 +38,15 @@ server:
   port: ${SERVER_PORT:8083}
 
 # --- Sistemas externos simulados ---
-# La pasarela todavía no existe como proceso: PaymentGatewayPort corre hoy contra una
-# implementación local. Esta dirección queda declarada para cuando se levante. Ver §3.2.
+# La pasarela corre como proceso aparte (backend/pasarela-simulada, ECO-50) y se le habla por
+# REST a través de PaymentGatewayRestAdapter (ECO-56). Si no está levantada, registrar una
+# tarjeta contesta 503 "la pasarela no está respondiendo": `pnpm dev` ya la levanta. Ver §3.2.
 ecopedia:
   payment-gateway:
     url: ${ECOPEDIA_PAYMENT_GATEWAY_URL:http://localhost:8091}
+    # La clave del comercio ante la pasarela. Tiene que coincidir con pasarela.api-key del
+    # simulador; si no, la pasarela contesta 401 a todo y en el log de este módulo queda dicho.
+    api-key: ${PASARELA_API_KEY:sk_test_ecopedia}
   power-grid:
     url: ${ECOPEDIA_POWER_GRID_URL:http://localhost:8092/ws}
 

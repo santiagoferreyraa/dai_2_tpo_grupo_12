@@ -40,16 +40,19 @@
         esta misma lista la misma semana y cada merge conflictuaría acá. Declarados de entrada,
         este archivo no se vuelve a tocar.
 
-        Pendientes de crear más adelante (simuladores de sistemas externos):
+        Simuladores de sistemas externos. No son parte de Ecopedia: son los terceros con los
+        que se integra, y por eso cada uno corre como proceso aparte (RNF04).
+          - pasarela-simulada      (el partner de pagos, expone la API REST) — ECO-50
+        Pendientes de crear más adelante:
           - distribuidora-soap     (el legado, publica el WSDL)
           - cargador-simulador     (publica telemetría al tópico)
-          - pasarela-simulada      (el partner de pagos, expone la API REST)
     -->
     <modules>
         <module>backend/ecopedia-core</module>
         <module>backend/ecopedia-charging</module>
         <module>backend/ecopedia-integration</module>
         <module>backend/ecopedia-async</module>
+        <module>backend/pasarela-simulada</module>
     </modules>
 
     <build>

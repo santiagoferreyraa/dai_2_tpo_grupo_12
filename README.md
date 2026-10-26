@@ -68,16 +68,17 @@ sola API.
 
 | Comando | Qué hace |
 |---------|----------|
-| `pnpm dev` | Los cinco procesos, cada uno en su panel |
+| `pnpm dev` | Los seis procesos (los cinco de Ecopedia más la pasarela simulada), cada uno en su panel |
 | `pnpm dev:back` | Solo `ecopedia-core` (8081) |
 | `pnpm dev:charging` | Solo Reservas (`ecopedia-charging`, 8082). Necesita el backend arriba |
 | `pnpm dev:pay` | Solo Pagos (`ecopedia-integration`, 8083), que sirve los medios de pago |
+| `pnpm dev:gateway` | Solo la pasarela de pagos simulada (`pasarela-simulada`, 8091). Pagos la necesita para registrar tarjetas |
 | `pnpm dev:async` | Solo Notificaciones (`ecopedia-async`, 8084). Para recibir avisos necesita el broker: ver "Notificaciones" |
 | `pnpm dev:front` | Solo el frontend |
 | `pnpm dev:plain` | Los cuatro de siempre —sin Notificaciones— en una sola tira de logs, con prefijos `[back]`/`[charging]`/`[pay]`/`[front]` |
-| `pnpm dev:mem` | Los cinco, pero con las bases **en memoria**: se borra todo al bajar |
-| `pnpm demo` | Los cinco contra **PostgreSQL**. Necesita la infraestructura arriba |
-| `pnpm free-ports` | Libera el 8081, el 8082, el 8083, el 8084 y el 5173 a mano |
+| `pnpm dev:mem` | Los seis, pero con las bases **en memoria**: se borra todo al bajar |
+| `pnpm demo` | Los seis contra **PostgreSQL**. Necesita la infraestructura arriba |
+| `pnpm free-ports` | Libera el 8081, el 8082, el 8083, el 8084, el 8091 y el 5173 a mano |
 | `pnpm build` | Empaqueta el frontend adentro del JAR del backend |
 | `pnpm start` | Corre ese JAR |
 
@@ -197,16 +198,16 @@ docker compose up -d
 
 Deja arriba PostgreSQL (`localhost:5432`) y ActiveMQ Artemis (`localhost:61616`, consola web en
 http://localhost:8161/console). **Los dos escuchan solo en `127.0.0.1`**: desde otra máquina de la
-red no se llega, y está bien, porque los usan los backends de esta misma. Y después los cinco
+red no se llega, y está bien, porque los usan los backends de esta misma. Y después los seis
 procesos:
 
 ```bash
 pnpm demo
 ```
 
-Levanta backend, Reservas, Pagos, Notificaciones y frontend **sin perfil**, que es el que ya
-apunta a PostgreSQL. Si preferís uno solo, `pnpm demo:back`, `pnpm demo:charging`,
-`pnpm demo:pay` y `pnpm demo:async`.
+Levanta backend, Reservas, Pagos, Notificaciones, la pasarela simulada y frontend **sin perfil**,
+que es el que ya apunta a PostgreSQL. Si preferís uno solo, `pnpm demo:back`, `pnpm demo:charging`,
+`pnpm demo:pay`, `pnpm demo:async` y `pnpm demo:gateway`.
 
 **Si la base no está arriba, el backend no arranca.** Es el error más común de este ambiente, y
 casi siempre falta el `docker compose up -d`. Se ve en dos lugares distintos y conviene reconocer
@@ -397,6 +398,7 @@ Cada artefacto tiene su puerto fijo, así los cuatro pueden estar levantados a l
 | `ecopedia-charging` | 8082 | `mvn -pl backend/ecopedia-charging spring-boot:run` |
 | `ecopedia-integration` | 8083 | `mvn -pl backend/ecopedia-integration spring-boot:run` |
 | `ecopedia-async` | 8084 | `mvn -pl backend/ecopedia-async spring-boot:run` *(consume del broker; por HTTP solo sirve el historial de avisos)* |
+| `pasarela-simulada` | 8091 | `mvn -pl backend/pasarela-simulada spring-boot:run` *(sistema externo simulado; no tiene base ni perfiles)* |
 
 Sin perfil apuntan a PostgreSQL. Para el ambiente propio y persistente va
 `-Dspring-boot.run.profiles=local`, y para el descartable en memoria,
@@ -538,7 +540,7 @@ estos módulos, cada uno con su interfaz explícita.
 | `ecopedia-integration` | PaymentService (REST) · PowerGridService (SOAP) | 🚧 scaffold |
 | `ecopedia-async` | NotificationService | 🚧 scaffold |
 | `distribuidora-soap` | Simulador del sistema legado — publica el WSDL | ⬜ pendiente |
-| `pasarela-simulada` | Simulador del partner de pagos — expone la API REST | ⬜ pendiente |
+| `pasarela-simulada` | Simulador del partner de pagos — expone la API REST (ECO-50) | ✅ |
 | `cargador-simulador` | Simulador de hardware — publica telemetría al tópico | ⬜ pendiente |
 
 ---

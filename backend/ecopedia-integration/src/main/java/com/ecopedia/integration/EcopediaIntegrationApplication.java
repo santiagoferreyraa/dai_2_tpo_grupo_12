@@ -11,8 +11,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * contra la distribuidora simulada).
  *
  * <p>Desde ECO-26 vive acá el componente de Pagos, con los medios de pago del conductor
- * (RF02) y su propio schema en la base. La pasarela todavía no corre como proceso aparte:
- * {@code PaymentGatewayPort} está implementado localmente hasta que exista.
+ * (RF02) y su propio schema en la base. La pasarela corre como proceso aparte
+ * ({@code pasarela-simulada}, puerto 8091) y se le habla a través de
+ * {@code PaymentGatewayRestAdapter} (ECO-50, ECO-56).
  *
  * <p>Concentrar la salida en un borde único deja el resto del sistema sin dependencias
  * externas. Ver ARQUITECTURA_ECOPEDIA.md §3.1 y §3.2.

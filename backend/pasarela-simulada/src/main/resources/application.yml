@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: pasarela-simulada
+
+  # La API de la pasarela habla en snake_case (card_number, expiration_month, ...), como la
+  # mayoría de las pasarelas reales. Ecopedia habla en camelCase. Que los dos idiomas sean
+  # distintos es justamente lo que obliga a tener un Adapter del otro lado: ver
+  # PaymentGatewayRestAdapter en ecopedia-integration.
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    default-property-inclusion: non_null
+
+server:
+  # El puerto que ecopedia-integration ya tenía declarado como ECOPEDIA_PAYMENT_GATEWAY_URL.
+  port: ${SERVER_PORT:8091}
+
+pasarela:
+  # La clave secreta con la que el comercio (Ecopedia) se identifica. Va en cada pedido como
+  # "Authorization: Bearer <clave>". Es un simulador, así que tiene valor por defecto; el mismo
+  # valor está del lado de ecopedia-integration.
+  api-key: ${PASARELA_API_KEY:sk_test_ecopedia}

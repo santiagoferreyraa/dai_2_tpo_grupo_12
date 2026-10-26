@@ -3,20 +3,19 @@ package com.ecopedia.integration.payment.domain;
 /**
  * Puerto de salida hacia la pasarela de pagos.
  *
- * <p><b>Es el puerto que ARQUITECTURA §2.6 llama {@code PaymentGatewayPort}</b>, y está declarado
- * antes de que exista la pasarela a propósito. El componente de Pagos habla con este contrato y
- * nunca con un cliente HTTP: el día que se levante {@code pasarela-simulada} como proceso aparte
- * (RNF04), entra un {@code PaymentGatewayRestClient} que lo implementa y no cambia una línea de
- * {@code PaymentServiceImpl} ni de la capa de datos.
+ * <p><b>Es el puerto que ARQUITECTURA §2.6 llama {@code PaymentGatewayPort}</b>, y en el patrón
+ * Adapter (ECO-56) cumple el rol de <i>Target</i>: es la interfaz que Pagos espera, escrita en el
+ * idioma de Ecopedia. El componente de Pagos habla con este contrato y nunca con un cliente HTTP.
  *
- * <p><b>Hoy lo implementa {@code LocalPaymentGateway}, que no sale a la red.</b> Es una decisión
- * tomada para ECO-26, no una deuda escondida: el ticket pide el ABM de medios de pago, y lo que
- * ese ABM necesita de la pasarela es un token. Levantar el proceso externo es el trabajo de otro
- * ticket, y meterlo acá habría mezclado dos entregas en una.
+ * <p><b>Lo implementa {@code PaymentGatewayRestAdapter}</b>, que traduce cada llamada a la API REST
+ * de {@code pasarela-simulada}, el proceso aparte que pide RNF04 (ECO-50). Antes lo implementaba
+ * {@code LocalPaymentGateway}, en memoria; el cambio de uno a otro no tocó {@code PaymentServiceImpl}
+ * ni la capa de datos, que es exactamente lo que este puerto estaba para garantizar.
  *
  * <p>De este puerto cuelgan más adelante {@code chargeDeposit}, {@code validateCard},
- * {@code chargeConsumption} y {@code refund}. Se agregan cuando haya quién las llame: declararlas
- * ahora sería llenar la interfaz de métodos sin implementación real ni consumidor.
+ * {@code chargeConsumption} y {@code refund}. Se agregan cuando haya quién las llame: la pasarela
+ * ya expone los endpoints, pero declararlas acá sin consumidor sería llenar la interfaz de métodos
+ * que nadie usa.
  */
 public interface PaymentGatewayPort {
 

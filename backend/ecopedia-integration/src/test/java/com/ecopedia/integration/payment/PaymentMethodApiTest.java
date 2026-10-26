@@ -1,6 +1,9 @@
 package com.ecopedia.integration.payment;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -9,12 +12,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ecopedia.integration.payment.data.JpaPaymentMethodRepository;
+import com.ecopedia.integration.payment.domain.CardBrand;
+import com.ecopedia.integration.payment.domain.CardData;
+import com.ecopedia.integration.payment.domain.PaymentGatewayPort;
+import com.ecopedia.integration.payment.domain.TokenizedCard;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.UUID;
 import javax.crypto.SecretKey;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,6 +36,7 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -62,6 +72,23 @@ class PaymentMethodApiTest {
 
     @Value("${ecopedia.jwt.secret}")
     private String secret;
+
+    /*
+     * La pasarela es otro proceso y estos tests no la levantan: lo que prueban es quién puede usar el
+     * ABM, no la tokenización. El puerto se reemplaza por un doble que contesta como la pasarela ya
+     * traducida por el Adapter. La traducción en sí la prueba PaymentGatewayRestAdapterTest.
+     */
+    @MockitoBean
+    private PaymentGatewayPort paymentGateway;
+
+    @BeforeEach
+    void stubTheGateway() {
+        when(paymentGateway.tokenize(any(CardData.class)))
+                .thenAnswer(call -> new TokenizedCard(CardBrand.VISA, "1111", "tok_" + UUID.randomUUID()));
+        when(paymentGateway.tokenize(argThat(card -> card != null && "4111111111111112".equals(card.number()))))
+                .thenThrow(new IllegalArgumentException(
+                        "El número de tarjeta no es válido. Revisá que esté bien copiado"));
+    }
 
     @AfterEach
     void cleanUp() {

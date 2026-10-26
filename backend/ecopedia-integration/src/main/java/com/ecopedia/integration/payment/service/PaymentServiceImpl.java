@@ -113,7 +113,7 @@ public class PaymentServiceImpl implements PaymentService {
      *
      * <p><b>La comparación es aproximada, y no se puede hacer mejor.</b> Lo exacto sería comparar
      * números, pero el número no se guarda (RF02) y el token es distinto en cada tokenización — ver
-     * {@code LocalPaymentGateway}. Así que se compara por lo que sí tenemos: misma marca, mismos
+     * {@code CardInspector} en la pasarela. Así que se compara por lo que sí tenemos: misma marca, mismos
      * cuatro últimos dígitos y mismo vencimiento. Dos tarjetas distintas que coincidan en las tres
      * cosas existen en teoría; en el conjunto de tarjetas de una persona, no.
      *

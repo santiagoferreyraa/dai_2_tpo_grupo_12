@@ -14,8 +14,8 @@ import type { CardBrand } from './types'
  * lado es exponer el dato más sensible del formulario para descubrir que hay un dígito de más.
  * Cuanto más se resuelve sin que salga del navegador, mejor.
  *
- * Si el conjunto de marcas aceptadas cambia en `LocalPaymentGateway`, cambia acá también: son
- * dos lugares, y este archivo es el único del frontend que las menciona.
+ * Si el conjunto de marcas aceptadas cambia en `PaymentGatewayRestAdapter` (ACCEPTED_NETWORKS),
+ * cambia acá también: son dos lugares, y este archivo es el único del frontend que las menciona.
  */
 
 /** Solo los dígitos. Es como se guarda internamente, sin los espacios que se ven en pantalla. */
