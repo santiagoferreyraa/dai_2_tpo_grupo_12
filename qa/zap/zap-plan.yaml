@@ -1,0 +1,130 @@
+# Plan de OWASP ZAP (Automation Framework) para QA-08 (ECO-158).
+#
+# Escaneo pasivo + activo AUTENTICADO sobre los cuatro backends. Lo corre el workflow
+# qa-nightly.yml; a mano, con el sistema arriba (qa/ci/start-stack.sh) y un token de conductor:
+#
+#   docker run --rm --network host -v "$PWD/qa/zap:/zap/wrk:rw" \
+#     -e ZAP_AUTH_HEADER_VALUE="Bearer $TOKEN" \
+#     ghcr.io/zaproxy/zaproxy:stable zap.sh -cmd -autorun /zap/wrk/zap-plan.yaml
+#
+# **Autenticación.** ZAP_AUTH_HEADER_VALUE hace que ZAP agregue `Authorization: Bearer ...` a
+# todos los pedidos. Es la sesión de un CONDUCTOR, que es el rol que más endpoints alcanza; los
+# del backoffice se escanean igual y deberían contestar 404 (SEC-05).
+#
+# **Por qué la lista de pedidos.** La API no publica todavía un OpenAPI (QA-25), y el spider no
+# encuentra endpoints REST solo. El job `requestor` le muestra a ZAP cada endpoint con un cuerpo
+# válido; el escaneo activo después ataca cada parámetro que vio.
+#
+# **Criterio (eje D):** 0 alertas High; cada Medium, justificada una por una en el informe de
+# seguridad. El job `exitStatus` hace fallar la corrida si aparece una High.
+
+env:
+  contexts:
+    - name: ecopedia
+      urls:
+        - http://localhost:8081
+        - http://localhost:8082
+        - http://localhost:8083
+        - http://localhost:8084
+      includePaths:
+        - "http://localhost:808[1-4]/api/.*"
+      excludePaths:
+        # Bajas del usuario con el que se escanea: si el escaneo activo lo da de baja, el resto
+        # de la corrida queda sin sesión y los resultados no valen.
+        - "http://localhost:8081/api/users/profile/password.*"
+  parameters:
+    failOnError: true
+    failOnWarning: false
+    progressToStdout: true
+
+jobs:
+  - type: requestor
+    requests:
+      # core: público
+      - url: http://localhost:8081/api/vehicle-models
+      - url: http://localhost:8081/api/stations
+      - url: http://localhost:8081/api/stations/1
+      - url: http://localhost:8081/api/search?lat=-34.6037&lon=-58.3816&radiusKm=10
+      - url: http://localhost:8081/api/connectors?stationId=1
+      - url: http://localhost:8081/api/connectors/1
+      - url: http://localhost:8081/api/pricing/connector/1
+      - url: http://localhost:8081/api/pricing/estimate?connectorId=1&estimatedKwh=30
+      - url: http://localhost:8081/api/auth/login
+        method: POST
+        headers: ["Content-Type: application/json"]
+        data: '{"email":"zap@ecopedia.test","password":"noEsLaClave"}'
+      - url: http://localhost:8081/api/auth/register
+        method: POST
+        headers: ["Content-Type: application/json"]
+        data: '{"email":"zap.registro@ecopedia.test","password":"unaClave123","fullName":"ZAP"}'
+      # core: con sesión
+      - url: http://localhost:8081/api/users/profile
+      - url: http://localhost:8081/api/users/profile
+        method: PUT
+        headers: ["Content-Type: application/json"]
+        data: '{"fullName":"Conductor ZAP","vehicleModelId":null}'
+      - url: http://localhost:8081/api/users
+      - url: http://localhost:8081/api/users/1
+      - url: http://localhost:8081/api/admin/dashboard
+      - url: http://localhost:8081/api/stations
+        method: POST
+        headers: ["Content-Type: application/json"]
+        data: '{"name":"ZAP","address":"ZAP 123","latitude":-34.6,"longitude":-58.38,"photoUrls":[]}'
+      - url: http://localhost:8081/api/pricing
+        method: POST
+        headers: ["Content-Type: application/json"]
+        data: '{"connectorId":1,"kwhRate":100,"depositAmount":0}'
+      # integration: medios de pago
+      - url: http://localhost:8083/api/payment-methods
+      - url: http://localhost:8083/api/payment-methods
+        method: POST
+        headers: ["Content-Type: application/json"]
+        data: '{"number":"4111111111111111","expiryMonth":9,"expiryYear":2029,"holderName":"ZAP","label":"ZAP"}'
+      # charging: reservas y checkout
+      - url: http://localhost:8082/api/bookings/mine
+      - url: http://localhost:8082/api/bookings/availability?connectorId=1&from=2026-12-01T10:00:00Z&to=2026-12-01T14:00:00Z
+      - url: http://localhost:8082/api/bookings/holds
+        method: POST
+        headers: ["Content-Type: application/json"]
+        data: '{"connectorId":1,"start":"2026-12-02T10:00:00Z","end":"2026-12-02T11:00:00Z"}'
+      - url: http://localhost:8082/api/checkout/booking
+        method: POST
+        headers: ["Content-Type: application/json"]
+        data: '{"holdId":"00000000-0000-0000-0000-000000000000","paymentMethodId":1,"acceptGracePeriod":true}'
+      # async: avisos
+      - url: http://localhost:8084/api/notifications
+      - url: http://localhost:8084/api/notifications?after=1
+      - url: http://localhost:8084/api/notifications/read-all
+        method: POST
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 5
+
+  - type: activeScan
+    parameters:
+      context: ecopedia
+      maxScanDurationInMins: 15
+      maxRuleDurationInMins: 2
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 5
+
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: /zap/wrk/reports
+      reportFile: zap-report
+      reportTitle: "Ecopedia · OWASP ZAP (QA-08)"
+
+  - type: report
+    parameters:
+      template: traditional-json
+      reportDir: /zap/wrk/reports
+      reportFile: zap-report
+
+  - type: exitStatus
+    parameters:
+      errorLevel: High
+      warnLevel: Medium

@@ -1,0 +1,5 @@
+ci/logs/
+ci/.pids
+k6-summary.*
+zap/reports/
+newman/
