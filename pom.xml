@@ -42,8 +42,7 @@
 
         Los sistemas externos simulados viven aparte, en simulation/: no son Ecopedia, son los
         procesos con los que Ecopedia se integra. Cada uno corre por su cuenta y habla un
-        protocolo real. Faltan los otros dos:
-          - simulation/power-grid  (la distribuidora, el legado: SOAP con WSDL)
+        protocolo real. Falta uno:
           - simulation/charger     (el cargador: publica telemetría al tópico)
     -->
     <modules>
@@ -52,6 +51,7 @@
         <module>backend/ecopedia-integration</module>
         <module>backend/ecopedia-async</module>
         <module>simulation/payment-gateway</module>
+        <module>simulation/power-grid</module>
     </modules>
 
     <build>

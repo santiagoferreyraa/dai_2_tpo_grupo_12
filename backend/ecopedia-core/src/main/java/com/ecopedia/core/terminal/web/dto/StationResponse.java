@@ -12,6 +12,7 @@ public record StationResponse(
         Long ownerId,
         boolean active,
         List<String> photoUrls,
+        String nodeId,
         List<ConnectorResponse> connectors) {
 
     public static StationResponse fromDomain(Station station) {
@@ -28,6 +29,7 @@ public record StationResponse(
                 station.getOwnerId(),
                 station.isActive(),
                 station.getPhotoUrls(),
+                station.getNodeId(),
                 connectors != null ? connectors : List.of());
     }
 }

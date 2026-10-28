@@ -386,7 +386,7 @@ class TerminalAuthorizationTest {
     @DisplayName("La búsqueda y la lectura siguen abiertas sin token")
     void keepsSearchAndReadsOpen() throws Exception {
         Station station = terminalService.createStation(
-                1L, new StationData("Estación pública", "Av. San Juan 2901", -34.603754, -58.381659, List.of()));
+                1L, new StationData("Estación pública", "Av. San Juan 2901", -34.603754, -58.381659, List.of(), null));
         terminalService.addConnector(station.getId(), ConnectorType.CCS2, new BigDecimal("50"));
         Connector connector = connectorRepository.findAll().get(0);
 

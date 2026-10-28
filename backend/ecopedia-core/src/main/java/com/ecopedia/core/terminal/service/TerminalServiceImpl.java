@@ -29,6 +29,7 @@ public class TerminalServiceImpl implements TerminalService {
         station.setLatitude(data.latitude());
         station.setLongitude(data.longitude());
         station.setPhotoUrls(data.photoUrls() != null ? data.photoUrls() : new ArrayList<>());
+        station.setNodeId(data.nodeId());
         station.setOwnerId(ownerId);
         station.setActive(true);
         Station saved = stationRepository.save(station);
@@ -71,6 +72,9 @@ public class TerminalServiceImpl implements TerminalService {
         if (data.photoUrls() != null) {
             station.setPhotoUrls(data.photoUrls());
         }
+        // Reemplaza, como el resto de los campos y a diferencia de las fotos: sin nodo, la
+        // estación queda sin nodo. Los dos formularios mandan siempre el que muestran.
+        station.setNodeId(data.nodeId());
         Station saved = stationRepository.save(station);
         Hibernate.initialize(saved.getPhotoUrls());
         return saved;

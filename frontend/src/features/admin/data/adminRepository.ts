@@ -6,6 +6,7 @@ import type {
   ConnectorItem,
   DefinePricingSchemeRequest,
   PricingSchemeResponse,
+  StationFormData,
   StationItem,
   UserItem,
 } from '../types'
@@ -109,19 +110,11 @@ export function fetchStations(): Promise<StationItem[]> {
   return api.get<StationItem[]>('/stations')
 }
 
-export function createStation(data: {
-  name: string
-  address: string
-  latitude: number
-  longitude: number
-}): Promise<StationItem> {
+export function createStation(data: StationFormData): Promise<StationItem> {
   return api.post<StationItem>('/stations', data)
 }
 
-export function updateStation(
-  stationId: number,
-  data: { name: string; address: string; latitude: number; longitude: number },
-): Promise<StationItem> {
+export function updateStation(stationId: number, data: StationFormData): Promise<StationItem> {
   return api.put<StationItem>(`/stations/${stationId}`, data)
 }
 
