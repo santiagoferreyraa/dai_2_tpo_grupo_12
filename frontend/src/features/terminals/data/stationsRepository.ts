@@ -45,6 +45,7 @@ interface StationRequestBody {
   latitude: number
   longitude: number
   photoUrls: string[]
+  nodeId: string | null
 }
 
 function toRequestBody(input: StationInput): StationRequestBody {
@@ -54,6 +55,7 @@ function toRequestBody(input: StationInput): StationRequestBody {
     latitude: input.latitude,
     longitude: input.longitude,
     photoUrls: input.photoUrls,
+    nodeId: input.nodeId,
   }
 }
 

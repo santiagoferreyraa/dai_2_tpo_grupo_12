@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 
 import { formatCoordinate, parseDecimal } from '../format'
+import { normalizeGridNode, toGridNodeId, validateGridNode } from '../gridNode'
 import type { ConnectorDraft, StationDetail, StationInput } from '../types'
 import ConnectorEditor from './ConnectorEditor'
 import ImagePicker from './ImagePicker'
@@ -25,6 +26,7 @@ interface FormErrors {
   address?: string
   latitude?: string
   longitude?: string
+  nodeId?: string
   connectors?: string
 }
 
@@ -36,6 +38,7 @@ export default function StationFormSheet({ station, onSubmit, onDelete }: Statio
   const [address, setAddress] = useState(station?.address ?? '')
   const [latitude, setLatitude] = useState(station ? formatCoordinate(station.latitude) : '')
   const [longitude, setLongitude] = useState(station ? formatCoordinate(station.longitude) : '')
+  const [nodeId, setNodeId] = useState(station?.nodeId ?? '')
   const [photoUrls, setPhotoUrls] = useState<string[]>(station?.photoUrls ?? [])
   const [connectors, setConnectors] = useState<ConnectorDraft[]>(
     station?.connectors.map((connector) => ({ ...connector })) ?? [],
@@ -63,6 +66,9 @@ export default function StationFormSheet({ station, onSubmit, onDelete }: Statio
     if (lon === null) found.longitude = 'Longitud inválida'
     else if (lon < -180 || lon > 180) found.longitude = 'Entre -180 y 180'
 
+    const nodeError = validateGridNode(nodeId)
+    if (nodeError) found.nodeId = nodeError
+
     /*
      * Un conector sin potencia no es un conector a medio cargar: es uno que la búsqueda por
      * potencia mínima nunca va a devolver y que en la tarjeta se lee como "0 kW". Se llega
@@ -83,6 +89,7 @@ export default function StationFormSheet({ station, onSubmit, onDelete }: Statio
       latitude: lat as number,
       longitude: lon as number,
       photoUrls,
+      nodeId: toGridNodeId(nodeId),
       connectors,
     }
   }
@@ -160,6 +167,29 @@ export default function StationFormSheet({ station, onSubmit, onDelete }: Statio
           {errorText(errors.longitude)}
         </label>
       </div>
+
+      {/* Opcional: sin nodo la estación existe igual, pero no puede ofrecer carga rápida (RF15). */}
+      <label className="mt-5 block">
+        <span className="text-st-muted text-lg font-bold">GRID NODE</span>
+        <input
+          type="text"
+          value={nodeId}
+          onChange={(event) => setNodeId(normalizeGridNode(event.target.value))}
+          placeholder="CABA-CENTRO"
+          maxLength={40}
+          autoCapitalize="characters"
+          spellCheck={false}
+          className={FIELD_CLASS}
+        />
+      </label>
+      {errors.nodeId ? (
+        errorText(errors.nodeId)
+      ) : (
+        <span className="text-st-muted mt-1 block px-4 text-xs">
+          Opcional. Lo indica la distribuidora en el contrato de conexión. Sin nodo, la estación no
+          puede ofrecer carga rápida.
+        </span>
+      )}
 
       <ConnectorEditor value={connectors} onChange={setConnectors} />
       {errorText(errors.connectors)}

@@ -39,7 +39,18 @@ export interface StationItem {
   longitude: number
   ownerId: number
   active: boolean
+  /** Nodo de la distribuidora (RF15); `null` si no tiene. */
+  nodeId: string | null
   connectors?: ConnectorItem[]
+}
+
+/** Lo que manda el formulario de estación del backoffice, en el alta y en la edición. */
+export interface StationFormData {
+  name: string
+  address: string
+  latitude: number
+  longitude: number
+  nodeId: string | null
 }
 
 export type PricingStrategyType = 'FLAT_RATE' | 'PEAK_OFF_PEAK' | 'OCCUPANCY_PENALTY'

@@ -53,7 +53,8 @@ class TerminalServiceTest {
     void testCreateStation() {
         when(stationRepository.save(any(Station.class))).thenReturn(mockStation);
 
-        StationData data = new StationData("Estación UADE Obelisco", "Lima 775, CABA", -34.61315, -58.38138, List.of());
+        StationData data =
+                new StationData("Estación UADE Obelisco", "Lima 775, CABA", -34.61315, -58.38138, List.of(), null);
         Station created = terminalService.createStation(7L, data);
 
         assertNotNull(created);

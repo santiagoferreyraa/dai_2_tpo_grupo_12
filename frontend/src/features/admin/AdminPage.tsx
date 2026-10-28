@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import type { Role } from '@/features/auth/types'
+import { normalizeGridNode, toGridNodeId, validateGridNode } from '@/features/terminals/gridNode'
 import {
   activateUser,
   addConnector,
@@ -61,7 +62,10 @@ export default function AdminPage() {
     address: '',
     latitude: -34.6037,
     longitude: -58.3816,
+    // Texto mientras se edita; vacío es "sin nodo" y viaja como null (toGridNodeId).
+    nodeId: '',
   })
+  const [stationNodeError, setStationNodeError] = useState<string | null>(null)
   const [submittingStation, setSubmittingStation] = useState(false)
 
   // Connector Form Modal State
@@ -233,7 +237,8 @@ export default function AdminPage() {
   // Open Station Modal for Create / Edit
   const openCreateStationModal = () => {
     setEditingStation(null)
-    setStationForm({ name: '', address: '', latitude: -34.6037, longitude: -58.3816 })
+    setStationForm({ name: '', address: '', latitude: -34.6037, longitude: -58.3816, nodeId: '' })
+    setStationNodeError(null)
     setStationModalOpen('create')
   }
 
@@ -244,21 +249,28 @@ export default function AdminPage() {
       address: station.address,
       latitude: station.latitude,
       longitude: station.longitude,
+      nodeId: station.nodeId ?? '',
     })
+    setStationNodeError(null)
     setStationModalOpen('edit')
   }
 
   const handleStationSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    const nodeError = validateGridNode(stationForm.nodeId)
+    setStationNodeError(nodeError)
+    if (nodeError) return
+
+    const payload = { ...stationForm, nodeId: toGridNodeId(stationForm.nodeId) }
     setSubmittingStation(true)
     setActionError(null)
     setActionSuccess(null)
     try {
       if (stationModalOpen === 'create') {
-        const created = await createStation(stationForm)
+        const created = await createStation(payload)
         setActionSuccess(`¡"${created.name}" creada exitosamente con ID ${created.id}!`)
       } else if (stationModalOpen === 'edit' && editingStation) {
-        const updated = await updateStation(editingStation.id, stationForm)
+        const updated = await updateStation(editingStation.id, payload)
         setActionSuccess(`¡Estación ${updated.id} "${updated.name}" actualizada correctamente!`)
       }
       setStationModalOpen(null)
@@ -1273,6 +1285,30 @@ export default function AdminPage() {
                       className="mt-1 w-full rounded-xl border border-border/80 bg-surface/90 px-3.5 py-2 text-sm text-text focus:border-primary focus:outline-none"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-text-muted">
+                    Nodo de la distribuidora (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej: CABA-CENTRO"
+                    maxLength={40}
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                    value={stationForm.nodeId}
+                    onChange={(e) =>
+                      setStationForm({ ...stationForm, nodeId: normalizeGridNode(e.target.value) })
+                    }
+                    className="mt-1 w-full rounded-xl border border-border/80 bg-surface/90 px-3.5 py-2 text-sm text-text focus:border-primary focus:outline-none"
+                  />
+                  <p
+                    className={`mt-1 text-[11px] ${stationNodeError ? 'text-rose-400' : 'text-text-muted'}`}
+                  >
+                    {stationNodeError ??
+                      'Lo indica la distribuidora en el contrato de conexión. Sin nodo, la estación no puede ofrecer carga rápida.'}
+                  </p>
                 </div>
 
                 <div className="mt-4 flex justify-end gap-2">

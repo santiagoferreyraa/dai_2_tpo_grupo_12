@@ -89,7 +89,7 @@ class PricingAuthorizationTest {
     private Connector givenConnectorOwnedBy(User owner) {
         Station station = terminalService.createStation(
                 owner.getId(),
-                new StationData("Estación tarifada", "Av. San Juan 2901", -34.6037, -58.3816, List.of()));
+                new StationData("Estación tarifada", "Av. San Juan 2901", -34.6037, -58.3816, List.of(), null));
         return terminalService.addConnector(station.getId(), ConnectorType.CCS2, new BigDecimal("50"));
     }
 

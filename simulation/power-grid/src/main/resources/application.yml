@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: power-grid-simulator
+
+  # El servicio SOAP vive en /ws: ahí atiende el MessageDispatcherServlet de Spring-WS, y el WSDL
+  # queda en /ws/powerGrid.wsdl.
+  webservices:
+    path: /ws
+
+# SAAJ deja un ERROR propio por cada mensaje que no puede leer (un DOCTYPE, XML roto), además del
+# rechazo que ya escribe IncomingMessageFilter como WARN. Es un pedido mal formado, no una falla de
+# la distribuidora: con el WARN del filtro alcanza.
+logging:
+  level:
+    com.sun.xml.messaging.saaj: "OFF"
+
+server:
+  port: ${SERVER_PORT:8087}
+  # Solo la propia máquina, como la pasarela: Ecopedia corre en la misma, y nadie de la red tiene
+  # por qué llegar a la distribuidora. Para el ambiente compartido con dos máquinas, se cambia
+  # por variable.
+  address: ${ECOPEDIA_POWER_GRID_ADDRESS:127.0.0.1}
+
+simulation:
+  power-grid:
+    # El UsernameToken de WS-Security que se exige en cada pedido. Las mismas variables las lee
+    # ecopedia-integration. La contraseña, sin valor por defecto: sin perfil, la distribuidora no
+    # arranca sin el .env.
+    username: ${ECOPEDIA_POWER_GRID_USERNAME:ecopedia}
+    password: ${ECOPEDIA_POWER_GRID_PASSWORD}
+    # Cuánto tarda el nodo lento (LA-PLATA). Más que el timeout de lectura de Ecopedia (5 s), a
+    # propósito: es el nodo para mostrar qué pasa cuando la distribuidora no contesta a tiempo.
+    slow-node-delay: ${ECOPEDIA_POWER_GRID_SLOW_DELAY:8s}
+    # El tope del pedido. Uno legítimo pesa menos de 2 KB. Ver RequestSizeLimitFilter.
+    max-request-bytes: 16384
+
+---
+# `pnpm dev`: una contraseña de desarrollo, igual que los otros módulos.
+spring:
+  config:
+    activate:
+      on-profile: local
+
+simulation:
+  power-grid:
+    password: ${ECOPEDIA_POWER_GRID_PASSWORD:ecopedia-dev-only-power-grid-password}
+
+---
+# `pnpm dev:mem` y los tests. La distribuidora no tiene base, así que es igual a `local`.
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+simulation:
+  power-grid:
+    password: ${ECOPEDIA_POWER_GRID_PASSWORD:ecopedia-dev-only-power-grid-password}

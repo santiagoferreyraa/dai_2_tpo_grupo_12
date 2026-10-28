@@ -51,6 +51,13 @@ public class Station {
     @Column(name = "active", nullable = false)
     private boolean active = true;
 
+    /**
+     * Nodo de la distribuidora al que está conectada la estación, con el código que usa la
+     * distribuidora (RF15). Opcional: sin nodo no hay a quién consultar antes de una carga rápida.
+     */
+    @Column(name = "node_id", length = 40)
+    private String nodeId;
+
     @ElementCollection
     @CollectionTable(name = "station_photos", joinColumns = @JoinColumn(name = "station_id"))
     @Column(name = "url", nullable = false, length = 500)
@@ -110,6 +117,14 @@ public class Station {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public String getNodeId() {
+        return nodeId;
+    }
+
+    public void setNodeId(String nodeId) {
+        this.nodeId = nodeId;
     }
 
     public List<String> getPhotoUrls() {

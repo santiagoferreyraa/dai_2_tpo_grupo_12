@@ -2,6 +2,11 @@ spring:
   application:
     name: ecopedia-integration
 
+  # Este módulo consume un servicio SOAP, no publica ninguno. Con spring-ws-core en el classpath,
+  # Spring Boot levantaría igual un MessageDispatcherServlet vacío en /services; se excluye.
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.webservices.WebServicesAutoConfiguration
+
   # Desde ECO-26 este módulo tiene tabla propia: los medios de pago del conductor (RF02).
   # Antes no la tenía y el bloque de abajo no existía; el comentario que estaba en su lugar
   # decía que, si eso cambiaba, había que copiar el datasource de core. Es lo que se hizo.
@@ -50,8 +55,17 @@ ecopedia:
     # recibe un "probá de nuevo en un momento" en vez de una pantalla colgada.
     connect-timeout: 2s
     read-timeout: 5s
+  # La distribuidora corre como proceso aparte (simulation/power-grid, 8087) y RedEléctrica le habla
+  # por SOAP con PowerGridWsClient. Ver ARQUITECTURA §3.1.
   power-grid:
     url: ${ECOPEDIA_POWER_GRID_URL:http://localhost:8087/ws}
+    # El UsernameToken de WS-Security. Las mismas variables las lee la distribuidora. La
+    # contraseña, sin valor por defecto: sin perfil, el módulo no arranca sin el .env.
+    username: ${ECOPEDIA_POWER_GRID_USERNAME:ecopedia}
+    password: ${ECOPEDIA_POWER_GRID_PASSWORD}
+    # Los mismos que con la pasarela, y sin reintentos: ver PowerGridClientConfig.
+    connect-timeout: 2s
+    read-timeout: 5s
 
   # La MISMA clave con la que Usuarios firma en ecopedia-core. Si las dos no coinciden, este
   # módulo rechaza todos los tokens y la pantalla de tarjetas queda inaccesible sin ningún
@@ -93,6 +107,8 @@ ecopedia:
     secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
   payment-gateway:
     access-token: ${ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN:ecopedia-dev-only-gateway-token}
+  power-grid:
+    password: ${ECOPEDIA_POWER_GRID_PASSWORD:ecopedia-dev-only-power-grid-password}
 
 ---
 # Perfil local: la base de este integrante, en un archivo de su propio disco.
@@ -142,3 +158,5 @@ ecopedia:
     secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
   payment-gateway:
     access-token: ${ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN:ecopedia-dev-only-gateway-token}
+  power-grid:
+    password: ${ECOPEDIA_POWER_GRID_PASSWORD:ecopedia-dev-only-power-grid-password}

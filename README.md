@@ -66,23 +66,26 @@ proxy de Vite manda `/api/bookings` al 8082, `/api/payment-methods` al 8083,
 `/api/notifications` al 8084 y todo lo demás al 8081, así que desde el navegador se ve como una
 sola API.
 
-**El sexto proceso no es Ecopedia:** es la pasarela de pagos simulada, en el 8086 (`gateway` en el
-panel). Es el sistema externo al que Pagos le habla por REST, y el navegador nunca le habla
-directo. Ver "La pasarela de pagos simulada", más abajo.
+**El sexto y el séptimo proceso no son Ecopedia:** son los sistemas externos simulados. La pasarela
+de pagos, en el 8086 (`gateway` en el panel), a la que Pagos le habla por REST; y la distribuidora
+eléctrica, en el 8087 (`grid`), a la que RedEléctrica le pregunta por SOAP antes de una carga
+rápida. El navegador nunca les habla directo. Ver "La pasarela de pagos simulada" y "La
+distribuidora eléctrica simulada", más abajo.
 
 | Comando | Qué hace |
 |---------|----------|
-| `pnpm dev` | Los seis procesos, cada uno en su panel |
+| `pnpm dev` | Los siete procesos, cada uno en su panel |
 | `pnpm dev:back` | Solo `ecopedia-core` (8081) |
 | `pnpm dev:charging` | Solo Reservas (`ecopedia-charging`, 8082). Necesita el backend arriba |
 | `pnpm dev:pay` | Solo Pagos (`ecopedia-integration`, 8083), que sirve los medios de pago |
 | `pnpm dev:async` | Solo Notificaciones (`ecopedia-async`, 8084). Para recibir avisos necesita el broker: ver "Notificaciones" |
 | `pnpm dev:gateway` | Solo la pasarela de pagos simulada (8086). Pagos la necesita para cargar tarjetas |
+| `pnpm dev:grid` | Solo la distribuidora eléctrica simulada (8087, SOAP). Todavía no la llama ninguna pantalla |
 | `pnpm dev:front` | Solo el frontend |
-| `pnpm dev:plain` | Todos menos Notificaciones en una sola tira de logs, con prefijos `[back]`/`[charging]`/`[pay]`/`[gateway]`/`[front]` |
-| `pnpm dev:mem` | Los seis, pero con las bases **en memoria**: se borra todo al bajar |
-| `pnpm demo` | Los seis contra **PostgreSQL** (la pasarela, con su propia base en archivo). Necesita la infraestructura arriba |
-| `pnpm free-ports` | Libera el 8081, el 8082, el 8083, el 8084, el 8086 y el 5173 a mano |
+| `pnpm dev:plain` | Todos menos Notificaciones en una sola tira de logs, con prefijos `[back]`/`[charging]`/`[pay]`/`[gateway]`/`[grid]`/`[front]` |
+| `pnpm dev:mem` | Los siete, pero con las bases **en memoria**: se borra todo al bajar |
+| `pnpm demo` | Los siete contra **PostgreSQL** (la pasarela, con su propia base en archivo; la distribuidora no tiene base). Necesita la infraestructura arriba |
+| `pnpm free-ports` | Libera el 8081, el 8082, el 8083, el 8084, el 8086, el 8087 y el 5173 a mano |
 | `pnpm build` | Empaqueta el frontend adentro del JAR del backend |
 | `pnpm start` | Corre ese JAR |
 
@@ -230,7 +233,7 @@ que puedan migrar por separado sin pisarse.
 #### El `.env`
 
 Los secretos viven en un `.env` en la raíz, **que no se versiona**. `pnpm env:init` lo genera a
-partir de `.env.example` con valores al azar, y no pisa uno que ya exista. Tiene cuatro secretos y
+partir de `.env.example` con valores al azar, y no pisa uno que ya exista. Tiene cinco secretos y
 dos ajustes:
 
 | Variable | Qué es |
@@ -239,18 +242,21 @@ dos ajustes:
 | `ECOPEDIA_DB_PASSWORD` | La contraseña de PostgreSQL |
 | `ECOPEDIA_BROKER_PASSWORD` | La contraseña de Artemis |
 | `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN` | La clave con la que Pagos se presenta ante la pasarela simulada. La leen los dos |
+| `ECOPEDIA_POWER_GRID_PASSWORD` | La contraseña del UsernameToken con que RedEléctrica se presenta ante la distribuidora simulada. La leen los dos |
 | `ECOPEDIA_LOGIN_MAX_FAILURES` | Cuántos logins fallidos seguidos bloquean una cuenta. Sin valor, 5 |
 | `ECOPEDIA_LOGIN_LOCK_MINUTES` | Cuántos minutos dura ese bloqueo. Sin valor, 15; para la demo conviene 1 |
 
 Un `.env` generado antes de que existieran los dos ajustes no los tiene, y no hace falta
 regenerarlo: core usa los valores por defecto. Para cambiarlos, se agregan a mano.
 
-**La clave de la pasarela, en cambio, es un secreto:** un `.env` anterior no la tiene, y sin ella
-`pnpm demo` no levanta ni la pasarela ni Pagos (`Could not resolve placeholder
-'ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN'`). Se agrega a mano una línea
-`ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN=` con cualquier valor largo al azar, o se borra el `.env` y
-se corre `pnpm env:init` de nuevo (eso cambia también los demás secretos). `pnpm dev` y
-`pnpm dev:mem` no la necesitan.
+**La clave de la pasarela y la contraseña de la distribuidora, en cambio, son secretos:** un `.env`
+anterior no las tiene, y sin ellas `pnpm demo` no levanta los procesos que las usan (`Could not
+resolve placeholder 'ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN'` en la pasarela y en Pagos, `...
+'ECOPEDIA_POWER_GRID_PASSWORD'` en la distribuidora y también en Pagos, que es el mismo artefacto
+que RedEléctrica). Se agrega a mano la línea que falte, `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN=` o
+`ECOPEDIA_POWER_GRID_PASSWORD=`, con cualquier valor largo al azar, o se borra el `.env` y se corre
+`pnpm env:init` de nuevo (eso cambia también los demás secretos). `pnpm dev` y `pnpm dev:mem` no
+las necesitan.
 
 `docker compose` lo lee solo, y los scripts del backend lo cargan con `scripts/with-env.mjs`,
 así que no hay que exportar nada a mano. Una variable que ya esté en el entorno le gana al
@@ -395,6 +401,78 @@ Dos cosas más: **escucha solo en `127.0.0.1`** y **pide una clave en cada llama
 (`Authorization: Bearer`), la de `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN`. Con `pnpm dev` y
 `pnpm dev:mem` los dos lados traen la misma de desarrollo.
 
+### La distribuidora eléctrica simulada
+
+Antes de habilitar una carga rápida, RedEléctrica le pregunta a la distribuidora si el nodo de la
+estación aguanta la potencia pedida (RF15). La distribuidora es el sistema legado: un proceso aparte
+en `simulation/power-grid` (8087), que publica un servicio **SOAP con su WSDL** (RNF04). `pnpm dev`
+ya la levanta. **Todavía no la llama ninguna pantalla:** quien la usa es SesionesDeCarga, que llega
+con ECO-52.
+
+| Qué | Dónde |
+|-----|-------|
+| El servicio | `POST http://localhost:8087/ws` |
+| El WSDL | http://localhost:8087/ws/powerGrid.wsdl |
+| El XSD que importa | http://localhost:8087/ws/power-grid.xsd |
+
+Una sola operación, `CheckNodeFeasibility`: recibe `nodeId` y `requestedPowerKw` y contesta
+`feasible`, `maxAllowedPowerKw` y, si no autoriza, el motivo. **Un "no" de la red es una respuesta,
+no un error.** Los Faults son dos: `UnknownNodeFault` (el nodo no existe) e `InvalidDemandFault`
+(potencia nula, negativa o de más de 1000 kW).
+
+**Conoce solo un catálogo de nodos de prueba**, uno por comportamiento. Las 15 estaciones del seed
+ya tienen el suyo (el campo "nodo de la distribuidora" de los formularios de estación):
+
+| Nodo | Qué hace | Estaciones del seed |
+|------|----------|---------------------|
+| `CABA-CENTRO` | Autoriza hasta 600 kW | 1, 2, 4, 5 |
+| `CABA-NORTE` | Autoriza hasta 400 kW | 3, 6, 7, 8 |
+| `CABA-OESTE` | Tope de demanda vigente: autoriza hasta 50 kW | 9, 10 |
+| `CABA-SUR` | En mantenimiento: no autoriza nada | 11 |
+| `GBA-NORTE` | Autoriza hasta 300 kW | 12, 13, 14 |
+| `LA-PLATA` | Autoriza, pero tarda 8 s: más que el timeout de RedEléctrica (5 s) | 15 |
+
+**Pide WS-Security en cada pedido:** un UsernameToken con el usuario `ecopedia` y la contraseña de
+`ECOPEDIA_POWER_GRID_PASSWORD` (con `pnpm dev` y `pnpm dev:mem`, una de desarrollo). Además escucha
+solo en `127.0.0.1`, valida cada pedido contra el XSD, rechaza el XML con `DOCTYPE` (no hay
+entidades externas) y corta los pedidos de más de 16 KB.
+
+**Para probarla contra el proceso real**, con la distribuidora arriba (`pnpm dev:grid`):
+
+```bash
+mvn -pl backend/ecopedia-integration test -Dtest=PowerGridLiveTest -Dpower-grid.live=true
+```
+
+Corre cada nodo, los dos Faults, la contraseña equivocada y el timeout del nodo lento con el
+cliente de verdad. CI no lo corre, porque necesita el proceso levantado. Contra `pnpm demo`, se
+agrega `-Dpower-grid.password=` con la del `.env`.
+
+Para mirarla a mano, un pedido mínimo con `curl` (el cuerpo, en un archivo):
+
+```xml
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                  xmlns:pg="http://ecopedia.com/simulation/power-grid/v1">
+  <soapenv:Header>
+    <wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
+      <wsse:UsernameToken>
+        <wsse:Username>ecopedia</wsse:Username>
+        <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText">ecopedia-dev-only-power-grid-password</wsse:Password>
+      </wsse:UsernameToken>
+    </wsse:Security>
+  </soapenv:Header>
+  <soapenv:Body>
+    <pg:CheckNodeFeasibilityRequest>
+      <pg:nodeId>CABA-OESTE</pg:nodeId>
+      <pg:requestedPowerKw>150</pg:requestedPowerKw>
+    </pg:CheckNodeFeasibilityRequest>
+  </soapenv:Body>
+</soapenv:Envelope>
+```
+
+```bash
+curl -H "Content-Type: text/xml" --data-binary @pedido.xml http://localhost:8087/ws
+```
+
 ### Producción: un solo artefacto
 
 ```bash
@@ -444,6 +522,7 @@ Cada artefacto tiene su puerto fijo, así los cuatro pueden estar levantados a l
 | `ecopedia-integration` | 8083 | `mvn -pl backend/ecopedia-integration spring-boot:run` |
 | `ecopedia-async` | 8084 | `mvn -pl backend/ecopedia-async spring-boot:run` *(consume del broker; por HTTP solo sirve el historial de avisos)* |
 | `simulation/payment-gateway` | 8086 | `mvn -pl simulation/payment-gateway spring-boot:run` *(la pasarela simulada; no es Ecopedia)* |
+| `simulation/power-grid` | 8087 | `mvn -pl simulation/power-grid spring-boot:run` *(la distribuidora simulada, SOAP; no es Ecopedia)* |
 
 Sin perfil apuntan a PostgreSQL. Para el ambiente propio y persistente va
 `-Dspring-boot.run.profiles=local`, y para el descartable en memoria,
@@ -567,7 +646,8 @@ dai_2_tpo/
 │   ├── ecopedia-integration/ # Pagos (REST) · Red Eléctrica (SOAP)
 │   └── ecopedia-async/       # Notificaciones (consumidor JMS + historial por REST)
 ├── simulation/                # Los sistemas externos simulados: no son Ecopedia
-│   └── payment-gateway/       # La pasarela de pagos (REST/JSON, 8086)
+│   ├── payment-gateway/       # La pasarela de pagos (REST/JSON, 8086)
+│   └── power-grid/            # La distribuidora eléctrica (SOAP con WSDL, 8087)
 ├── frontend/                  # React + TypeScript + Vite
 │   ├── vite.config.ts         # proxy a /api, alias @/, plugin de Tailwind
 │   ├── .prettierrc.json       # Formato compartido
@@ -587,7 +667,7 @@ estos módulos, cada uno con su interfaz explícita.
 | `ecopedia-integration` | PaymentService (REST) · PowerGridService (SOAP) | 🚧 scaffold |
 | `ecopedia-async` | NotificationService | 🚧 scaffold |
 | `simulation/payment-gateway` | La pasarela de pagos — expone la API REST | ✅ |
-| `simulation/power-grid` | La distribuidora, el sistema legado — publica el WSDL | ⬜ pendiente |
+| `simulation/power-grid` | La distribuidora, el sistema legado — publica el WSDL | ✅ |
 | `simulation/charger` | El cargador — publica telemetría al tópico | ⬜ pendiente |
 
 ---
