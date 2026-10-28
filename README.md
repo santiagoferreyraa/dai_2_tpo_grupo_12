@@ -66,26 +66,28 @@ proxy de Vite manda `/api/bookings` al 8082, `/api/payment-methods` al 8083,
 `/api/notifications` al 8084 y todo lo demás al 8081, así que desde el navegador se ve como una
 sola API.
 
-**El sexto y el séptimo proceso no son Ecopedia:** son los sistemas externos simulados. La pasarela
-de pagos, en el 8086 (`gateway` en el panel), a la que Pagos le habla por REST; y la distribuidora
+**Del sexto al octavo proceso no son Ecopedia:** son los sistemas externos simulados. La pasarela
+de pagos, en el 8086 (`gateway` en el panel), a la que Pagos le habla por REST; la distribuidora
 eléctrica, en el 8087 (`grid`), a la que RedEléctrica le pregunta por SOAP antes de una carga
-rápida. El navegador nunca les habla directo. Ver "La pasarela de pagos simulada" y "La
-distribuidora eléctrica simulada", más abajo.
+rápida; y los cargadores, en el 8088 (`charger`), que Terminales enciende y apaga por REST y que
+publican la telemetría en el broker. El navegador nunca les habla directo. Ver "La pasarela de pagos
+simulada", "La distribuidora eléctrica simulada" y "Los cargadores simulados", más abajo.
 
 | Comando | Qué hace |
 |---------|----------|
-| `pnpm dev` | Los siete procesos, cada uno en su panel |
+| `pnpm dev` | Los ocho procesos, cada uno en su panel |
 | `pnpm dev:back` | Solo `ecopedia-core` (8081) |
 | `pnpm dev:charging` | Solo Reservas (`ecopedia-charging`, 8082). Necesita el backend arriba |
 | `pnpm dev:pay` | Solo Pagos (`ecopedia-integration`, 8083), que sirve los medios de pago |
 | `pnpm dev:async` | Solo Notificaciones (`ecopedia-async`, 8084). Para recibir avisos necesita el broker: ver "Notificaciones" |
 | `pnpm dev:gateway` | Solo la pasarela de pagos simulada (8086). Pagos la necesita para cargar tarjetas |
 | `pnpm dev:grid` | Solo la distribuidora eléctrica simulada (8087, SOAP). Todavía no la llama ninguna pantalla |
+| `pnpm dev:charger` | Solo los cargadores simulados (8088). Para encender necesitan el broker. Todavía no los llama ninguna pantalla |
 | `pnpm dev:front` | Solo el frontend |
-| `pnpm dev:plain` | Todos menos Notificaciones en una sola tira de logs, con prefijos `[back]`/`[charging]`/`[pay]`/`[gateway]`/`[grid]`/`[front]` |
-| `pnpm dev:mem` | Los siete, pero con las bases **en memoria**: se borra todo al bajar |
-| `pnpm demo` | Los siete contra **PostgreSQL** (la pasarela, con su propia base en archivo; la distribuidora no tiene base). Necesita la infraestructura arriba |
-| `pnpm free-ports` | Libera el 8081, el 8082, el 8083, el 8084, el 8086, el 8087 y el 5173 a mano |
+| `pnpm dev:plain` | Todos menos Notificaciones en una sola tira de logs, con prefijos `[back]`/`[charging]`/`[pay]`/`[gateway]`/`[grid]`/`[charger]`/`[front]` |
+| `pnpm dev:mem` | Los ocho, pero con las bases **en memoria**: se borra todo al bajar |
+| `pnpm demo` | Los ocho contra **PostgreSQL** (la pasarela, con su propia base en archivo; la distribuidora y los cargadores no tienen base). Necesita la infraestructura arriba |
+| `pnpm free-ports` | Libera el 8081, el 8082, el 8083, el 8084, el 8086, el 8087, el 8088 y el 5173 a mano |
 | `pnpm build` | Empaqueta el frontend adentro del JAR del backend |
 | `pnpm start` | Corre ese JAR |
 
@@ -233,7 +235,7 @@ que puedan migrar por separado sin pisarse.
 #### El `.env`
 
 Los secretos viven en un `.env` en la raíz, **que no se versiona**. `pnpm env:init` lo genera a
-partir de `.env.example` con valores al azar, y no pisa uno que ya exista. Tiene cinco secretos y
+partir de `.env.example` con valores al azar, y no pisa uno que ya exista. Tiene seis secretos y
 dos ajustes:
 
 | Variable | Qué es |
@@ -243,18 +245,21 @@ dos ajustes:
 | `ECOPEDIA_BROKER_PASSWORD` | La contraseña de Artemis |
 | `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN` | La clave con la que Pagos se presenta ante la pasarela simulada. La leen los dos |
 | `ECOPEDIA_POWER_GRID_PASSWORD` | La contraseña del UsernameToken con que RedEléctrica se presenta ante la distribuidora simulada. La leen los dos |
+| `ECOPEDIA_CHARGER_ACCESS_TOKEN` | La clave con la que Terminales (en core) se presenta ante los cargadores simulados. La leen los dos |
 | `ECOPEDIA_LOGIN_MAX_FAILURES` | Cuántos logins fallidos seguidos bloquean una cuenta. Sin valor, 5 |
 | `ECOPEDIA_LOGIN_LOCK_MINUTES` | Cuántos minutos dura ese bloqueo. Sin valor, 15; para la demo conviene 1 |
 
 Un `.env` generado antes de que existieran los dos ajustes no los tiene, y no hace falta
 regenerarlo: core usa los valores por defecto. Para cambiarlos, se agregan a mano.
 
-**La clave de la pasarela y la contraseña de la distribuidora, en cambio, son secretos:** un `.env`
-anterior no las tiene, y sin ellas `pnpm demo` no levanta los procesos que las usan (`Could not
-resolve placeholder 'ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN'` en la pasarela y en Pagos, `...
-'ECOPEDIA_POWER_GRID_PASSWORD'` en la distribuidora y también en Pagos, que es el mismo artefacto
-que RedEléctrica). Se agrega a mano la línea que falte, `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN=` o
-`ECOPEDIA_POWER_GRID_PASSWORD=`, con cualquier valor largo al azar, o se borra el `.env` y se corre
+**La clave de la pasarela, la contraseña de la distribuidora y la clave de los cargadores, en cambio,
+son secretos:** un `.env` anterior no las tiene, y sin ellas `pnpm demo` no levanta los procesos que
+las usan (`Could not resolve placeholder 'ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN'` en la pasarela y en
+Pagos, `... 'ECOPEDIA_POWER_GRID_PASSWORD'` en la distribuidora y también en Pagos, que es el mismo
+artefacto que RedEléctrica, y `... 'ECOPEDIA_CHARGER_ACCESS_TOKEN'` en los cargadores y **en core**,
+que es el que les da las órdenes). Se agrega a mano la línea que falte,
+`ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN=`, `ECOPEDIA_POWER_GRID_PASSWORD=` o
+`ECOPEDIA_CHARGER_ACCESS_TOKEN=`, con cualquier valor largo al azar, o se borra el `.env` y se corre
 `pnpm env:init` de nuevo (eso cambia también los demás secretos). `pnpm dev` y `pnpm dev:mem` no
 las necesitan.
 
@@ -473,6 +478,58 @@ Para mirarla a mano, un pedido mínimo con `curl` (el cuerpo, en un archivo):
 curl -H "Content-Type: text/xml" --data-binary @pedido.xml http://localhost:8087/ws
 ```
 
+### Los cargadores simulados
+
+El hardware de las estaciones —o la central del fabricante que lo controla— es un proceso aparte en
+`simulation/charger` (8088). Terminales le da dos órdenes por REST, **encender** y **apagar** un
+conector, y mientras el conector carga, el simulador publica una lectura cada 2 segundos en el
+**tópico** `telemetry.charging` de Artemis: kWh acumulados, potencia y porcentaje de batería. `pnpm dev`
+ya lo levanta. **Todavía no lo llama ninguna pantalla:** la habilitación de la carga llega con ECO-44,
+y quien lee el tópico, con ECO-45.
+
+| Orden | Qué hace |
+|-------|----------|
+| `POST /v1/connectors/{id}/session` | Enciende el conector para una sesión. 201 si lo encendió; 200 si ya estaba cargando esa misma sesión |
+| `DELETE /v1/connectors/{id}/session` | Lo apaga: 200 con lo entregado, o 204 si no estaba cargando |
+| `GET /v1/connectors/{id}` | En qué está: `AVAILABLE`, `CHARGING` o `FAULTED` |
+| `POST /v1/connectors/{id}/fault` | Lo rompe, para la demo: si estaba cargando, corta con una lectura de falla |
+| `DELETE /v1/connectors/{id}/fault` | Lo repara |
+
+Lo que conviene saber:
+
+- **Simula también el auto.** El pedido trae la potencia permitida (`powerLimitKw`) y, si se quiere, la
+  batería del auto y su potencia máxima; sin esos datos usa una batería de 60 kWh que llega con entre
+  el 15 y el 40 %. Carga a potencia plena hasta el 80 % y después baja, como una carga rápida de verdad.
+  Si la batería se llena, la sesión termina sola.
+- **El tiempo va acelerado:** cada 2 segundos reales carga 1 minuto, así una carga de 40 minutos dura
+  80 segundos. Se cambia con `ECOPEDIA_CHARGER_READING_INTERVAL` y `ECOPEDIA_CHARGER_MINUTES_PER_READING`.
+- **Sin broker no enciende:** contesta 503 `telemetry_unavailable`, porque una carga sin lecturas no se
+  puede cortar ni cobrar. Con `pnpm dev` hace falta `docker compose up -d activemq`, igual que para los
+  avisos.
+- **Cualquier id positivo es un conector:** el simulador no conoce la base de Ecopedia.
+- Escucha solo en `127.0.0.1` y pide la clave de `ECOPEDIA_CHARGER_ACCESS_TOKEN` en cada llamada
+  (`Authorization: Bearer`); con `pnpm dev`, una de desarrollo.
+
+Las lecturas se ven en la consola de Artemis (http://localhost:8161/console → *Addresses* →
+`telemetry.charging`) o a mano:
+
+```bash
+curl -X POST http://localhost:8088/v1/connectors/1/session \
+  -H "Authorization: Bearer ecopedia-dev-only-charger-token" -H "Content-Type: application/json" \
+  -d '{"sessionId":"prueba-1","powerLimitKw":50}'
+curl http://localhost:8088/v1/connectors/1 -H "Authorization: Bearer ecopedia-dev-only-charger-token"
+```
+
+**Para probarlo contra el proceso real**, con el simulador y el broker arriba:
+
+```bash
+mvn -pl backend/ecopedia-core test -Dtest=ChargerLiveTest -Dcharger.live=true -Dcharger.broker-password=<la del .env>
+```
+
+Enciende un conector con el cliente de core, escucha el tópico, lo apaga, y prueba un conector roto y
+la clave equivocada. CI no lo corre. Si el `.env` tiene `ECOPEDIA_CHARGER_ACCESS_TOKEN`, el simulador
+usa esa clave, y se agrega `-Dcharger.token=` con la misma.
+
 ### Producción: un solo artefacto
 
 ```bash
@@ -523,6 +580,7 @@ Cada artefacto tiene su puerto fijo, así los cuatro pueden estar levantados a l
 | `ecopedia-async` | 8084 | `mvn -pl backend/ecopedia-async spring-boot:run` *(consume del broker; por HTTP solo sirve el historial de avisos)* |
 | `simulation/payment-gateway` | 8086 | `mvn -pl simulation/payment-gateway spring-boot:run` *(la pasarela simulada; no es Ecopedia)* |
 | `simulation/power-grid` | 8087 | `mvn -pl simulation/power-grid spring-boot:run` *(la distribuidora simulada, SOAP; no es Ecopedia)* |
+| `simulation/charger` | 8088 | `mvn -pl simulation/charger spring-boot:run` *(los cargadores simulados; no son Ecopedia)* |
 
 Sin perfil apuntan a PostgreSQL. Para el ambiente propio y persistente va
 `-Dspring-boot.run.profiles=local`, y para el descartable en memoria,
@@ -647,7 +705,8 @@ dai_2_tpo/
 │   └── ecopedia-async/       # Notificaciones (consumidor JMS + historial por REST)
 ├── simulation/                # Los sistemas externos simulados: no son Ecopedia
 │   ├── payment-gateway/       # La pasarela de pagos (REST/JSON, 8086)
-│   └── power-grid/            # La distribuidora eléctrica (SOAP con WSDL, 8087)
+│   ├── power-grid/            # La distribuidora eléctrica (SOAP con WSDL, 8087)
+│   └── charger/               # Los cargadores (órdenes por REST, telemetría al tópico, 8088)
 ├── frontend/                  # React + TypeScript + Vite
 │   ├── vite.config.ts         # proxy a /api, alias @/, plugin de Tailwind
 │   ├── .prettierrc.json       # Formato compartido
@@ -668,7 +727,7 @@ estos módulos, cada uno con su interfaz explícita.
 | `ecopedia-async` | NotificationService | 🚧 scaffold |
 | `simulation/payment-gateway` | La pasarela de pagos — expone la API REST | ✅ |
 | `simulation/power-grid` | La distribuidora, el sistema legado — publica el WSDL | ✅ |
-| `simulation/charger` | El cargador — publica telemetría al tópico | ⬜ pendiente |
+| `simulation/charger` | Los cargadores — reciben órdenes por REST y publican la telemetría al tópico | ✅ |
 
 ---
 
