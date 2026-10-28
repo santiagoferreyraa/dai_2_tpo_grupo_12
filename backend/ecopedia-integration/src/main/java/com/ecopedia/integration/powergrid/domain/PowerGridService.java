@@ -5,9 +5,9 @@ import java.math.BigDecimal;
 /**
  * RedEléctrica: la regla de factibilidad de la distribuidora para una carga rápida (RF15).
  *
- * <p>Componente de borde, stateless y sin capa de presentación (ARQUITECTURA, ficha 7): lo consume
- * SesionesDeCarga antes de habilitar una carga de alta potencia. Cómo llega SesionesDeCarga, que
- * vive en otro artefacto, se resuelve con ECO-52.
+ * <p>Componente de borde, stateless y sin API para usuarios (ARQUITECTURA, ficha 7): lo consume
+ * SesionesDeCarga antes de habilitar una carga de alta potencia. Como vive en otro artefacto, llega
+ * por la ruta interna {@code POST /internal/power-grid/feasibility}, con la clave de servicio (ECO-52).
  */
 public interface PowerGridService {
 

@@ -235,7 +235,7 @@ que puedan migrar por separado sin pisarse.
 #### El `.env`
 
 Los secretos viven en un `.env` en la raíz, **que no se versiona**. `pnpm env:init` lo genera a
-partir de `.env.example` con valores al azar, y no pisa uno que ya exista. Tiene seis secretos y
+partir de `.env.example` con valores al azar, y no pisa uno que ya exista. Tiene siete secretos y
 dos ajustes:
 
 | Variable | Qué es |
@@ -246,20 +246,21 @@ dos ajustes:
 | `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN` | La clave con la que Pagos se presenta ante la pasarela simulada. La leen los dos |
 | `ECOPEDIA_POWER_GRID_PASSWORD` | La contraseña del UsernameToken con que RedEléctrica se presenta ante la distribuidora simulada. La leen los dos |
 | `ECOPEDIA_CHARGER_ACCESS_TOKEN` | La clave con la que Terminales (en core) se presenta ante los cargadores simulados. La leen los dos |
+| `ECOPEDIA_INTERNAL_TOKEN` | La clave de servicio entre artefactos de Ecopedia, para las rutas `/internal/**` (hoy, `charging` llamando a RedEléctrica en `integration`). La leen los dos |
 | `ECOPEDIA_LOGIN_MAX_FAILURES` | Cuántos logins fallidos seguidos bloquean una cuenta. Sin valor, 5 |
 | `ECOPEDIA_LOGIN_LOCK_MINUTES` | Cuántos minutos dura ese bloqueo. Sin valor, 15; para la demo conviene 1 |
 
 Un `.env` generado antes de que existieran los dos ajustes no los tiene, y no hace falta
 regenerarlo: core usa los valores por defecto. Para cambiarlos, se agregan a mano.
 
-**La clave de la pasarela, la contraseña de la distribuidora y la clave de los cargadores, en cambio,
-son secretos:** un `.env` anterior no las tiene, y sin ellas `pnpm demo` no levanta los procesos que
+**La clave de la pasarela, la contraseña de la distribuidora, la clave de los cargadores y la de servicio,
+en cambio, son secretos:** un `.env` anterior no las tiene, y sin ellas `pnpm demo` no levanta los procesos que
 las usan (`Could not resolve placeholder 'ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN'` en la pasarela y en
 Pagos, `... 'ECOPEDIA_POWER_GRID_PASSWORD'` en la distribuidora y también en Pagos, que es el mismo
 artefacto que RedEléctrica, y `... 'ECOPEDIA_CHARGER_ACCESS_TOKEN'` en los cargadores y **en core**,
-que es el que les da las órdenes). Se agrega a mano la línea que falte,
-`ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN=`, `ECOPEDIA_POWER_GRID_PASSWORD=` o
-`ECOPEDIA_CHARGER_ACCESS_TOKEN=`, con cualquier valor largo al azar, o se borra el `.env` y se corre
+que es el que les da las órdenes, y `... 'ECOPEDIA_INTERNAL_TOKEN'` en Pagos y en Reservas). Se agrega a
+mano la línea que falte, `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN=`, `ECOPEDIA_POWER_GRID_PASSWORD=`,
+`ECOPEDIA_CHARGER_ACCESS_TOKEN=` o `ECOPEDIA_INTERNAL_TOKEN=`, con cualquier valor largo al azar, o se borra el `.env` y se corre
 `pnpm env:init` de nuevo (eso cambia también los demás secretos). `pnpm dev` y `pnpm dev:mem` no
 las necesitan.
 
@@ -411,8 +412,8 @@ Dos cosas más: **escucha solo en `127.0.0.1`** y **pide una clave en cada llama
 Antes de habilitar una carga rápida, RedEléctrica le pregunta a la distribuidora si el nodo de la
 estación aguanta la potencia pedida (RF15). La distribuidora es el sistema legado: un proceso aparte
 en `simulation/power-grid` (8087), que publica un servicio **SOAP con su WSDL** (RNF04). `pnpm dev`
-ya la levanta. **Todavía no la llama ninguna pantalla:** quien la usa es SesionesDeCarga, que llega
-con ECO-52.
+ya la levanta. **Todavía no la llama ninguna pantalla:** quien la usa es SesionesDeCarga, por la ruta
+interna de abajo, y la habilitación que la dispara llega con ECO-44.
 
 | Qué | Dónde |
 |-----|-------|
@@ -449,8 +450,35 @@ mvn -pl backend/ecopedia-integration test -Dtest=PowerGridLiveTest -Dpower-grid.
 ```
 
 Corre cada nodo, los dos Faults, la contraseña equivocada y el timeout del nodo lento con el
-cliente de verdad. CI no lo corre, porque necesita el proceso levantado. Contra `pnpm demo`, se
-agrega `-Dpower-grid.password=` con la del `.env`.
+cliente de verdad. CI no lo corre, porque necesita el proceso levantado. Si el `.env` tiene
+`ECOPEDIA_POWER_GRID_PASSWORD` (con `pnpm dev` también la usan), se agrega `-Dpower-grid.password=` con esa.
+
+#### Quién le pregunta: SesionesDeCarga, por una ruta interna
+
+SesionesDeCarga vive en `ecopedia-charging` y RedEléctrica en `ecopedia-integration`, así que le pregunta
+por **`POST /internal/power-grid/feasibility`** (8083). Las rutas `/internal/**` no son para usuarios: piden
+la **clave de servicio** (`ECOPEDIA_INTERNAL_TOKEN`, Bearer), el token de un conductor no las abre, y el
+proxy de Vite no las manda. Contesta 200 con la respuesta de la red (también un "no"), 422 con el motivo
+si la distribuidora rechazó el pedido (`UNKNOWN_NODE`, `INVALID_DEMAND`) y 503 si no contestó.
+
+Con la respuesta, `ChargingPowerPolicy` decide con qué potencia se habilita el conector (decidido el
+28/10; todavía no la llama nadie, la usa la habilitación de ECO-44):
+
+| Caso | Potencia |
+|------|----------|
+| Conector de hasta 22 kW | La suya, sin preguntar (RF15 pide la consulta solo para la carga rápida) |
+| La red autoriza | La del conector |
+| La red dice que no, con tope | Hasta el tope |
+| La red dice que no, con tope 0 (`CABA-SUR`) | No arranca: es la falla de RF13, reintegro de la seña |
+| Estación sin nodo, nodo desconocido, red caída o lenta | Potencia normal, 22 kW |
+
+Para probar el recorrido entero, con `pnpm dev` arriba:
+
+```bash
+mvn -pl backend/ecopedia-charging test -Dtest=PowerGridFeasibilityLiveTest -Dpower-grid.live=true
+```
+
+Si el `.env` tiene `ECOPEDIA_INTERNAL_TOKEN`, se agrega `-Dinternal.token=` con esa.
 
 Para mirarla a mano, un pedido mínimo con `curl` (el cuerpo, en un archivo):
 
