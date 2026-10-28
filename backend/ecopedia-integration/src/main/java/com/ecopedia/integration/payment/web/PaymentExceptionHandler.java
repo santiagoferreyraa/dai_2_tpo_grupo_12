@@ -1,5 +1,6 @@
 package com.ecopedia.integration.payment.web;
 
+import com.ecopedia.integration.payment.domain.PaymentGatewayUnavailableException;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -33,6 +34,18 @@ public class PaymentExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ProblemDetail handleInvalidRequest(IllegalArgumentException exception) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+    }
+
+    /**
+     * La pasarela no contestó: 503, con un {@code code} estable para que el front no tenga que
+     * leer el texto, y un mensaje que le dice al conductor que pruebe en un rato.
+     */
+    @ExceptionHandler(PaymentGatewayUnavailableException.class)
+    public ProblemDetail handleGatewayUnavailable(PaymentGatewayUnavailableException exception) {
+        ProblemDetail problem =
+                ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage());
+        problem.setProperty("code", "PAYMENT_GATEWAY_UNAVAILABLE");
+        return problem;
     }
 
     /** Campos que no pasan las anotaciones de validación del DTO. */

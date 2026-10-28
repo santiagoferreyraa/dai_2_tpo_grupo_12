@@ -1,0 +1,78 @@
+spring:
+  application:
+    name: payment-gateway-simulator
+
+  # La base de la pasarela, en un archivo propio. Es otro sistema: no comparte base ni schema con
+  # Ecopedia, y por eso no usa PostgreSQL ni siquiera en `pnpm demo`. El archivo queda en
+  # simulation/payment-gateway/data/, que está en el .gitignore, y NO tiene números de tarjeta:
+  # ver la migración.
+  #
+  # DATABASE_TO_LOWER=TRUE por lo mismo que en los módulos de Ecopedia: sin eso Hibernate no
+  # encuentra las tablas que creó Flyway.
+  datasource:
+    url: jdbc:h2:file:${ECOPEDIA_PAYMENT_GATEWAY_DB:./data/payment-gateway};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+  # snake_case en el JSON, como la API de Mercado Pago que imita.
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+
+server:
+  port: ${SERVER_PORT:8086}
+  # Solo la propia máquina. Ecopedia corre en la misma, y nadie de la red tiene por qué llegar
+  # a la pasarela. Para el ambiente compartido con dos máquinas, se cambia por variable.
+  address: ${ECOPEDIA_PAYMENT_GATEWAY_ADDRESS:127.0.0.1}
+
+simulation:
+  payment-gateway:
+    # La clave con la que Pagos se presenta. La misma variable la lee ecopedia-integration. Sin
+    # valor por defecto: sin perfil, la pasarela no arranca sin el .env.
+    access-token: ${ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN}
+    # Cuánto tarda la tarjeta lenta (4000 0000 0000 0077). Más que el timeout de Pagos, a
+    # propósito: es la tarjeta para mostrar qué pasa cuando la pasarela no contesta a tiempo.
+    slow-card-delay: ${ECOPEDIA_PAYMENT_GATEWAY_SLOW_DELAY:8s}
+
+---
+# `pnpm dev`: la base en archivo de arriba y una clave de desarrollo, igual que los otros módulos.
+spring:
+  config:
+    activate:
+      on-profile: local
+
+  h2:
+    console:
+      enabled: true         # http://localhost:8086/h2-console
+
+simulation:
+  payment-gateway:
+    access-token: ${ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN:ecopedia-dev-only-gateway-token}
+
+---
+# `pnpm dev:mem` y los tests: la base en memoria, se borra al bajar.
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+  datasource:
+    url: jdbc:h2:mem:payment-gateway;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+
+  h2:
+    console:
+      enabled: true         # http://localhost:8086/h2-console
+
+simulation:
+  payment-gateway:
+    access-token: ${ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN:ecopedia-dev-only-gateway-token}
