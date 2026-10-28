@@ -42,8 +42,8 @@
 
         Los sistemas externos simulados viven aparte, en simulation/: no son Ecopedia, son los
         procesos con los que Ecopedia se integra. Cada uno corre por su cuenta y habla un
-        protocolo real. Falta uno:
-          - simulation/charger     (el cargador: publica telemetría al tópico)
+        protocolo real: la pasarela (REST), la distribuidora (SOAP) y los cargadores (órdenes por
+        REST, telemetría por el tópico).
     -->
     <modules>
         <module>backend/ecopedia-core</module>
@@ -52,6 +52,7 @@
         <module>backend/ecopedia-async</module>
         <module>simulation/payment-gateway</module>
         <module>simulation/power-grid</module>
+        <module>simulation/charger</module>
     </modules>
 
     <build>

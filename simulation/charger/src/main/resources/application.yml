@@ -1,0 +1,69 @@
+spring:
+  application:
+    name: charger-simulator
+
+  # El broker al que se publica la telemetría: el mismo Artemis de docker-compose que usan Reservas y
+  # Notificaciones. Sin `mode`, igual que en ecopedia-charging: los tests usan el broker embebido
+  # porque el servidor de Artemis está solo en su classpath.
+  artemis:
+    broker-url: ${ECOPEDIA_BROKER_URL:tcp://localhost:61616}
+    user: ${ECOPEDIA_BROKER_USER:ecopedia}
+    password: ${ECOPEDIA_BROKER_PASSWORD}     # sin valor por defecto: sale del .env
+
+  # El JmsTemplate publica en tópicos, no en colas: telemetry.charging tiene dos suscriptores y cada
+  # uno recibe su copia. Ver ARQUITECTURA §3.3.
+  jms:
+    pub-sub-domain: true
+
+server:
+  port: ${SERVER_PORT:8088}
+  # Solo la propia máquina, como la pasarela y la distribuidora. Para el ambiente compartido con dos
+  # máquinas, se cambia por variable.
+  address: ${ECOPEDIA_CHARGER_ADDRESS:127.0.0.1}
+
+simulation:
+  charger:
+    # La clave con la que Terminales se presenta. La misma variable la lee ecopedia-core. Sin valor
+    # por defecto: sin perfil, el simulador no arranca sin el .env.
+    access-token: ${ECOPEDIA_CHARGER_ACCESS_TOKEN}
+    telemetry-topic: telemetry.charging
+    # El tiempo acelerado: cada `reading-interval` reales sale una lectura que avanza la carga
+    # `minutes-per-reading` minutos. Con 2 s y 1 minuto, una carga de 40 minutos dura 80 segundos.
+    reading-interval: ${ECOPEDIA_CHARGER_READING_INTERVAL:2s}
+    minutes-per-reading: ${ECOPEDIA_CHARGER_MINUTES_PER_READING:1}
+    # El auto típico, para cuando la orden no trae los datos del vehículo: una batería de 60 kWh que
+    # llega con entre el 15 y el 40 %.
+    default-battery-kwh: 60
+    initial-battery-percent:
+      min: 15
+      max: 40
+
+---
+# `pnpm dev`: una clave de desarrollo, igual que los otros módulos. El simulador no tiene base, así
+# que `local` y `dev` son lo mismo.
+spring:
+  config:
+    activate:
+      on-profile: local
+
+  # Que arranque aunque no exista el .env. Contra el broker de docker-compose la contraseña sale del .env.
+  artemis:
+    password: ${ECOPEDIA_BROKER_PASSWORD:}
+
+simulation:
+  charger:
+    access-token: ${ECOPEDIA_CHARGER_ACCESS_TOKEN:ecopedia-dev-only-charger-token}
+
+---
+# `pnpm dev:mem` y los tests.
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+  artemis:
+    password: ${ECOPEDIA_BROKER_PASSWORD:}
+
+simulation:
+  charger:
+    access-token: ${ECOPEDIA_CHARGER_ACCESS_TOKEN:ecopedia-dev-only-charger-token}

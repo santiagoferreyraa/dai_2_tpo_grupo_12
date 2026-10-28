@@ -67,6 +67,17 @@ ecopedia:
     max-failures: ${ECOPEDIA_LOGIN_MAX_FAILURES:5}
     lock-minutes: ${ECOPEDIA_LOGIN_LOCK_MINUTES:15}
 
+  # Los cargadores corren como proceso aparte (simulation/charger, 8088) y Terminales les da las
+  # órdenes por REST con ChargerRestClient. Ver ARQUITECTURA §2.3, ficha 2.
+  charger:
+    url: ${ECOPEDIA_CHARGER_URL:http://localhost:8088}
+    # La clave con la que Terminales se presenta ante los cargadores. La misma variable la lee el
+    # simulador. Sin valor por defecto: sin perfil, core no arranca sin el .env.
+    access-token: ${ECOPEDIA_CHARGER_ACCESS_TOKEN}
+    # Los mismos que con la pasarela y la distribuidora: ver ChargerClientConfig.
+    connect-timeout: 2s
+    read-timeout: 5s
+
 ---
 # Perfil de desarrollo: base en memoria, para levantar el módulo sin PostgreSQL instalado.
 # Las demos de las entregas corren sobre PostgreSQL, no sobre H2.
@@ -101,6 +112,8 @@ spring:
 ecopedia:
   jwt:
     secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
+  charger:
+    access-token: ${ECOPEDIA_CHARGER_ACCESS_TOKEN:ecopedia-dev-only-charger-token}
 
 ---
 # Perfil local: la base de este integrante, en un archivo de su propio disco.
@@ -150,3 +163,5 @@ spring:
 ecopedia:
   jwt:
     secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
+  charger:
+    access-token: ${ECOPEDIA_CHARGER_ACCESS_TOKEN:ecopedia-dev-only-charger-token}

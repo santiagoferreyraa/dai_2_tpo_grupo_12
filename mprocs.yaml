@@ -13,14 +13,17 @@
 # y `pnpm dev:back` levantan exactamente lo mismo y no hay dos definiciones que mantener
 # sincronizadas.
 #
-# Son SIETE, y cada uno es un artefacto desplegable distinto. `charging` es Reservas (8082) y
+# Son OCHO, y cada uno es un artefacto desplegable distinto. `charging` es Reservas (8082) y
 # necesita a `back` arriba: antes de retener un slot le pregunta a core por el conector. `pay` es
 # Pagos, que vive en ecopedia-integration (8083). `async` es Notificaciones (8084). `gateway` NO es
 # Ecopedia: es la pasarela de pagos simulada (8086), el sistema externo al que Pagos le habla por
 # REST. Sin ella, cargar una tarjeta contesta "probá de nuevo en un momento". `grid` tampoco es
 # Ecopedia: es la distribuidora eléctrica simulada (8087), el legado al que RedEléctrica le pregunta
 # por SOAP antes de una carga rápida. Hoy no la llama ninguna pantalla (eso llega con ECO-52), así
-# que bajarla no rompe nada. Ver ARQUITECTURA §6.4.
+# que bajarla no rompe nada. `charger` tampoco es Ecopedia: son los cargadores simulados (8088), que
+# Terminales enciende y apaga por REST y que publican la telemetría en el tópico telemetry.charging.
+# Como `async`, quiere el broker: sin él, contesta que no puede encender. Hoy tampoco lo llama ninguna
+# pantalla (eso llega con ECO-44). Ver ARQUITECTURA §6.4.
 #
 # Para trabajar solo en el mapa o en el ABM alcanza con `back` y `front`; los otros tres hacen
 # falta para reservas, para la pantalla de medios de pago y para los avisos.
@@ -57,5 +60,7 @@ procs:
     shell: pnpm dev:gateway
   grid:
     shell: pnpm dev:grid
+  charger:
+    shell: pnpm dev:charger
   front:
     shell: pnpm dev:front
