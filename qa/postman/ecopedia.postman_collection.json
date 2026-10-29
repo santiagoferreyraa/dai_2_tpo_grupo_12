@@ -1162,7 +1162,7 @@
                   "let json = {};",
                   "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
                   "pm.test('responde 200', () => pm.response.to.have.status(200));",
-                  "pm.test(\"pm.expect(json.connectorType).to.eql('TYPE2')\", () => { pm.expect(json.connectorType).to.eql('TYPE2'); });"
+                  "pm.test(\"pm.expect(json.connectorType).to.eql('TYPE_2')\", () => { pm.expect(json.connectorType).to.eql('TYPE_2'); });"
                 ]
               }
             }
@@ -1186,7 +1186,7 @@
             "url": "{{coreUrl}}/api/connectors/{{newConnectorId}}/configure",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"connectorType\": \"TYPE2\",\n  \"maxPowerKw\": 22\n}"
+              "raw": "{\n  \"connectorType\": \"TYPE_2\",\n  \"maxPowerKw\": 22\n}"
             }
           }
         },
@@ -1225,7 +1225,7 @@
             "url": "{{coreUrl}}/api/connectors/{{newConnectorId}}/configure",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"connectorType\": \"TYPE2\",\n  \"maxPowerKw\": -5\n}"
+              "raw": "{\n  \"connectorType\": \"TYPE_2\",\n  \"maxPowerKw\": -5\n}"
             }
           }
         },
