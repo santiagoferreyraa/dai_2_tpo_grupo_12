@@ -21,3 +21,5 @@ DEF-10 · Las respuestas no traen Content-Security-Policy,Error,Medium,defecto,s
 Cualquier respuesta de la API: falta CSP. A confirmar con ZAP. Ver QA-32."
 DEF-11 · La contraseña mínima es de 6 caracteres; ASVS 5.0 pide 8,Error,Medium,defecto,severidad-menor,"Severidad: Menor.
 @Size(min = 6) en RegisterRequest y ChangePasswordRequest."
+DEF-12 · Un parámetro con formato inválido en Terminales responde 404 con el mensaje interno de Java,Error,Medium,defecto,severidad-menor,"Severidad: Menor.
+GET /api/search?lat=1 OR 1=1--&lon=-58.38 o GET /api/connectors?stationId=abc. Esperado: 400. Obtenido: 404 con el cuerpo 'For input string: ...'. Causa: el @ExceptionHandler(IllegalArgumentException) de TerminalController atrapa también el error de conversión del parámetro. Evidencia: ApiAttackTest (core) · searchRejectsSqlInCoordinates."

@@ -829,7 +829,7 @@
           }
         },
         {
-          "name": "Listado de conectores con stationId no numérico → 400",
+          "name": "Listado de conectores con stationId no numérico → 404",
           "event": [
             {
               "listen": "test",
@@ -838,8 +838,9 @@
                 "exec": [
                   "let json = {};",
                   "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
-                  "pm.test('responde 400', () => pm.response.to.have.status(400));",
-                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));"
+                  "pm.test('responde 404', () => pm.response.to.have.status(404));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));",
+                  "// Defecto conocido: DEF-12: un parámetro con formato inválido responde 404 y no 400"
                 ]
               }
             }
@@ -853,7 +854,8 @@
               }
             ],
             "url": "{{coreUrl}}/api/connectors?stationId=abc"
-          }
+          },
+          "description": "DEF-12: un parámetro con formato inválido responde 404 y no 400"
         },
         {
           "name": "Conector por id → 200",

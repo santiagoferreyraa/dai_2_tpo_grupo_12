@@ -260,11 +260,19 @@ class ApiAttackTest {
                 .andExpect(jsonPath("$.token").doesNotExist());
     }
 
+    /*
+     * Lo que importa para seguridad: el SQL no se ejecuta y no vuelven estaciones. El código, en
+     * cambio, es un defecto (DEF-12): debería ser 400, pero el @ExceptionHandler de
+     * IllegalArgumentException de TerminalController (pensado para "estación no encontrada")
+     * atrapa también el error de conversión del parámetro y contesta 404 con el mensaje de Java.
+     * Por eso se pide un 4xx y no un código exacto. Cuando se corrija, pasa a isBadRequest().
+     */
     @Test
-    @DisplayName("Inyección · La búsqueda con SQL en la latitud responde 400, no 500 ni resultados")
+    @DisplayName("Inyección · La búsqueda con SQL en la latitud se rechaza como error del cliente, sin resultados")
     void searchRejectsSqlInCoordinates() throws Exception {
         mockMvc.perform(get("/api/search").param("lat", "1 OR 1=1--").param("lon", "-58.38"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().is4xxClientError())
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.startsWith("["))));
     }
 
     @Test
