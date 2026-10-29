@@ -93,6 +93,19 @@ class ApiAttackTest {
         return HostileTokens.valid(secret, user.getId(), user.getRole().name());
     }
 
+    /**
+     * La estación creada por el test, buscada por nombre.
+     *
+     * <p>No la primera de la lista: el perfil {@code dev} siembra 15 estaciones, y según el orden
+     * en que corran las clases todavía pueden estar ahí.
+     */
+    private Station stationNamed(String name) {
+        return terminalService.getAllStations().stream()
+                .filter(station -> name.equals(station.getName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("No se creó la estación " + name));
+    }
+
     // --- JWT hostil -------------------------------------------------------------------------
 
     @Test
@@ -168,7 +181,7 @@ class ApiAttackTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("CONDUCTOR"));
 
-        User after = userRepository.findById(driver.getId()).orElseThrow();
+        User after = userService.getProfile(driver.getId());
         assertThat(after.getFullName()).isEqualTo("Nombre Nuevo");
         assertThat(after.getRole()).isEqualTo(Role.CONDUCTOR);
         assertThat(after.isActive()).isTrue();
@@ -193,7 +206,7 @@ class ApiAttackTest {
                                 """))
                 .andExpect(status().isCreated());
 
-        Station created = terminalService.getAllStations().get(0);
+        Station created = stationNamed("Estación MA");
         assertThat(created.getOwnerId()).isEqualTo(operator.getId());
         assertThat(created.isActive()).isTrue();
         assertThat(created.getId()).isNotEqualTo(424242L);
@@ -277,7 +290,7 @@ class ApiAttackTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(header().string("X-Content-Type-Options", "nosniff"));
 
-        Station stored = terminalService.getAllStations().get(0);
+        Station stored = stationNamed(hostileName);
         assertThat(stored.getName()).isEqualTo(hostileName);
         assertThat(stored.getAddress()).isEqualTo(hostileAddress);
     }

@@ -92,6 +92,13 @@ class ApiAttackTest {
         return HostileTokens.valid(secret, userId, "CONDUCTOR");
     }
 
+    /** Las tarjetas guardadas de un conductor, activas o no. Solo las suyas: otras clases de test comparten la base. */
+    private List<PaymentMethod> cardsOf(long driverId) {
+        return paymentMethodRepository.findAll().stream()
+                .filter(card -> card.getDriverId() == driverId)
+                .toList();
+    }
+
     private void givenCard(long userId) throws Exception {
         mockMvc.perform(post("/api/payment-methods")
                         .header(HttpHeaders.AUTHORIZATION, driver(userId))
@@ -176,7 +183,7 @@ class ApiAttackTest {
                 .andExpect(jsonPath("$.brand").value("VISA"))
                 .andExpect(jsonPath("$.lastFour").value("1111"));
 
-        List<PaymentMethod> stored = paymentMethodRepository.findAll();
+        List<PaymentMethod> stored = cardsOf(607L);
         assertThat(stored).hasSize(1);
         assertThat(stored.get(0).getDriverId()).isEqualTo(607L);
         assertThat(stored.get(0).getGatewayToken()).isNotEqualTo("tok_inyectado");
@@ -208,7 +215,7 @@ class ApiAttackTest {
                 .andExpect(header().string("X-Content-Type-Options", "nosniff"))
                 .andExpect(jsonPath("$.label").value(hostileLabel));
 
-        assertThat(paymentMethodRepository.findAll()).hasSize(1);
+        assertThat(cardsOf(608L)).hasSize(1);
     }
 
     @Test
@@ -224,7 +231,7 @@ class ApiAttackTest {
                                 """))
                 .andExpect(status().isBadRequest());
 
-        assertThat(paymentMethodRepository.findAll()).isEmpty();
+        assertThat(cardsOf(609L)).isEmpty();
     }
 
     @Test
@@ -235,6 +242,6 @@ class ApiAttackTest {
         mockMvc.perform(delete("/api/payment-methods/{id}", "1 OR 1=1").header(HttpHeaders.AUTHORIZATION, driver(610L)))
                 .andExpect(status().isBadRequest());
 
-        assertThat(paymentMethodRepository.findAll()).allMatch(PaymentMethod::isActive);
+        assertThat(cardsOf(610L)).hasSize(1).allMatch(PaymentMethod::isActive);
     }
 }
