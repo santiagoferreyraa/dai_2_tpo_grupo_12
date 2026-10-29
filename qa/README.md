@@ -57,10 +57,10 @@ python3 qa/ci/mutation-summary.py     # mutation score por módulo
 # qué mutante sobrevivió y dónde: backend/<módulo>/target/pit-reports/index.html
 ```
 
-**Los umbrales arrancan apagados.** En el `pom.xml` raíz, `coverage.lines.minimum`,
-`coverage.branches.minimum` y `mutation.threshold` están en 0: primero se mide. Con los números de
-la primera corrida se suben a `0.80`, `0.70` y `60`, que es lo que pide el eje B, y desde ahí el
-CI queda en rojo si la cobertura baja.
+**Umbrales.** La cobertura ya bloquea: `coverage.lines.minimum` (0.80) y
+`coverage.branches.minimum` (0.70), en el `pom.xml` raíz, hacen fallar `mvn verify` si un módulo
+baja de ahí. La mutación todavía no: `mutation.threshold` está en 0 hasta la primera corrida de
+PIT, y después se sube a 60, que es lo que pide el eje B.
 
 ## SonarCloud (QA-17)
 

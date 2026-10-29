@@ -37,12 +37,14 @@
         <sonar-maven-plugin.version>5.1.0.4751</sonar-maven-plugin.version>
 
         <!--
-            Umbrales de cobertura de la capa de dominio y de servicio (eje B: 80 % de líneas, 70 %
-            de ramas). Arrancan en 0 a propósito: el primer objetivo es MEDIR sin poner el CI en
-            rojo. Con los números de la primera corrida se suben acá a 0.80 y 0.70.
+            Umbrales de cobertura de la capa de dominio y de servicio, los del eje B: 80 % de
+            líneas y 70 % de ramas, por módulo. Si un cambio los baja, `mvn verify` falla.
+
+            Primera medición (29/10): 94,8 % de líneas y 86,3 % de ramas en total; el más justo
+            es integration, con 72,7 % de ramas.
         -->
-        <coverage.lines.minimum>0.00</coverage.lines.minimum>
-        <coverage.branches.minimum>0.00</coverage.branches.minimum>
+        <coverage.lines.minimum>0.80</coverage.lines.minimum>
+        <coverage.branches.minimum>0.70</coverage.branches.minimum>
 
         <!-- Lo mismo para la mutación (eje B: 60 %). Se sube cuando se conozca el número real. -->
         <mutation.threshold>0</mutation.threshold>
