@@ -23,3 +23,5 @@ DEF-11 · La contraseña mínima es de 6 caracteres; ASVS 5.0 pide 8,Error,Mediu
 @Size(min = 6) en RegisterRequest y ChangePasswordRequest."
 DEF-12 · Un parámetro con formato inválido en Terminales responde 404 con el mensaje interno de Java,Error,Medium,defecto,severidad-menor,"Severidad: Menor.
 GET /api/search?lat=1 OR 1=1--&lon=-58.38 o GET /api/connectors?stationId=abc. Esperado: 400. Obtenido: 404 con el cuerpo 'For input string: ...'. Causa: el @ExceptionHandler(IllegalArgumentException) de TerminalController atrapa también el error de conversión del parámetro. Evidencia: ApiAttackTest (core) · searchRejectsSqlInCoordinates."
+DEF-13 · Las transiciones inválidas de la reserva no responden 409 y no hay patrón State,Error,Medium,defecto,severidad-menor,"Severidad: Menor.
+La reserva tiene dos estados (CONFIRMED, CANCELLED) sin patrón State. Hoy: cancelar una cancelada da 204; cancelar una terminada, 400; confirmar dos veces la misma retención, 404; confirmar una retención vencida, 410. Esperado (eje B, estado de la entidad central): toda transición inválida responde 409 y está probada con un test parametrizado. Ver QA-26 (ECO-176)."

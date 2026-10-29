@@ -1,6 +1,7 @@
-# Pruebas de QA que no entran en el pipeline de cada PR (QA-06 y QA-08).
+# Pruebas de QA que no entran en el pipeline de cada PR (QA-06, QA-08 y QA-23).
 #
-# Separadas del CI a propósito: la carga dura 5 minutos y el escaneo activo de ZAP hasta 15, y
+# Separadas del CI a propósito: la carga dura 5 minutos, el escaneo activo de ZAP hasta 15 y la
+# mutación otros tantos, y
 # el pipeline de cada PR tiene que quedar por debajo de 15 minutos (eje B). Corren:
 #   - a mano, desde la pestaña Actions ("Run workflow"), antes de cada entrega;
 #   - todas las noches sobre main;
@@ -203,3 +204,38 @@ jobs:
       - name: Bajar los backends
         if: always()
         run: bash qa/ci/stop-stack.sh
+
+  # QA-23 (ECO-173): mutation testing con PIT sobre la capa de dominio y de servicio.
+  #
+  # El umbral (60 % en el eje B) vive en el pom, en mutation.threshold, y arranca en 0: primero
+  # se mide. El resumen del run muestra el score de cada módulo; el reporte HTML va al artefacto.
+  mutacion:
+    name: Mutación (PIT)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      - name: Correr PIT
+        run: |
+          mvn -B -Pmutation -Dspotless.check.skip=true \
+            -pl backend/ecopedia-core,backend/ecopedia-charging,backend/ecopedia-integration,backend/ecopedia-async \
+            test-compile org.pitest:pitest-maven:mutationCoverage
+
+      - name: Resumen del mutation score
+        if: always()
+        run: python3 qa/ci/mutation-summary.py
+
+      - name: Guardar el reporte
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pit
+          path: backend/*/target/pit-reports/
+          if-no-files-found: ignore
