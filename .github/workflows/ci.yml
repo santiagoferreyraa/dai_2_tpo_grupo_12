@@ -4,8 +4,13 @@
 # Somos cuatro: si alguien mergea algo que no compila o que no está formateado, los otros
 # tres se lo llevan puesto en su próximo rebase.
 #
-# Los tres jobs corren en paralelo y son independientes. `api` es el de QA-05: levanta los cuatro backends y los tres simuladores
-# y les corre la colección de Postman con Newman.
+# Los jobs corren en paralelo y son independientes:
+# - `backend` y `frontend`: compilan, testean y chequean formato. `backend` además mide la
+#   cobertura con JaCoCo (QA-22) y la muestra en el resumen del run.
+# - `api` (QA-05): levanta los cuatro backends y los tres simuladores y les corre la colección
+#   de Postman con Newman.
+# - `sonar` (QA-17): análisis estático y Quality Gate en SonarCloud. Se saltea solo mientras no
+#   exista el secreto SONAR_TOKEN (ver qa/README.md).
 
 name: CI
 
@@ -40,6 +45,22 @@ jobs:
       # Si alguien no corrió "mvn spotless:apply", falla acá.
       - name: Compilar, testear y chequear formato
         run: mvn -B verify
+
+      # QA-22: la cobertura de dominio y servicio, en el resumen del run. No bloquea: los
+      # umbrales viven en el pom (coverage.lines.minimum y coverage.branches.minimum).
+      - name: Resumen de cobertura
+        if: always()
+        run: python3 qa/ci/coverage-summary.py
+
+      - name: Guardar el reporte de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco
+          path: |
+            backend/*/target/site/jacoco/
+            simulation/*/target/site/jacoco/
+          if-no-files-found: ignore
 
   frontend:
     name: Frontend (pnpm)
@@ -83,6 +104,56 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+  # QA-17 (ECO-167): análisis estático y Quality Gate en SonarCloud (condición G3).
+  #
+  # Necesita el secreto SONAR_TOKEN, que solo puede cargar quien administra el repo: mientras no
+  # esté, el job termina en verde sin analizar nada y lo avisa. Organización y proyecto salen de
+  # las variables SONAR_ORGANIZATION y SONAR_PROJECT_KEY del repo; si no están, se usan los
+  # nombres que SonarCloud pone por defecto al importar el repo.
+  #
+  # `qualitygate.wait` hace que el job espere el veredicto y quede en rojo si el Quality Gate no
+  # aprueba. No es un check obligatorio de main: un gate en rojo se trata como defecto, no
+  # frena los merges.
+  sonar:
+    name: Sonar (Quality Gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+    steps:
+      - name: ¿Está configurado SonarCloud?
+        id: config
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::notice title=SonarCloud sin configurar::Falta el secreto SONAR_TOKEN. Ver qa/README.md, sección SonarCloud."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.config.outputs.enabled == 'true'
+        with:
+          fetch-depth: 0     # Sonar usa el historial para saber qué código es nuevo
+
+      - name: Preparar JDK 21
+        if: steps.config.outputs.enabled == 'true'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      - name: Testear, medir cobertura y analizar
+        if: steps.config.outputs.enabled == 'true'
+        run: |
+          mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.organization="${{ vars.SONAR_ORGANIZATION || 'santiagoferreyraa' }}" \
+            -Dsonar.projectKey="${{ vars.SONAR_PROJECT_KEY || 'santiagoferreyraa_dai_2_tpo_grupo_12' }}" \
+            -Dsonar.qualitygate.wait=true
 
   # QA-05 (ECO-155): la colección de API, contra el sistema corriendo de verdad.
   #
