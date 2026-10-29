@@ -156,11 +156,12 @@ class ApiAttackTest {
     void profileIgnoresPrivilegedFields() throws Exception {
         User driver = givenUser("ma-perfil@ecopedia.test", Role.CONDUCTOR);
 
-        mockMvc.perform(put("/api/users/profile")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(driver))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(
-                                """
+        mockMvc.perform(
+                        put("/api/users/profile")
+                                .header(HttpHeaders.AUTHORIZATION, bearer(driver))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
                                 {"fullName":"Nombre Nuevo","role":"ADMIN","active":false,
                                  "email":"robado@ecopedia.test","id":1,"passwordHash":"x"}
                                 """))
@@ -180,11 +181,12 @@ class ApiAttackTest {
     void stationIgnoresOwnerAndState() throws Exception {
         User operator = givenUser("ma-cpo@ecopedia.test", Role.CPO);
 
-        mockMvc.perform(post("/api/stations")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(operator))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(
-                                """
+        mockMvc.perform(
+                        post("/api/stations")
+                                .header(HttpHeaders.AUTHORIZATION, bearer(operator))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
                                 {"name":"Estación MA","address":"Av. San Juan 2901",
                                  "latitude":-34.6,"longitude":-58.38,"photoUrls":[],
                                  "ownerId":999999,"active":false,"id":424242}
@@ -234,10 +236,11 @@ class ApiAttackTest {
     void loginRejectsSqlInEmail() throws Exception {
         givenUser("victima@ecopedia.test", Role.CONDUCTOR);
 
-        mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(
-                                """
+        mockMvc.perform(
+                        post("/api/auth/login")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
                                 {"email":"' OR '1'='1' --","password":"' OR '1'='1' --"}
                                 """))
                 .andExpect(status().isBadRequest())
@@ -252,7 +255,8 @@ class ApiAttackTest {
     }
 
     @Test
-    @DisplayName("Inyección · Estación con SQL en el nombre y HTML en la dirección: se guarda literal y el listado sigue")
+    @DisplayName(
+            "Inyección · Estación con SQL en el nombre y HTML en la dirección: se guarda literal y el listado sigue")
     void stationStoresHostileTextAsData() throws Exception {
         User operator = givenUser("iny-cpo@ecopedia.test", Role.CPO);
         String hostileName = "'; DROP TABLE stations; --";

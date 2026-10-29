@@ -78,8 +78,8 @@ class ApiAttackTest {
                 throw new IllegalArgumentException(
                         "El número de tarjeta no es válido. Revisá que esté completo y tenga solo dígitos");
             }
-            return new TokenizedCard(CardBrand.VISA, card.number().substring(card.number().length() - 4),
-                    "tok_" + UUID.randomUUID());
+            return new TokenizedCard(
+                    CardBrand.VISA, card.number().substring(card.number().length() - 4), "tok_" + UUID.randomUUID());
         });
     }
 
@@ -159,7 +159,8 @@ class ApiAttackTest {
     // --- Mass assignment --------------------------------------------------------------------
 
     @Test
-    @DisplayName("Mass assignment · Alta de tarjeta con driverId, marca, últimos 4, token e id de más: los pone el servidor")
+    @DisplayName(
+            "Mass assignment · Alta de tarjeta con driverId, marca, últimos 4, token e id de más: los pone el servidor")
     void cardIgnoresServerOwnedFields() throws Exception {
         mockMvc.perform(post("/api/payment-methods")
                         .header(HttpHeaders.AUTHORIZATION, driver(607L))
@@ -213,11 +214,12 @@ class ApiAttackTest {
     @Test
     @DisplayName("Inyección · Un número de tarjeta con SQL se rechaza con 400 y no guarda nada")
     void numberRejectsSql() throws Exception {
-        mockMvc.perform(post("/api/payment-methods")
-                        .header(HttpHeaders.AUTHORIZATION, driver(609L))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(
-                                """
+        mockMvc.perform(
+                        post("/api/payment-methods")
+                                .header(HttpHeaders.AUTHORIZATION, driver(609L))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
                                 {"number":"4111' OR '1'='1","expiryMonth":9,"expiryYear":2029,"holderName":"TITULAR"}
                                 """))
                 .andExpect(status().isBadRequest());
