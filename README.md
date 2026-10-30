@@ -25,7 +25,8 @@ TP Integrador — **Desarrollo de Aplicaciones II** (3.4.218, Comisión Lunes TM
 - Maven 3.9+
 - Node 20+
 - pnpm 11+ *(`npm install -g pnpm`)*
-- Docker Desktop *(opcional — solo para el ambiente de la demo; ver "Los tres ambientes")*
+- Docker Desktop *(opcional — para el ambiente de la demo, ver "Los tres ambientes", o para correr
+  todo sin instalar nada más, ver "Todo con Docker")*
 
 ---
 
@@ -107,6 +108,62 @@ y ahí no hay nada escuchando `/api/bookings`. Para probar reservas se usa `pnpm
 **`pnpm dev` no levanta Notificaciones ni necesita Docker.** Reservas publica los avisos en el
 broker, y si el broker no está, la reserva se confirma igual y el aviso queda en el log de
 `charging`. Para trabajar sobre las notificaciones, ver "Notificaciones" más abajo.
+
+### Todo con Docker
+
+Para correr el sistema entero **sin instalar JDK, Maven, Node ni pnpm**: solo Git y Docker (Docker
+Desktop, o Docker Engine con `docker compose`). Es lo que corre el servidor de la demo.
+
+```bash
+git clone https://github.com/santiagoferreyraa/dai_2_tpo_grupo_12.git
+cd dai_2_tpo_grupo_12
+node scripts/env-init.mjs     # = pnpm env:init. Sin Node: ver abajo
+docker compose up -d --build
+```
+
+Y se entra por **http://localhost**. La primera vez compila todo adentro de Docker: en una PC
+de desarrollo, unos 4 minutos entre construir y arrancar (más si tiene que bajar las imágenes
+base, o en una máquina chica). Las siguientes, con la caché, alrededor de un minuto. Los primeros minutos el navegador puede
+ver **502**: la página ya está, pero los módulos todavía arrancan.
+
+**Sin Node en la máquina**, el `.env` se genera con el mismo script, dentro de un contenedor:
+
+```bash
+docker run --rm -v "$PWD":/app -w /app node:24-alpine node scripts/env-init.mjs          # bash
+docker run --rm -v "${PWD}:/app" -w /app node:24-alpine node scripts/env-init.mjs        # PowerShell
+```
+
+**Qué levanta.** Once contenedores: PostgreSQL, Artemis, los cuatro módulos, los tres simuladores y
+`web`, que es [Caddy](https://caddyserver.com/) sirviendo el front y repartiendo `/api` entre los
+módulos con las mismas reglas que el proxy de Vite (`docker/Caddyfile`). **Hacia afuera solo se
+publica `web`**; los módulos y los simuladores se hablan por la red interna de compose, y la base y el
+broker quedan en `127.0.0.1`, como siempre. Corre sin perfil de Spring, o sea contra PostgreSQL:
+es el mismo ambiente que `pnpm demo`, **con los mismos volúmenes**, así que comparten los datos.
+
+| Comando | Qué hace |
+|---|---|
+| `docker compose ps` | El estado de los once. Los Java pasan a `healthy` cuando escuchan |
+| `docker compose logs -f core` | El log de uno (`charging`, `integration`, `async`, `payment-gateway`, `power-grid`, `charger`, `web`...) |
+| `docker compose down` | Baja todo. Los datos quedan en los volúmenes |
+| `git pull && docker compose up -d --build` | Actualiza a lo último |
+
+**El primer `ADMIN`** se crea igual que en "Promover un usuario a `CPO`": registrarse desde la web y
+cambiar el rol por SQL, con `role = 'ADMIN'`, por el `docker exec ... psql` del ambiente compartido.
+
+**No mezclarlo con `pnpm demo`.** Para `pnpm demo`, la infraestructura se levanta nombrando los dos
+servicios (`docker compose up -d postgres activemq`, ver "Con PostgreSQL"). Con las dos cosas arriba
+quedan dos copias de cada módulo contra la misma base y el mismo broker.
+
+**Si el 80 está ocupado** en tu máquina, agregá `ECOPEDIA_HTTP_PORT=8080` al `.env` y entrá por
+http://localhost:8080.
+
+**En un servidor, con dominio:** `ECOPEDIA_SITE_ADDRESS=<el dominio>` en el `.env`, el dominio
+apuntando a la máquina y los puertos 80 y 443 abiertos. Caddy saca el certificado de Let's Encrypt
+solo y atiende en HTTPS. Los certificados se guardan en un volumen, así que un `up` nuevo no pide
+otro.
+
+**Memoria:** cada JVM tiene un techo de 384 MB (`JAVA_TOOL_OPTIONS` en `docker-compose.yml`). Con
+todo arriba y en reposo, los once ocupan unos 2,7 GB; a Docker Desktop conviene darle al menos 6 GB.
 
 ### Los tres ambientes
 
@@ -202,8 +259,12 @@ pnpm env:init
 Después la infraestructura:
 
 ```bash
-docker compose up -d
+docker compose up -d postgres activemq
 ```
+
+**Nombrando los dos servicios.** Un `docker compose up` a secas levanta el sistema entero en
+contenedores (ver "Todo con Docker"), y con `pnpm demo` arriba quedarían dos copias de cada
+módulo contra la misma base y el mismo broker.
 
 Deja arriba PostgreSQL (`localhost:5432`) y ActiveMQ Artemis (`localhost:61616`, consola web en
 http://localhost:8161/console). **Los dos escuchan solo en `127.0.0.1`**: desde otra máquina de la
@@ -219,7 +280,7 @@ apunta a PostgreSQL. Si preferís uno solo, `pnpm demo:back`, `pnpm demo:chargin
 `pnpm demo:pay` y `pnpm demo:async`.
 
 **Si la base no está arriba, el backend no arranca.** Es el error más común de este ambiente, y
-casi siempre falta el `docker compose up -d`. Se ve en dos lugares distintos y conviene reconocer
+casi siempre falta el `docker compose up -d postgres activemq`. Se ve en dos lugares distintos y conviene reconocer
 los dos:
 
 - **En el panel `back`**, al final de la traza: `java.net.ConnectException: Connection refused`,
@@ -351,8 +412,8 @@ llena de reintentos de conexión. Si al confirmar una reserva no aparece nada, e
 `WARN` de `charging` ("No se pudo publicar el aviso en la cola…") son los dos lugares donde
 mirar primero.
 
-Con `pnpm demo` no hace falta nada aparte: `docker compose up -d` ya trae el broker junto con
-PostgreSQL.
+Con `pnpm demo` no hace falta nada aparte: `docker compose up -d postgres activemq` ya trae el
+broker junto con PostgreSQL.
 
 Dónde se ve cada paso, después de confirmar una reserva:
 
@@ -591,12 +652,10 @@ Tres cosas que conviene saber:
   Eso hace que `pnpm dev:back` sirva ese frontend congelado en el 8081. No molesta —en
   desarrollo se navega por el 5173— pero si confunde, `mvn clean` lo borra.
 
-> **Pendiente conocido, desde ECO-26.** Este JAR único sirve el frontend y la API de
-> `ecopedia-core`, pero los medios de pago viven en `ecopedia-integration`, que es otro proceso.
-> Corriendo así, `/api/payment-methods` le pega a core y devuelve 404: en desarrollo lo resuelve
-> el proxy de Vite, y en producción hace falta que algo reparta por prefijo —un reverse proxy
-> delante de los dos, o que core haga de puerta—. Es una decisión de despliegue y no de este
-> ticket, pero hay que tomarla antes de la demo del ambiente compartido.
+> **Este JAR solo no alcanza para el sistema entero.** Sirve el frontend y la API de
+> `ecopedia-core`, pero Reservas, los medios de pago y los avisos viven en otros procesos:
+> corriendo así, `/api/bookings` o `/api/payment-methods` le pegan a core y devuelven 404. En
+> desarrollo reparte el proxy de Vite; para el despliegue, Caddy (ver "Todo con Docker").
 
 ### Módulo por módulo
 
