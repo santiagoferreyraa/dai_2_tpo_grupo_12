@@ -1,0 +1,40 @@
+# La entrada al sistema cuando corre todo con `docker compose up`.
+#
+# ECOPEDIA_SITE_ADDRESS decide cómo atiende:
+#   - `:80` (lo que pone compose si el .env no dice nada): HTTP en http://localhost, sin
+#     certificado. Es para correrlo en una PC.
+#   - un dominio, por ejemplo `pedia.com.ar`: Caddy le pide el certificado a Let's Encrypt solo y
+#     atiende en HTTPS, redirigiendo el HTTP. Necesita que el dominio apunte a esta máquina y
+#     los puertos 80 y 443 abiertos. Ver el README, "Todo con Docker".
+{$ECOPEDIA_SITE_ADDRESS} {
+	encode gzip
+
+	# El mismo reparto que el proxy de Vite en desarrollo (frontend/vite.config.ts). Si se
+	# agrega una ruta allá, va acá también. Lo más específico primero; el resto de /api, a core.
+	handle /api/bookings* {
+		reverse_proxy charging:8082
+	}
+	handle /api/checkout* {
+		reverse_proxy charging:8082
+	}
+	handle /api/payment-methods* {
+		reverse_proxy integration:8083
+	}
+	handle /api/notifications* {
+		reverse_proxy async:8084
+	}
+	handle /api/* {
+		reverse_proxy core:8081
+	}
+
+	# Todo lo demás es el front. Las rutas de React Router (/stations/map, /admin...) no existen
+	# como archivo, así que caen en index.html y las resuelve el navegador.
+	#
+	# Las rutas /internal/** de los módulos no pasan por acá: Caddy no las reenvía, así que
+	# desde afuera solo devuelven la página.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
