@@ -76,6 +76,19 @@ ecopedia:
     # Dónde está ecopedia-integration. Checkout le consulta por medios de pago registrados (RF02).
     url: ${ECOPEDIA_INTEGRATION_URL:http://localhost:8083}
 
+  # La clave de servicio con la que este artefacto llama a las rutas /internal/** de los otros (hoy,
+  # la consulta a la distribuidora en ecopedia-integration). La misma variable la lee integration.
+  # Sin valor por defecto, por lo mismo que el secreto del JWT.
+  internal:
+    token: ${ECOPEDIA_INTERNAL_TOKEN}
+
+  charging:
+    # Desde qué potencia una carga es "rápida" y hay que preguntarle a la distribuidora (RF15), y a
+    # cuánto se carga cuando no se puede autorizar la rápida. 22 kW es el tope habitual de la carga
+    # en alterna. Decidido por Manuel el 28/10: ver ChargingPowerPolicy.
+    fast-charge-threshold-kw: 22
+    normal-power-kw: 22
+
   booking:
     # Cuánto dura una retención de slot antes de vencer sola (ISO-8601: PT10M = 10 minutos).
     # Es el tiempo que tiene el conductor para confirmar. Ver ARQUITECTURA_ECOPEDIA.md §2.3.
@@ -128,6 +141,8 @@ spring:
 ecopedia:
   jwt:
     secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
+  internal:
+    token: ${ECOPEDIA_INTERNAL_TOKEN:ecopedia-dev-only-internal-token}
 
 ---
 # Perfil local: la base de este integrante, en un archivo de su propio disco.
@@ -178,3 +193,5 @@ spring:
 ecopedia:
   jwt:
     secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
+  internal:
+    token: ${ECOPEDIA_INTERNAL_TOKEN:ecopedia-dev-only-internal-token}

@@ -74,6 +74,13 @@ ecopedia:
   jwt:
     secret: ${ECOPEDIA_JWT_SECRET}
 
+  # La clave con la que los otros artefactos de Ecopedia llaman a las rutas /internal/** (hoy, la
+  # consulta a la distribuidora de SesionesDeCarga). No es la de un usuario: es la del servicio. La
+  # misma variable la lee ecopedia-charging. Sin valor por defecto, por lo mismo que el secreto del
+  # JWT. Ver InternalTokenFilter.
+  internal:
+    token: ${ECOPEDIA_INTERNAL_TOKEN}
+
 ---
 # Perfil de desarrollo: base en memoria, para levantar el módulo sin PostgreSQL instalado.
 spring:
@@ -109,6 +116,8 @@ ecopedia:
     access-token: ${ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN:ecopedia-dev-only-gateway-token}
   power-grid:
     password: ${ECOPEDIA_POWER_GRID_PASSWORD:ecopedia-dev-only-power-grid-password}
+  internal:
+    token: ${ECOPEDIA_INTERNAL_TOKEN:ecopedia-dev-only-internal-token}
 
 ---
 # Perfil local: la base de este integrante, en un archivo de su propio disco.
@@ -160,3 +169,5 @@ ecopedia:
     access-token: ${ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN:ecopedia-dev-only-gateway-token}
   power-grid:
     password: ${ECOPEDIA_POWER_GRID_PASSWORD:ecopedia-dev-only-power-grid-password}
+  internal:
+    token: ${ECOPEDIA_INTERNAL_TOKEN:ecopedia-dev-only-internal-token}

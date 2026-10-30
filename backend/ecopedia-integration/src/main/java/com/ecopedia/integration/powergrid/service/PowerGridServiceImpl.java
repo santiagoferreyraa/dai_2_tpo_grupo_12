@@ -10,8 +10,8 @@ import org.springframework.stereotype.Service;
  * RedEléctrica: hoy delega en el puerto y nada más.
  *
  * <p>Es delgado a propósito. La regla de qué hacer con cada resultado —cargar a menos potencia con
- * un "no", qué hacer si no contesta, el circuit breaker— es de SesionesDeCarga (ECO-52) y del ticket
- * de resiliencia del Sprint 5. Lo que este componente garantiza es que nadie más sabe que del otro
+ * un "no", qué hacer si no contesta— es de SesionesDeCarga ({@code ChargingPowerPolicy}, en
+ * ecopedia-charging), y el circuit breaker, del ticket de resiliencia del Sprint 5. Lo que este componente garantiza es que nadie más sabe que del otro
  * lado hay SOAP.
  */
 @Service
