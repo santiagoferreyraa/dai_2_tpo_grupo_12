@@ -28,7 +28,10 @@ RUN --mount=type=cache,target=/root/.m2 \
  && cp simulation/charger/target/charger-simulator-*.jar /jars/charger.jar
 
 # --- Ejecución ---------------------------------------------------------------------------------
-FROM eclipse-temurin:21-jre
+# La JDK y no la JRE a propósito: la imagen JRE de Temurin viene recortada y no trae el módulo
+# jdk.random, y el simulador de cargadores lo usa (RandomGenerator.getDefault() pide el algoritmo
+# L32X64MixRandom). Con la JRE, ese contenedor se cae al arrancar y se reinicia en bucle.
+FROM eclipse-temurin:21-jdk
 WORKDIR /app
 
 # Un usuario sin privilegios: si alguien llegara a ejecutar algo adentro, no es root.
