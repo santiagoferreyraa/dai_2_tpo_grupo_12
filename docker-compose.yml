@@ -1,23 +1,78 @@
-# Infraestructura local de Ecopedia.
+# Ecopedia completo con Docker.
 #
-#   docker compose up -d
+#   docker compose up -d --build           todo el sistema, en http://localhost (QA-16)
+#   docker compose up -d postgres activemq solo la infraestructura, para `pnpm demo`
 #
-# Levanta lo que la consigna exige tener "realmente configurado y funcionando":
-# la base de datos y el broker de mensajería.
+# "Todo" son once contenedores: PostgreSQL, Artemis, los cuatro módulos de Ecopedia, los tres
+# simuladores (pasarela de pagos, distribuidora y cargadores) y `web`, que es Caddy sirviendo el
+# front y repartiendo /api entre los módulos. Los siete procesos Java salen de una misma imagen
+# (docker/backend.Dockerfile); el front, de docker/frontend.Dockerfile.
 #
-# **Necesita el .env** (`pnpm env:init` lo genera): las contraseñas salen de ahí y no tienen
-# valor por defecto. Sin él, compose se niega a arrancar y dice qué variable falta.
+# **Necesita el .env** (`pnpm env:init` lo genera): las contraseñas y las claves salen de ahí y
+# no tienen valor por defecto. Sin él, compose se niega a arrancar y dice qué variable falta.
 #
-# **Los puertos se publican solo en 127.0.0.1.** La base y el broker los usan los backends de
-# esta misma máquina; nadie de la red tiene por qué llegarles. Publicados en todas las
-# interfaces, cualquiera en el mismo WiFi podía entrar a PostgreSQL o dejar mensajes falsos en
-# la cola de avisos. En el ambiente compartido, la otra máquina entra por el frontend, no acá.
+# **Hacia afuera solo se publica `web`** (80 y 443). La base, el broker y su consola se publican
+# solo en 127.0.0.1, para los backends de `pnpm demo` en esta misma máquina; nadie de la red tiene
+# por qué llegarles. Publicados en todas las interfaces, cualquiera en el mismo WiFi podía entrar
+# a PostgreSQL o dejar mensajes falsos en la cola de avisos. Los módulos y los simuladores no
+# publican nada: se hablan por la red interna de compose, con el nombre del servicio.
+#
+# **No mezclar los dos modos.** Con `pnpm demo` corriendo, levantar también los módulos de acá
+# deja dos copias de cada uno contra la misma base y el mismo broker.
+
+# --- Piezas que comparten los procesos Java ------------------------------------------------------
+
+x-java: &java
+  build:
+    context: .
+    dockerfile: docker/backend.Dockerfile
+  image: ecopedia-backend:local
+  restart: unless-stopped
+  healthcheck:
+    # Sin actuator: alcanza con que el puerto acepte conexiones.
+    test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/$${SERVER_PORT}"]
+    interval: 10s
+    timeout: 3s
+    start_period: 180s
+    retries: 3
+
+x-java-env: &java-env
+  # Siete JVM en una máquina de 8 GB: cada una con un techo de memoria, y el recolector simple,
+  # que con 2 núcleos arranca más rápido. Si una se queda sin memoria, se cae y compose la
+  # reinicia, en vez de quedar viva y trabada.
+  # La zona horaria, la de Argentina: las ventanas de reserva se calculan en hora local.
+  JAVA_TOOL_OPTIONS: >-
+    -Xmx384m -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
+    -Duser.timezone=America/Argentina/Buenos_Aires
+
+x-db: &db
+  ECOPEDIA_DB_URL: jdbc:postgresql://postgres:5432/ecopedia
+  ECOPEDIA_DB_PASSWORD: ${ECOPEDIA_DB_PASSWORD:?Falta ECOPEDIA_DB_PASSWORD en el .env. Correr pnpm env:init}
+
+x-jwt: &jwt
+  ECOPEDIA_JWT_SECRET: ${ECOPEDIA_JWT_SECRET:?Falta ECOPEDIA_JWT_SECRET en el .env. Correr pnpm env:init}
+
+x-broker: &broker
+  ECOPEDIA_BROKER_URL: tcp://activemq:61616
+  ECOPEDIA_BROKER_PASSWORD: ${ECOPEDIA_BROKER_PASSWORD:?Falta ECOPEDIA_BROKER_PASSWORD en el .env. Correr pnpm env:init}
+
+x-internal-token: &internal-token
+  ECOPEDIA_INTERNAL_TOKEN: ${ECOPEDIA_INTERNAL_TOKEN:?Falta ECOPEDIA_INTERNAL_TOKEN en el .env. Correr pnpm env:init}
+
+x-infra: &infra
+  postgres:
+    condition: service_healthy
+  activemq:
+    condition: service_started
 
 services:
+
+  # --- Infraestructura ---------------------------------------------------------------------------
 
   postgres:
     image: postgres:16-alpine
     container_name: ecopedia-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ecopedia
       POSTGRES_USER: ecopedia
@@ -38,6 +93,7 @@ services:
   activemq:
     image: apache/activemq-artemis:2.42.0
     container_name: ecopedia-activemq
+    restart: unless-stopped
     environment:
       ARTEMIS_USER: ecopedia
       ARTEMIS_PASSWORD: ${ECOPEDIA_BROKER_PASSWORD:?Falta ECOPEDIA_BROKER_PASSWORD en el .env. Correr pnpm env:init}
@@ -47,6 +103,127 @@ services:
     volumes:
       - activemq-data:/var/lib/artemis-instance
 
+  # --- Los tres sistemas externos simulados -----------------------------------------------------
+  # Fuera de Docker escuchan solo en 127.0.0.1; acá tienen que aceptar conexiones de la red de
+  # compose, y por eso 0.0.0.0. Igual no publican puertos: desde afuera no se llega.
+
+  payment-gateway:
+    <<: *java
+    container_name: ecopedia-payment-gateway
+    command: ["java", "-jar", "/app/payment-gateway.jar"]
+    environment:
+      <<: *java-env
+      SERVER_PORT: 8086
+      ECOPEDIA_PAYMENT_GATEWAY_ADDRESS: 0.0.0.0
+      ECOPEDIA_PAYMENT_GATEWAY_DB: /app/data/payment-gateway
+      ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN: ${ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN:?Falta ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN en el .env. Correr pnpm env:init}
+    volumes:
+      - payment-gateway-data:/app/data
+
+  power-grid:
+    <<: *java
+    container_name: ecopedia-power-grid
+    command: ["java", "-jar", "/app/power-grid.jar"]
+    environment:
+      <<: *java-env
+      SERVER_PORT: 8087
+      ECOPEDIA_POWER_GRID_ADDRESS: 0.0.0.0
+      ECOPEDIA_POWER_GRID_PASSWORD: ${ECOPEDIA_POWER_GRID_PASSWORD:?Falta ECOPEDIA_POWER_GRID_PASSWORD en el .env. Correr pnpm env:init}
+
+  charger:
+    <<: *java
+    container_name: ecopedia-charger
+    command: ["java", "-jar", "/app/charger.jar"]
+    environment:
+      <<: [*java-env, *broker]
+      SERVER_PORT: 8088
+      ECOPEDIA_CHARGER_ADDRESS: 0.0.0.0
+      ECOPEDIA_CHARGER_ACCESS_TOKEN: ${ECOPEDIA_CHARGER_ACCESS_TOKEN:?Falta ECOPEDIA_CHARGER_ACCESS_TOKEN en el .env. Correr pnpm env:init}
+    depends_on:
+      activemq:
+        condition: service_started
+
+  # --- Ecopedia: sin perfil de Spring, o sea contra PostgreSQL, igual que `pnpm demo` -------------
+
+  core:
+    <<: *java
+    container_name: ecopedia-core
+    command: ["java", "-jar", "/app/ecopedia-core.jar"]
+    environment:
+      <<: [*java-env, *db, *jwt]
+      SERVER_PORT: 8081
+      ECOPEDIA_CHARGER_URL: http://charger:8088
+      ECOPEDIA_CHARGER_ACCESS_TOKEN: ${ECOPEDIA_CHARGER_ACCESS_TOKEN:?Falta ECOPEDIA_CHARGER_ACCESS_TOKEN en el .env. Correr pnpm env:init}
+      ECOPEDIA_LOGIN_MAX_FAILURES: ${ECOPEDIA_LOGIN_MAX_FAILURES:-5}
+      ECOPEDIA_LOGIN_LOCK_MINUTES: ${ECOPEDIA_LOGIN_LOCK_MINUTES:-15}
+    depends_on: *infra
+
+  charging:
+    <<: *java
+    container_name: ecopedia-charging
+    command: ["java", "-jar", "/app/ecopedia-charging.jar"]
+    environment:
+      <<: [*java-env, *db, *jwt, *broker, *internal-token]
+      SERVER_PORT: 8082
+      ECOPEDIA_CORE_URL: http://core:8081
+      ECOPEDIA_INTEGRATION_URL: http://integration:8083
+    depends_on: *infra
+
+  integration:
+    <<: *java
+    container_name: ecopedia-integration
+    command: ["java", "-jar", "/app/ecopedia-integration.jar"]
+    environment:
+      <<: [*java-env, *db, *jwt, *internal-token]
+      SERVER_PORT: 8083
+      ECOPEDIA_PAYMENT_GATEWAY_URL: http://payment-gateway:8086
+      ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN: ${ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN:?Falta ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN en el .env. Correr pnpm env:init}
+      ECOPEDIA_POWER_GRID_URL: http://power-grid:8087/ws
+      ECOPEDIA_POWER_GRID_PASSWORD: ${ECOPEDIA_POWER_GRID_PASSWORD:?Falta ECOPEDIA_POWER_GRID_PASSWORD en el .env. Correr pnpm env:init}
+    depends_on: *infra
+
+  async:
+    <<: *java
+    container_name: ecopedia-async
+    command: ["java", "-jar", "/app/ecopedia-async.jar"]
+    environment:
+      <<: [*java-env, *db, *jwt, *broker]
+      SERVER_PORT: 8084
+      ECOPEDIA_CORE_URL: http://core:8081
+    depends_on: *infra
+
+  # --- La entrada: el front y el reparto de /api -------------------------------------------------
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    image: ecopedia-web:local
+    container_name: ecopedia-web
+    restart: unless-stopped
+    environment:
+      # `:80` atiende HTTP en esta máquina. Con un dominio (en el servidor), HTTPS con certificado
+      # automático. Ver docker/Caddyfile.
+      ECOPEDIA_SITE_ADDRESS: ${ECOPEDIA_SITE_ADDRESS:-:80}
+    ports:
+      # ECOPEDIA_HTTP_PORT, por si en una PC el 80 ya está ocupado. En el servidor, 80 sí o sí:
+      # Let's Encrypt lo usa para comprobar que el dominio es nuestro.
+      - "${ECOPEDIA_HTTP_PORT:-80}:80"
+      - "443:443"
+    volumes:
+      # Los certificados. Sin el volumen, cada `up` pediría uno nuevo, y Let's Encrypt limita
+      # cuántos se piden por semana.
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - core
+      - charging
+      - integration
+      - async
+
 volumes:
   postgres-data:
   activemq-data:
+  payment-gateway-data:
+  caddy-data:
+  caddy-config:
