@@ -542,10 +542,12 @@ Las lecturas se ven en la consola de Artemis (http://localhost:8161/console → 
 `telemetry.charging`) o a mano:
 
 ```bash
+# Con `pnpm dev` la clave es la de desarrollo del perfil `local` (ver application.yml del simulador).
+TOKEN="${ECOPEDIA_CHARGER_ACCESS_TOKEN:?Exportá ECOPEDIA_CHARGER_ACCESS_TOKEN}"
 curl -X POST http://localhost:8088/v1/connectors/1/session \
-  -H "Authorization: Bearer ecopedia-dev-only-charger-token" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"sessionId":"prueba-1","powerLimitKw":50}'
-curl http://localhost:8088/v1/connectors/1 -H "Authorization: Bearer ecopedia-dev-only-charger-token"
+curl http://localhost:8088/v1/connectors/1 -H "Authorization: Bearer $TOKEN"
 ```
 
 **Para probarlo contra el proceso real**, con el simulador y el broker arriba:

@@ -4,7 +4,8 @@
 # Somos cuatro: si alguien mergea algo que no compila o que no está formateado, los otros
 # tres se lo llevan puesto en su próximo rebase.
 #
-# Los dos jobs corren en paralelo y son independientes.
+# Los tres jobs corren en paralelo y son independientes. `api` es el de QA-05: levanta los cuatro backends y los tres simuladores
+# y les corre la colección de Postman con Newman.
 
 name: CI
 
@@ -82,3 +83,77 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+  # QA-05 (ECO-155): la colección de API, contra el sistema corriendo de verdad.
+  #
+  # Los cuatro backends y los tres simuladores con el perfil dev (H2 en memoria) y un Artemis real como servicio del
+  # runner, así el aviso de la reserva viaja por la cola de punta a punta. La contraseña del
+  # broker sale del número de corrida: no es un secreto, el contenedor muere con el job.
+  #
+  # Los usuarios ADMIN y CPO los crea qa/ci/start-stack.sh con contraseñas al azar de esa corrida.
+  api:
+    name: API (Newman)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ECOPEDIA_BROKER_PASSWORD: qa-${{ github.run_id }}
+
+    services:
+      artemis:
+        image: apache/activemq-artemis:2.42.0
+        env:
+          ARTEMIS_USER: ecopedia
+          ARTEMIS_PASSWORD: qa-${{ github.run_id }}
+        ports:
+          - 61616:61616
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preparar JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      - name: Preparar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      # Sin tests: ya los corre el job backend. Acá solo hacen falta los JAR.
+      - name: Construir los JAR
+        run: mvn -B -Dmaven.test.skip=true -Dspotless.check.skip=true package
+
+      - name: Levantar backends y simuladores
+        run: |
+          python3 -m pip install --quiet --user --break-system-packages bcrypt
+          bash qa/ci/start-stack.sh
+
+      - name: Correr la colección de API
+        run: |
+          npx --yes newman@6 run qa/postman/ecopedia.postman_collection.json \
+            --env-var coreUrl=http://localhost:8081 \
+            --env-var chargingUrl=http://localhost:8082 \
+            --env-var integrationUrl=http://localhost:8083 \
+            --env-var asyncUrl=http://localhost:8084 \
+            --env-var adminEmail="$QA_ADMIN_EMAIL" \
+            --env-var adminPassword="$QA_ADMIN_PASSWORD" \
+            --env-var cpoEmail="$QA_CPO_EMAIL" \
+            --env-var cpoPassword="$QA_CPO_PASSWORD" \
+            --reporters cli,junit \
+            --reporter-junit-export qa/newman/results.xml
+
+      - name: Guardar resultados y logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: newman
+          path: |
+            qa/newman/
+            qa/ci/logs/
+
+      - name: Bajar los backends
+        if: always()
+        run: bash qa/ci/stop-stack.sh

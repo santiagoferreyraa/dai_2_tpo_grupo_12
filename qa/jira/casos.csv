@@ -1,0 +1,425 @@
+Summary,Issue Type,Priority,Labels,Labels,Description
+TC-01 · Feliz: registro válido crea un CONDUCTOR,Tarea,High,caso-de-prueba,hu-01,"HU: HU-01 (Registro e ingreso)
+Tipo: Positivo
+Precondición: Email no usado
+Datos: email nuevo, clave de 8, nombre
+Pasos: POST /api/auth/register
+Esperado: 201, rol CONDUCTOR, sin hash en la respuesta
+Test: Newman 01 · Registro de conductor
+Defecto: —"
+TC-02 · Error: email repetido,Tarea,High,caso-de-prueba,hu-01,"HU: HU-01 (Registro e ingreso)
+Tipo: Negativo
+Precondición: Email ya registrado
+Datos: mismo email
+Pasos: POST /api/auth/register
+Esperado: 400 con motivo
+Test: AuthErrorResponseTest · registro duplicado; Newman 01
+Defecto: —"
+TC-03 · Alternativo: el rol enviado se ignora (SEC-01),Tarea,High,caso-de-prueba,hu-01,"HU: HU-01 (Registro e ingreso)
+Tipo: Negativo
+Precondición: —
+Datos: role=ADMIN en el cuerpo
+Pasos: POST /api/auth/register
+Esperado: 201 con rol CONDUCTOR
+Test: UserAuthorizationTest · rol ignorado; Newman 01
+Defecto: —"
+"TC-04 · Error: contraseña equivocada, mensaje genérico (SEC-02)",Tarea,High,caso-de-prueba,hu-01,"HU: HU-01 (Registro e ingreso)
+Tipo: Negativo
+Precondición: Usuario existente
+Datos: clave errónea
+Pasos: POST /api/auth/login
+Esperado: Mismo mensaje que email inexistente; 401
+Test: AuthErrorResponseTest · mismo mensaje
+Defecto: DEF-06"
+TC-05 · Borde: 5 fallos bloquean 15 min y responde 429 (SEC-03),Tarea,High,caso-de-prueba,hu-01,"HU: HU-01 (Registro e ingreso)
+Tipo: Borde
+Precondición: Usuario existente
+Datos: 5 claves erróneas + la correcta
+Pasos: POST /api/auth/login ×6
+Esperado: 429 con Retry-After
+Test: SessionHardeningTest · locksTheAccountAfterFiveFailures; LoginAttemptsTest
+Defecto: —"
+TC-06 · Borde: 4 fallos no bloquean,Tarea,Medium,caso-de-prueba,hu-01,"HU: HU-01 (Registro e ingreso)
+Tipo: Borde
+Precondición: Usuario existente
+Datos: 4 claves erróneas
+Pasos: POST /api/auth/login ×5
+Esperado: El quinto intento con la clave correcta entra
+Test: LoginAttemptsTest · un fallo menos que el máximo
+Defecto: —"
+TC-07 · Feliz: editar nombre y vehículo,Tarea,Medium,caso-de-prueba,hu-02,"HU: HU-02 (Perfil y vehículo del conductor)
+Tipo: Positivo
+Precondición: Sesión de conductor
+Datos: nombre nuevo, vehicleModelId válido
+Pasos: PUT /api/users/profile
+Esperado: 200 con la ficha del vehículo
+Test: VehicleSelectionTest · al elegir un modelo; Newman 02
+Defecto: —"
+TC-08 · Error: nombre vacío,Tarea,Medium,caso-de-prueba,hu-02,"HU: HU-02 (Perfil y vehículo del conductor)
+Tipo: Negativo
+Precondición: Sesión de conductor
+Datos: fullName vacío
+Pasos: PUT /api/users/profile
+Esperado: 400 con mensaje
+Test: UserAuthorizationTest · nombre vacío; Newman 02
+Defecto: —"
+TC-09 · Error: vehículo inexistente o dado de baja,Tarea,Medium,caso-de-prueba,hu-02,"HU: HU-02 (Perfil y vehículo del conductor)
+Tipo: Negativo
+Precondición: Sesión de conductor
+Datos: vehicleModelId 999999
+Pasos: PUT /api/users/profile
+Esperado: 400, no 500
+Test: VehicleSelectionTest · id fuera del catálogo
+Defecto: —"
+TC-10 · Alternativo: cambio de contraseña con la actual correcta,Tarea,Medium,caso-de-prueba,hu-02,"HU: HU-02 (Perfil y vehículo del conductor)
+Tipo: Positivo
+Precondición: Sesión de conductor
+Datos: actual + nueva
+Pasos: PUT /api/users/profile/password
+Esperado: 204 y la nueva sirve para entrar
+Test: UserAuthorizationTest · contraseña; Newman 02
+Defecto: —"
+"TC-11 · Mass assignment: role, active y email del cuerpo se ignoran",Tarea,High,caso-de-prueba,hu-02,"HU: HU-02 (Perfil y vehículo del conductor)
+Tipo: Negativo
+Precondición: Sesión de conductor
+Datos: role=ADMIN, active=false
+Pasos: PUT /api/users/profile
+Esperado: 200; en la base sigue CONDUCTOR, activo, mismo email
+Test: ApiAttackTest (core) · profileIgnoresPrivilegedFields
+Defecto: —"
+TC-12 · Feliz: el CPO dueño edita su estación,Tarea,High,caso-de-prueba,hu-03,"HU: HU-03 (Seguridad por rol y por dueño)
+Tipo: Positivo
+Precondición: CPO con estación propia
+Datos: —
+Pasos: PUT /api/stations/{id}
+Esperado: 200
+Test: TerminalAuthorizationTest · CPO ABM completo
+Defecto: —"
+TC-13 · Error: CPO sobre estación ajena (BOLA),Tarea,High,caso-de-prueba,hu-03,"HU: HU-03 (Seguridad por rol y por dueño)
+Tipo: Negativo
+Precondición: Dos CPO
+Datos: token del otro CPO
+Pasos: PUT /api/stations/{id}
+Esperado: 404, sin datos
+Test: TerminalAuthorizationTest · otro CPO
+Defecto: —"
+"TC-14 · Error: conductor llama al backoffice (BFLA, SEC-05)",Tarea,High,caso-de-prueba,hu-03,"HU: HU-03 (Seguridad por rol y por dueño)
+Tipo: Negativo
+Precondición: Sesión de conductor
+Datos: —
+Pasos: GET /api/users
+Esperado: 404, igual a ruta inexistente
+Test: UserAuthorizationTest · token de CONDUCTOR
+Defecto: —"
+TC-15 · Error: JWT vencido,Tarea,High,caso-de-prueba,hu-03,"HU: HU-03 (Seguridad por rol y por dueño)
+Tipo: Negativo
+Precondición: Usuario existente
+Datos: token con exp pasado
+Pasos: GET /api/users/profile
+Esperado: 401
+Test: ApiAttackTest (4 módulos) · rejectsExpiredToken
+Defecto: DEF-02"
+TC-16 · Error: JWT con firma alterada (SEC-04),Tarea,High,caso-de-prueba,hu-03,"HU: HU-03 (Seguridad por rol y por dueño)
+Tipo: Negativo
+Precondición: Usuario existente
+Datos: cuerpo modificado, firma original
+Pasos: GET /api/users
+Esperado: 401
+Test: ApiAttackTest (4 módulos) · rejectsTampered*
+Defecto: DEF-02"
+TC-17 · Error: JWT con alg=none,Tarea,High,caso-de-prueba,hu-03,"HU: HU-03 (Seguridad por rol y por dueño)
+Tipo: Negativo
+Precondición: —
+Datos: token sin firma
+Pasos: GET /api/users
+Esperado: 401
+Test: ApiAttackTest (4 módulos) · rejectsAlgNone
+Defecto: DEF-02"
+TC-18 · Error: JWT de otro emisor,Tarea,High,caso-de-prueba,hu-03,"HU: HU-03 (Seguridad por rol y por dueño)
+Tipo: Negativo
+Precondición: —
+Datos: token firmado con otra clave
+Pasos: GET /api/users
+Esperado: 401
+Test: ApiAttackTest (4 módulos) · rejectsTokenFromAnotherIssuer
+Defecto: DEF-02"
+TC-19 · Borde: usuario dado de baja pierde la sesión al instante,Tarea,High,caso-de-prueba,hu-03,"HU: HU-03 (Seguridad por rol y por dueño)
+Tipo: Borde
+Precondición: Token vigente
+Datos: baja del usuario
+Pasos: GET /api/users/profile
+Esperado: Rechazado sin esperar el vencimiento
+Test: SessionHardeningTest · usuario dado de baja
+Defecto: —"
+TC-20 · Feliz: búsqueda por cercanía devuelve estaciones,Tarea,High,caso-de-prueba,hu-04,"HU: HU-04 (Búsqueda de estaciones en el mapa)
+Tipo: Positivo
+Precondición: Seed cargado
+Datos: lat/lon de CABA, radio 10
+Pasos: GET /api/search
+Esperado: 200 con estaciones ordenadas
+Test: TerminalServiceTest; Newman 03
+Defecto: —"
+TC-21 · Error: radio cero o negativo,Tarea,Medium,caso-de-prueba,hu-04,"HU: HU-04 (Búsqueda de estaciones en el mapa)
+Tipo: Negativo
+Precondición: —
+Datos: radiusKm=0
+Pasos: GET /api/search
+Esperado: 400
+Test: TerminalApiTest · radio no positivo; Newman 03
+Defecto: —"
+TC-22 · Error: inyección SQL en coordenadas,Tarea,High,caso-de-prueba,hu-04,"HU: HU-04 (Búsqueda de estaciones en el mapa)
+Tipo: Negativo
+Precondición: —
+Datos: lat=1 OR 1=1--
+Pasos: GET /api/search
+Esperado: 400, sin resultados
+Test: ApiAttackTest (core) · searchRejectsSqlInCoordinates
+Defecto: —"
+TC-23 · Alternativo: búsqueda y lectura sin sesión,Tarea,High,caso-de-prueba,hu-04,"HU: HU-04 (Búsqueda de estaciones en el mapa)
+Tipo: Positivo
+Precondición: —
+Datos: sin token
+Pasos: GET /api/stations, /api/search
+Esperado: 200
+Test: TerminalAuthorizationTest · búsqueda abierta
+Defecto: —"
+TC-24 · Feliz: alta de estación deja como dueño al CPO,Tarea,High,caso-de-prueba,hu-05,"HU: HU-05 (ABM de estaciones y conectores)
+Tipo: Positivo
+Precondición: Sesión de CPO
+Datos: datos válidos
+Pasos: POST /api/stations
+Esperado: 201, ownerId = CPO
+Test: TerminalAuthorizationTest · dueño; Newman 04
+Defecto: —"
+TC-25 · Mass assignment: ownerId y active del cuerpo se ignoran,Tarea,High,caso-de-prueba,hu-05,"HU: HU-05 (ABM de estaciones y conectores)
+Tipo: Negativo
+Precondición: Sesión de CPO
+Datos: ownerId=999999, active=false
+Pasos: POST /api/stations
+Esperado: 201; dueño = quien la crea, activa
+Test: ApiAttackTest (core) · stationIgnoresOwnerAndState
+Defecto: —"
+TC-26 · Borde: potencia cero o negativa del conector,Tarea,Medium,caso-de-prueba,hu-05,"HU: HU-05 (ABM de estaciones y conectores)
+Tipo: Borde
+Precondición: Estación propia
+Datos: maxPowerKw 0 y -5
+Pasos: POST /connectors, /configure
+Esperado: 400
+Test: TerminalApiTest · potencia; Newman 04
+Defecto: —"
+TC-27 · Error: SQL en el nombre y HTML en la dirección,Tarea,High,caso-de-prueba,hu-05,"HU: HU-05 (ABM de estaciones y conectores)
+Tipo: Negativo
+Precondición: Sesión de CPO
+Datos: '; DROP TABLE…, <img onerror>
+Pasos: POST /api/stations
+Esperado: 201, texto literal, listado intacto, nosniff
+Test: ApiAttackTest (core) · stationStoresHostileTextAsData
+Defecto: —"
+TC-28 · Feliz: el CPO dueño tarifa su conector,Tarea,Medium,caso-de-prueba,hu-06,"HU: HU-06 (Esquemas tarifarios)
+Tipo: Positivo
+Precondición: Conector propio
+Datos: kwhRate 350, seña 1200
+Pasos: POST /api/pricing
+Esperado: 201
+Test: PricingAuthorizationTest · dueño y ADMIN; Newman 05
+Defecto: —"
+TC-29 · Error: CPO tarifa conector ajeno,Tarea,High,caso-de-prueba,hu-06,"HU: HU-06 (Esquemas tarifarios)
+Tipo: Negativo
+Precondición: Dos CPO
+Datos: —
+Pasos: POST /api/pricing
+Esperado: 404
+Test: PricingAuthorizationTest · otro CPO
+Defecto: —"
+TC-30 · Error: tarifa negativa,Tarea,Medium,caso-de-prueba,hu-06,"HU: HU-06 (Esquemas tarifarios)
+Tipo: Negativo
+Precondición: Sesión de CPO
+Datos: kwhRate -1
+Pasos: POST /api/pricing
+Esperado: 400
+Test: Newman 05
+Defecto: —"
+TC-31 · Error: tarifa de conector inexistente,Tarea,Low,caso-de-prueba,hu-06,"HU: HU-06 (Esquemas tarifarios)
+Tipo: Negativo
+Precondición: —
+Datos: connectorId 999999
+Pasos: GET /api/pricing/connector/{id}
+Esperado: 404
+Test: Newman 05
+Defecto: DEF-07"
+"TC-32 · Feliz: ADMIN lista, consulta y da de baja",Tarea,Medium,caso-de-prueba,hu-07,"HU: HU-07 (Backoffice del administrador)
+Tipo: Positivo
+Precondición: Sesión de ADMIN
+Datos: —
+Pasos: GET/DELETE /api/users
+Esperado: 200 / 204
+Test: UserAuthorizationTest · ADMIN; Newman 06
+Defecto: —"
+TC-33 · Error: baja desde el backoffice de un id inexistente,Tarea,Medium,caso-de-prueba,hu-07,"HU: HU-07 (Backoffice del administrador)
+Tipo: Negativo
+Precondición: Sesión de ADMIN
+Datos: id 999999
+Pasos: DELETE /api/admin/users/{id}
+Esperado: 404
+Test: AdminErrorResponseTest (deshabilitado)
+Defecto: DEF-05"
+"TC-34 · Alternativo: el rol sale de la base, no del token",Tarea,High,caso-de-prueba,hu-07,"HU: HU-07 (Backoffice del administrador)
+Tipo: Borde
+Precondición: ADMIN degradado
+Datos: token viejo con ADMIN
+Pasos: GET /api/users
+Esperado: 404
+Test: SessionHardeningTest · rol de la base
+Defecto: —"
+TC-35 · Feliz: alta de tarjeta guarda marca y últimos 4,Tarea,High,caso-de-prueba,hu-08,"HU: HU-08 (Medios de pago del conductor)
+Tipo: Positivo
+Precondición: Sesión de conductor
+Datos: VISA 4111…1111
+Pasos: POST /api/payment-methods
+Esperado: 201, sin el número completo (SEC-09)
+Test: PaymentMethodApiTest; Newman 07
+Defecto: —"
+TC-36 · Error: número que no pasa el dígito verificador,Tarea,High,caso-de-prueba,hu-08,"HU: HU-08 (Medios de pago del conductor)
+Tipo: Negativo
+Precondición: Sesión de conductor
+Datos: 4111…1112
+Pasos: POST /api/payment-methods
+Esperado: 400 con motivo
+Test: PaymentMethodApiTest · número mal copiado; Newman 07
+Defecto: —"
+TC-37 · Error: conductor borra la tarjeta de otro (BOLA),Tarea,High,caso-de-prueba,hu-08,"HU: HU-08 (Medios de pago del conductor)
+Tipo: Negativo
+Precondición: Dos conductores
+Datos: id ajeno
+Pasos: DELETE /api/payment-methods/{id}
+Esperado: 404, no la borra
+Test: PaymentMethodApiTest · tarjeta de otro
+Defecto: DEF-07"
+TC-38 · Borde: tope de tarjetas vigentes,Tarea,Medium,caso-de-prueba,hu-08,"HU: HU-08 (Medios de pago del conductor)
+Tipo: Borde
+Precondición: Conductor con el máximo
+Datos: una más
+Pasos: POST /api/payment-methods
+Esperado: 400
+Test: PaymentServiceTest · tope
+Defecto: —"
+"TC-39 · Mass assignment: driverId, marca y token del cuerpo se ignoran",Tarea,High,caso-de-prueba,hu-08,"HU: HU-08 (Medios de pago del conductor)
+Tipo: Negativo
+Precondición: Sesión de conductor
+Datos: driverId=999, brand=AMEX
+Pasos: POST /api/payment-methods
+Esperado: 201 VISA/1111, dueño = token
+Test: ApiAttackTest (integration) · cardIgnoresServerOwnedFields
+Defecto: —"
+TC-40 · Feliz: retener un slot libre,Tarea,High,caso-de-prueba,hu-09,"HU: HU-09 (Retención y reserva de un slot)
+Tipo: Positivo
+Precondición: Conector disponible
+Datos: ventana futura de 1 h
+Pasos: POST /api/bookings/holds
+Esperado: 201 con vencimiento
+Test: BookingAuthorizationTest · CONDUCTOR; Newman 08
+Defecto: —"
+TC-41 · Error: slot ya tomado,Tarea,High,caso-de-prueba,hu-09,"HU: HU-09 (Retención y reserva de un slot)
+Tipo: Negativo
+Precondición: Slot retenido por otro
+Datos: misma ventana
+Pasos: POST /api/bookings/holds
+Esperado: 409
+Test: BookingAuthorizationTest · mismo slot; BookingApiTest
+Defecto: —"
+TC-42 · Borde: ventanas pegadas no se pisan,Tarea,High,caso-de-prueba,hu-09,"HU: HU-09 (Retención y reserva de un slot)
+Tipo: Borde
+Precondición: Reserva de 10 a 11
+Datos: ventana 11 a 12
+Pasos: POST /api/bookings/holds
+Esperado: 201
+Test: BookingServiceImplTest · ventana pegada; TimeWindowTest
+Defecto: —"
+TC-43 · Borde: 32 conductores por el mismo slot,Tarea,High,caso-de-prueba,hu-09,"HU: HU-09 (Retención y reserva de un slot)
+Tipo: Borde
+Precondición: —
+Datos: 32 hilos
+Pasos: startHold concurrente
+Esperado: Gana exactamente uno
+Test: BookingConcurrencyTest
+Defecto: —"
+TC-44 · Error: fin antes que el inicio,Tarea,Medium,caso-de-prueba,hu-09,"HU: HU-09 (Retención y reserva de un slot)
+Tipo: Negativo
+Precondición: Sesión de conductor
+Datos: end < start
+Pasos: POST /api/bookings/holds
+Esperado: 400
+Test: BookingAuthorizationTest · ventana invertida; Newman 08
+Defecto: —"
+TC-45 · Integración: catálogo de core caído,Tarea,High,caso-de-prueba,hu-09,"HU: HU-09 (Retención y reserva de un slot)
+Tipo: Negativo
+Precondición: core apagado
+Datos: —
+Pasos: POST /api/bookings/holds
+Esperado: 503 con mensaje
+Test: sin test automatizado; prueba manual (apagar core y retener)
+Defecto: —"
+TC-46 · Feliz: checkout confirma reserva y cobra seña,Tarea,High,caso-de-prueba,hu-10,"HU: HU-10 (Checkout de la reserva)
+Tipo: Positivo
+Precondición: Retención vigente y tarjeta
+Datos: acceptGracePeriod=true
+Pasos: POST /api/checkout/booking
+Esperado: 201, CONFIRMED, seña
+Test: CheckoutApiTest · orquesta; Newman 08
+Defecto: —"
+TC-47 · Error: sin aceptar la tolerancia de 15 min,Tarea,High,caso-de-prueba,hu-10,"HU: HU-10 (Checkout de la reserva)
+Tipo: Negativo
+Precondición: Retención vigente
+Datos: acceptGracePeriod=false
+Pasos: POST /api/checkout/booking
+Esperado: 400, la retención sigue
+Test: CheckoutApiTest · tolerancia; Newman 08
+Defecto: —"
+TC-48 · Error: conductor sin medio de pago,Tarea,High,caso-de-prueba,hu-10,"HU: HU-10 (Checkout de la reserva)
+Tipo: Negativo
+Precondición: Sin tarjetas
+Datos: —
+Pasos: POST /api/checkout/booking
+Esperado: 400
+Test: CheckoutApiTest · sin medio de pago
+Defecto: —"
+TC-49 · Integración: Pagos no responde,Tarea,High,caso-de-prueba,hu-10,"HU: HU-10 (Checkout de la reserva)
+Tipo: Negativo
+Precondición: integration apagado
+Datos: —
+Pasos: POST /api/checkout/booking
+Esperado: 503, la retención sigue en pie
+Test: CheckoutApiTest · Pagos no contesta
+Defecto: —"
+TC-50 · Feliz: reserva confirmada deja un aviso,Tarea,Medium,caso-de-prueba,hu-11,"HU: HU-11 (Avisos al conductor)
+Tipo: Positivo
+Precondición: Broker arriba
+Datos: checkout
+Pasos: Cola → historial
+Esperado: Aviso en GET /api/notifications
+Test: BookingNotificationFlowTest; Newman 09
+Defecto: —"
+TC-51 · Borde: mensaje duplicado se guarda una vez (SEC-08),Tarea,High,caso-de-prueba,hu-11,"HU: HU-11 (Avisos al conductor)
+Tipo: Borde
+Precondición: —
+Datos: mismo eventId dos veces
+Pasos: Cola
+Esperado: Un solo aviso
+Test: BookingNotificationFlowTest · duplicado; NotificationServiceImplTest
+Defecto: —"
+TC-52 · Integración: broker caído al confirmar,Tarea,High,caso-de-prueba,hu-11,"HU: HU-11 (Avisos al conductor)
+Tipo: Negativo
+Precondición: Artemis apagado
+Datos: checkout
+Pasos: POST checkout + levantar broker
+Esperado: Reserva confirmada y aviso reenviado solo
+Test: BookingWithoutBrokerTest (solo la primera mitad)
+Defecto: DEF-01"
+TC-53 · Error: conductor marca el aviso de otro,Tarea,High,caso-de-prueba,hu-11,"HU: HU-11 (Avisos al conductor)
+Tipo: Negativo
+Precondición: Dos conductores
+Datos: id ajeno
+Pasos: POST /{id}/read
+Esperado: 404
+Test: NotificationApiTest · aviso de otro
+Defecto: —"

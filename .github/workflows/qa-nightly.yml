@@ -1,0 +1,205 @@
+# Pruebas de QA que no entran en el pipeline de cada PR (QA-06 y QA-08).
+#
+# Separadas del CI a propósito: la carga dura 5 minutos y el escaneo activo de ZAP hasta 15, y
+# el pipeline de cada PR tiene que quedar por debajo de 15 minutos (eje B). Corren:
+#   - a mano, desde la pestaña Actions ("Run workflow"), antes de cada entrega;
+#   - todas las noches sobre main;
+#   - en cada push a main.
+#
+# No son checks del ruleset de main: un hallazgo de ZAP no tiene que bloquear un merge, tiene que
+# llegar al registro de defectos (QA-04).
+
+name: QA nocturno
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * *'   # 03:17 en Buenos Aires
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # G6: el docente corre gitleaks en vivo sobre todo el historial. Esto corre lo mismo antes.
+  secretos:
+    name: Secretos en el historial (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # todo el historial, no solo el último commit
+
+      - name: Escanear con gitleaks
+        run: |
+          curl -sSL -o gitleaks.tgz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz
+          tar xzf gitleaks.tgz gitleaks
+          ./gitleaks git --log-opts="--all" --redact --report-path gitleaks-report.json .
+
+      - name: Guardar el reporte
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks
+          path: gitleaks-report.json
+
+  # Eje D: 0 CVE críticas o altas sin mitigación documentada.
+  dependencias:
+    name: Dependencias (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      # Trivy analiza las bibliotecas que quedan DENTRO de los JAR, que son las que corren de
+      # verdad, incluidas las transitivas.
+      - name: Construir los JAR
+        run: mvn -B -Dmaven.test.skip=true -Dspotless.check.skip=true package
+
+      - name: Backend (JAR)
+        run: |
+          mkdir -p reports
+          docker run --rm -v "$PWD:/src" aquasec/trivy:0.57.0 rootfs \
+            --scanners vuln --severity HIGH,CRITICAL --format table \
+            --output /src/reports/trivy-backend.txt --exit-code 1 \
+            /src/backend/ecopedia-core/target /src/backend/ecopedia-charging/target \
+            /src/backend/ecopedia-integration/target /src/backend/ecopedia-async/target \
+            /src/simulation/payment-gateway/target /src/simulation/power-grid/target /src/simulation/charger/target \
+            || (cat reports/trivy-backend.txt; exit 1)
+
+      - name: Frontend (pnpm-lock)
+        if: always()
+        run: |
+          docker run --rm -v "$PWD:/src" aquasec/trivy:0.57.0 fs \
+            --scanners vuln --severity HIGH,CRITICAL --format table \
+            --output /src/reports/trivy-frontend.txt --exit-code 1 /src/frontend \
+            || (cat reports/trivy-frontend.txt; exit 1)
+
+      - name: Guardar reportes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy
+          path: reports/
+
+  # Eje D: ZAP baseline + activo autenticado. 0 alertas High; las Medium, justificadas.
+  zap:
+    name: OWASP ZAP (activo, autenticado)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      ECOPEDIA_BROKER_PASSWORD: qa-${{ github.run_id }}
+    services:
+      artemis:
+        image: apache/activemq-artemis:2.42.0
+        env:
+          ARTEMIS_USER: ecopedia
+          ARTEMIS_PASSWORD: qa-${{ github.run_id }}
+        ports:
+          - 61616:61616
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      - name: Construir y levantar los backends
+        run: |
+          mvn -B -Dmaven.test.skip=true -Dspotless.check.skip=true package
+          python3 -m pip install --quiet --user --break-system-packages bcrypt
+          bash qa/ci/start-stack.sh
+
+      - name: Sesión de conductor para ZAP
+        run: |
+          EMAIL="zap.${{ github.run_id }}@ecopedia.test"
+          PASS="zap-$(openssl rand -hex 8)"
+          curl -sf -X POST http://localhost:8081/api/auth/register -H 'Content-Type: application/json' \
+            -d "{\"email\":\"$EMAIL\",\"password\":\"$PASS\",\"fullName\":\"ZAP\"}" > /dev/null
+          TOKEN=$(curl -sf -X POST http://localhost:8081/api/auth/login -H 'Content-Type: application/json' \
+            -d "{\"email\":\"$EMAIL\",\"password\":\"$PASS\"}" | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')
+          echo "::add-mask::$TOKEN"
+          echo "ZAP_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      - name: Escanear
+        run: |
+          mkdir -p qa/zap/reports && chmod -R a+rwx qa/zap
+          docker run --rm --network host -v "$PWD/qa/zap:/zap/wrk:rw" \
+            -e ZAP_AUTH_HEADER_VALUE="Bearer $ZAP_TOKEN" \
+            ghcr.io/zaproxy/zaproxy:stable zap.sh -cmd -autorun /zap/wrk/zap-plan.yaml
+
+      - name: Guardar reporte y logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap
+          path: |
+            qa/zap/reports/
+            qa/ci/logs/
+
+      - name: Bajar los backends
+        if: always()
+        run: bash qa/ci/stop-stack.sh
+
+  # Eje C (QA-06): 50 usuarios, 5 minutos, p95 < 500 ms y < 1 % de errores.
+  carga:
+    name: Carga (k6)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ECOPEDIA_BROKER_PASSWORD: qa-${{ github.run_id }}
+    services:
+      artemis:
+        image: apache/activemq-artemis:2.42.0
+        env:
+          ARTEMIS_USER: ecopedia
+          ARTEMIS_PASSWORD: qa-${{ github.run_id }}
+        ports:
+          - 61616:61616
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      - name: Construir y levantar los backends
+        run: |
+          mvn -B -Dmaven.test.skip=true -Dspotless.check.skip=true package
+          python3 -m pip install --quiet --user --break-system-packages bcrypt
+          bash qa/ci/start-stack.sh
+
+      # Un runner de GitHub tiene 4 núcleos compartidos entre los 4 backends y k6: el número
+      # sirve para comparar corridas entre sí. El que va al informe se mide en la máquina de la
+      # demo, con el mismo script (qa/README.md).
+      - name: Correr la carga
+        run: |
+          docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work \
+            grafana/k6:0.54.0 run qa/k6/load-critical.js
+
+      - name: Guardar el resumen
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6
+          path: |
+            k6-summary.json
+            k6-summary.txt
+            qa/ci/logs/
+
+      - name: Bajar los backends
+        if: always()
+        run: bash qa/ci/stop-stack.sh
