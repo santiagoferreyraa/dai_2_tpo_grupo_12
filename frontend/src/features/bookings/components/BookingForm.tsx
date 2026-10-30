@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 
+import CardPicker from '@/features/payments/components/CardPicker'
+import type { PaymentMethod } from '@/features/payments/types'
 import DepartureField from '@/features/terminals/components/DepartureField'
 import { CONNECTOR_TYPE_LABEL, formatPower } from '@/features/terminals/format'
 import type { ConnectorSummary, StationResult } from '@/features/terminals/types'
@@ -23,6 +25,7 @@ import {
   windowEnd,
 } from '../slots'
 import { dayHasRoom, fits, startIsAvailable, useAvailability } from '../availability'
+import { DEPOSIT_ARS, formatMoney } from '../charges'
 import type { Booking, Hold } from '../types'
 import { useDragToScroll } from '../useDragToScroll'
 import { pendingHoldFor, type BookingFlow, type BookingFlowError } from '../useBookingFlow'
@@ -104,6 +107,18 @@ export default function BookingForm({
     duration: DEFAULT_DURATION,
   })
 
+  /*
+   * La tarjeta elegida para pagar. Vive acá y no en la revisión por lo mismo que `choice`: la
+   * revisión se desmonta con "Cambiar horario", y volver tiene que encontrar la misma tarjeta.
+   * `null` es "todavía ninguna", y cae en la primera vigente.
+   */
+  const [cardId, setCardId] = useState<number | null>(null)
+  const cards = payment.status === 'ready' ? payment.cards : []
+  const selectedCardId =
+    cards.find((card) => card.id === cardId && !card.expired)?.id ??
+    cards.find((card) => !card.expired)?.id ??
+    null
+
   return (
     <div className="flex flex-col gap-5">
       <header className="flex flex-col gap-1">
@@ -119,15 +134,15 @@ export default function BookingForm({
         </p>
       </header>
 
-      {(step.kind === 'choosing' || step.kind === 'holding') && payment === 'checking' && (
+      {(step.kind === 'choosing' || step.kind === 'holding') && payment.status === 'checking' && (
         <p className="text-text-muted text-sm">Revisando tus medios de pago…</p>
       )}
 
-      {(step.kind === 'choosing' || step.kind === 'holding') && payment === 'missing' && (
+      {(step.kind === 'choosing' || step.kind === 'holding') && payment.status === 'missing' && (
         <NoCardNotice onCancel={onCancel} cancelLabel={cancelLabel} />
       )}
 
-      {(step.kind === 'choosing' || step.kind === 'holding') && payment === 'ready' && (
+      {(step.kind === 'choosing' || step.kind === 'holding') && payment.status === 'ready' && (
         <ChooseStep
           stationId={station.stationId}
           connectorId={connector.connectorId}
@@ -147,6 +162,9 @@ export default function BookingForm({
           hold={step.hold}
           busy={step.kind === 'confirming'}
           error={flow.error}
+          cards={cards}
+          selectedCardId={selectedCardId}
+          onSelectCard={(card) => setCardId(card.id)}
           onConfirm={flow.confirm}
           onChangeWindow={flow.changeWindow}
           onExpire={flow.expire}
@@ -207,7 +225,8 @@ function NoCardNotice({ onCancel, cancelLabel }: { onCancel: () => void; cancelL
       <div className="border-border bg-surface/40 flex flex-col gap-1 rounded-2xl border px-4 py-3 text-sm">
         <p className="text-text font-semibold">Para reservar necesitás una tarjeta registrada</p>
         <p className="text-text-muted">
-          La tarjeta es obligatoria para reservar. Cargala desde tu perfil y volvé a este conector.
+          Con ella se paga la seña de {formatMoney(DEPOSIT_ARS)} al confirmar. Cargala desde tu
+          perfil y volvé a este conector.
         </p>
       </div>
 
@@ -447,6 +466,14 @@ function ChooseStep({
       )}
 
       {/*
+        La seña se anuncia desde el primer paso y no recién en la revisión: enterarse de un cobro
+        con el horario ya retenido y el reloj corriendo es tarde para pensarlo.
+      */}
+      <p className="text-text-muted text-xs">
+        Al confirmar se cobra una seña de {formatMoney(DEPOSIT_ARS)}.
+      </p>
+
+      {/*
         Mientras llegan los huecos se puede elegir igual: el aviso dice que las horas ocupadas
         todavía no están marcadas, en vez de bloquear el formulario por una consulta.
       */}
@@ -492,12 +519,26 @@ interface ReviewStepProps {
   hold: Hold
   busy: boolean
   error: BookingFlowError | null
-  onConfirm: (acceptGracePeriod: boolean) => void
+  /** Las tarjetas para elegir con cuál pagar. Vacío si no se pudieron traer: no se ofrece elegir. */
+  cards: PaymentMethod[]
+  selectedCardId: number | null
+  onSelectCard: (card: PaymentMethod) => void
+  onConfirm: (acceptGracePeriod: boolean, paymentMethodId: number | null) => void
   onChangeWindow: () => void
   onExpire: () => void
 }
 
-function ReviewStep({ hold, busy, error, onConfirm, onChangeWindow, onExpire }: ReviewStepProps) {
+function ReviewStep({
+  hold,
+  busy,
+  error,
+  cards,
+  selectedCardId,
+  onSelectCard,
+  onConfirm,
+  onChangeWindow,
+  onExpire,
+}: ReviewStepProps) {
   const now = useNow(1000)
   const remaining = hold.expiresAt.getTime() - now.getTime()
 
@@ -524,88 +565,141 @@ function ReviewStep({ hold, busy, error, onConfirm, onChangeWindow, onExpire }: 
    */
   const [accepted, setAccepted] = useState(false)
   const deadline = formatTimeAfter(hold.start, graceDeadline(hold.start))
+  const withCards = cards.length > 0
 
   return (
-    <div className="flex flex-col gap-5">
-      <p
-        className={`flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm ${
-          urgent ? 'border-danger/50 text-danger' : 'border-primary/40 text-text'
-        }`}
-      >
-        <span aria-hidden="true" className="relative flex h-2.5 w-2.5 shrink-0">
-          <span
-            className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 motion-reduce:animate-none ${
-              urgent ? 'bg-danger' : 'bg-primary'
-            }`}
-          />
-          <span
-            className={`relative inline-flex h-2.5 w-2.5 rounded-full ${urgent ? 'bg-danger' : 'bg-primary'}`}
-          />
-        </span>
-        <span>
-          Te guardamos este horario por{' '}
-          {/*
+    /*
+      Dos formas con el mismo contenido. En el celular, una sola columna: la tarjeta entre el
+      resumen y la tolerancia. En el diálogo (desde `md`, que es donde reservar abre la ventana y
+      no el panel), dos: lo que se lee y se acepta a la izquierda, la tarjeta a la derecha. Apilado
+      todo en una columna, la pila dejaba el diálogo más alto que la pantalla.
+
+      Las dos salen del mismo árbol. La columna izquierda es `contents` en el celular —sus hijos
+      pasan a ser hijos directos de la columna única—, y el `order-1` de la tolerancia, el error y
+      los botones los manda abajo de la tarjeta, que en el DOM está después de la columna.
+
+      `data-booking-wide` es lo que mira `BookingDialog` para ensancharse: solo hace falta más
+      ancho cuando hay tarjetas que mostrar.
+    */
+    <div
+      data-booking-wide={withCards ? '' : undefined}
+      className={`flex flex-col gap-5 ${
+        withCards ? 'md:grid md:grid-cols-[minmax(0,1fr)_22rem] md:items-start md:gap-8' : ''
+      }`}
+    >
+      <div className="contents md:flex md:flex-col md:gap-5">
+        <p
+          className={`flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm ${
+            urgent ? 'border-danger/50 text-danger' : 'border-primary/40 text-text'
+          }`}
+        >
+          <span aria-hidden="true" className="relative flex h-2.5 w-2.5 shrink-0">
+            <span
+              className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 motion-reduce:animate-none ${
+                urgent ? 'bg-danger' : 'bg-primary'
+              }`}
+            />
+            <span
+              className={`relative inline-flex h-2.5 w-2.5 rounded-full ${urgent ? 'bg-danger' : 'bg-primary'}`}
+            />
+          </span>
+          <span>
+            Te guardamos este horario por{' '}
+            {/*
             Sin `aria-live`: un lector de pantalla anunciaría cada segundo. El tiempo está escrito
             y se lee cuando se lo busca.
           */}
-          <strong className="font-bold tabular-nums">{formatCountdown(remaining)}</strong>. Confirmá
-          antes de que venza.
-        </span>
-      </p>
+            <strong className="font-bold tabular-nums">{formatCountdown(remaining)}</strong>.
+            Confirmá antes de que venza.
+          </span>
+        </p>
 
-      <dl className="border-border bg-surface/40 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-2xl border px-4 py-3 text-sm">
-        <dt className="text-text-muted">Horario</dt>
-        <dd className="text-text font-semibold first-letter:uppercase">
-          {formatWindow(hold.start, hold.end)}
-        </dd>
-        <dt className="text-text-muted">Seña</dt>
-        <dd className="text-text">Sin cobro por ahora</dd>
-      </dl>
+        <dl className="border-border bg-surface/40 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-2xl border px-4 py-3 text-sm">
+          <dt className="text-text-muted">Horario</dt>
+          <dd className="text-text font-semibold first-letter:uppercase">
+            {formatWindow(hold.start, hold.end)}
+          </dd>
+          <dt className="text-text-muted">Seña</dt>
+          <dd className="text-text">
+            <span className="font-semibold">{formatMoney(DEPOSIT_ARS)}</span>
+            <span className="text-text-muted"> · se cobra al confirmar</span>
+          </dd>
+        </dl>
 
-      {/*
+        {/*
         Todo el texto es la etiqueta: tocar cualquier parte tilda el check, que en el celular es la
         diferencia entre acertarle a un cuadradito de 16 px o no.
       */}
-      <label className="text-text flex cursor-pointer items-start gap-3 text-sm leading-relaxed">
-        <input
-          type="checkbox"
-          checked={accepted}
-          onChange={(event) => setAccepted(event.target.checked)}
-          disabled={busy}
-          className="accent-primary mt-1 h-4 w-4 shrink-0 cursor-pointer disabled:cursor-not-allowed"
-        />
-        <span>
-          Acepto que la reserva cuenta con una tolerancia de {GRACE_MINUTES} minutos desde su inicio
-          (hasta las {deadline}). Transcurrido ese plazo sin que me presente, la reserva se
-          cancelará automáticamente.
-        </span>
-      </label>
+        <label className="text-text order-1 flex cursor-pointer items-start gap-3 text-sm leading-relaxed">
+          <input
+            type="checkbox"
+            checked={accepted}
+            onChange={(event) => setAccepted(event.target.checked)}
+            disabled={busy}
+            className="accent-primary mt-1 h-4 w-4 shrink-0 cursor-pointer disabled:cursor-not-allowed"
+          />
+          <span>
+            Acepto que la reserva cuenta con una tolerancia de {GRACE_MINUTES} minutos desde su
+            inicio (hasta las {deadline}). Transcurrido ese plazo sin que me presente, la reserva se
+            cancelará automáticamente.
+          </span>
+        </label>
 
-      {error !== null && <ErrorMessage error={error} />}
+        {error !== null && (
+          <div className="order-1">
+            <ErrorMessage error={error} />
+          </div>
+        )}
 
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <button type="button" onClick={onChangeWindow} disabled={busy} className={GHOST_BUTTON}>
-          Cambiar horario
-        </button>
-        {/*
+        <div className="order-1 flex flex-wrap items-center justify-end gap-2">
+          <button type="button" onClick={onChangeWindow} disabled={busy} className={GHOST_BUTTON}>
+            Cambiar horario
+          </button>
+          {/*
           Apagado hasta aceptar la tolerancia. El `disabled:cursor-wait` del botón es para cuando
           viaja la confirmación; sin aceptar, el cursor tiene que decir "no se puede" y no
           "esperá". Se reemplaza la clase en vez de sumar otra porque con dos `disabled:cursor-*`
           gana la que Tailwind escriba última en el CSS, no la última del atributo.
         */}
-        <button
-          type="button"
-          onClick={() => onConfirm(accepted)}
-          disabled={busy || expired || !accepted}
-          className={
-            accepted
-              ? PRIMARY_BUTTON
-              : PRIMARY_BUTTON.replace('disabled:cursor-wait', 'disabled:cursor-not-allowed')
-          }
-        >
-          {busy ? 'Confirmando…' : 'Confirmar reserva'}
-        </button>
+          <button
+            type="button"
+            onClick={() => onConfirm(accepted, selectedCardId)}
+            disabled={busy || expired || !accepted}
+            className={
+              accepted
+                ? PRIMARY_BUTTON
+                : PRIMARY_BUTTON.replace('disabled:cursor-wait', 'disabled:cursor-not-allowed')
+            }
+          >
+            {busy ? 'Confirmando…' : `Confirmar y pagar ${formatMoney(DEPOSIT_ARS)}`}
+          </button>
+        </div>
       </div>
+
+      {/*
+        Con qué tarjeta, antes de la tolerancia: es parte de lo que se revisa, y la tolerancia es
+        lo último que se acepta antes de confirmar. Con una sola tarjeta se muestra igual —sin
+        nada que elegir—, porque ver cuál se va a usar ya es la confirmación que hace falta.
+
+        En el celular va de borde a borde, como la billetera del perfil; en un celular ancho, con
+        el ancho de una tarjeta de verdad y centrada. En el diálogo ocupa su columna.
+      */}
+      {withCards && (
+        <div className="flex flex-col gap-3">
+          <p className="text-text text-sm font-semibold">
+            {cards.length > 1 ? 'Elegí con qué tarjeta pagar' : 'Pagás con'}
+          </p>
+          <div className="w-full sm:mx-auto sm:max-w-[22rem] md:max-w-none">
+            <CardPicker
+              cards={cards}
+              selectedId={selectedCardId}
+              onSelect={onSelectCard}
+              disabled={busy}
+              label="Tarjeta para pagar la reserva"
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -641,8 +735,8 @@ function ConfirmedStep({ booking, onDone }: { booking: Booking; onDone: () => vo
             {formatWindow(booking.start, booking.end)}
           </p>
           <p className="text-text-muted text-sm">
-            El conector queda bloqueado para vos en ese horario. La vas a ver en tu perfil, en
-            Reservas e historial.
+            Cobramos la seña de {formatMoney(booking.deposit)}. El conector queda bloqueado para vos
+            en ese horario. La vas a ver en tu perfil, en Reservas e historial.
           </p>
         </div>
       </div>

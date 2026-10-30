@@ -2,6 +2,7 @@ import { fetchAllStations } from '@/features/terminals/data/allStations'
 import type { StationResult } from '@/features/terminals/types'
 import { api } from '@/lib/api'
 
+import { DEPOSIT_ARS } from '../charges'
 import type {
   Booking,
   BookingLocation,
@@ -204,6 +205,8 @@ async function withLocations(responses: BookingResponse[]): Promise<Booking[]> {
     status: response.status,
     createdAt: new Date(response.createdAt),
     location: locations.get(response.connectorId) ?? null,
+    deposit: DEPOSIT_ARS,
+    chargingCost: null,
   }))
 }
 

@@ -10,11 +10,11 @@ interface CardStackProps {
   onRemove: (card: PaymentMethod) => void
 }
 
-/** Cuánto de cada tarjeta asoma por debajo de la que tiene encima. */
-const PEEK_PX = 72
+/** Cuánto de cada tarjeta asoma por debajo de la que tiene encima. Lo comparte `CardPicker`. */
+export const PEEK_PX = 72
 
 /** La proporción de una tarjeta real: 85,60 × 53,98 mm. La misma que usa `CardPreview`. */
-const CARD_RATIO = 1.586
+export const CARD_RATIO = 1.586
 
 /**
  * Cuánto hay que mantener el dedo apoyado para entrar al modo de eliminar.
