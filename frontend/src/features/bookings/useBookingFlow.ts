@@ -46,8 +46,11 @@ export interface BookingFlow {
   /** El problema del último intento, para mostrar en el paso en que quedó. */
   error: BookingFlowError | null
   requestHold: (start: Date, end: Date) => void
-  /** Recibe si el conductor aceptó la tolerancia: el backend también lo exige. */
-  confirm: (acceptGracePeriod: boolean) => void
+  /**
+   * Recibe si el conductor aceptó la tolerancia —el backend también lo exige— y la tarjeta
+   * elegida, o `null` si no hubo de dónde elegir.
+   */
+  confirm: (acceptGracePeriod: boolean, paymentMethodId: number | null) => void
   /** Vuelve a elegir el horario sin soltar la retención. Ver `requestHold`. */
   changeWindow: () => void
   /** Lo llama la cuenta regresiva cuando la retención vence sin confirmar. */
@@ -145,14 +148,14 @@ export function useBookingFlow(connectorId: number): BookingFlow {
   )
 
   const confirm = useCallback(
-    (acceptGracePeriod: boolean) => {
+    (acceptGracePeriod: boolean, paymentMethodId: number | null) => {
       if (step.kind !== 'reviewing') return
       const { hold } = step
 
       setError(null)
       setStep({ kind: 'confirming', hold })
 
-      checkoutBooking(hold.id, null, acceptGracePeriod).then(
+      checkoutBooking(hold.id, paymentMethodId, acceptGracePeriod).then(
         (booking) => {
           forgetHold(connectorId)
           /* La franja y el perfil muestran las reservas: se enteran de la nueva sin recargar. */
