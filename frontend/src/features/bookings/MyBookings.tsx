@@ -4,6 +4,7 @@ import { Link } from 'react-router'
 import { useSession } from '@/features/auth/session'
 import { CONNECTOR_TYPE_LABEL, formatPower } from '@/features/terminals/format'
 
+import { formatMoney } from './charges'
 import CancelBookingDialog from './components/CancelBookingDialog'
 import { refreshMyBookings, useMyBookings } from './data/myBookingsStore'
 import { formatRelative, formatWindow } from './slots'
@@ -202,6 +203,28 @@ function EmptyActive() {
   )
 }
 
+/**
+ * Lo que se pagó por la reserva: la seña siempre, y la carga cuando se sepa cuánto costó.
+ *
+ * Los montos van juntos en un renglón propio y no mezclados con el lugar: es lo que se busca al
+ * revisar un gasto, y así se encuentra sin leer el resto. La carga no aparece hasta tener un
+ * número —ni en cero ni con un guion—: una reserva que todavía no se usó no costó "$ 0".
+ */
+function Charges({ booking }: { booking: Booking }) {
+  return (
+    <p className="text-text-muted flex flex-wrap gap-x-3 text-xs tabular-nums">
+      <span>
+        Seña <span className="text-text font-semibold">{formatMoney(booking.deposit)}</span>
+      </span>
+      {booking.chargingCost !== null && (
+        <span>
+          Carga <span className="text-text font-semibold">{formatMoney(booking.chargingCost)}</span>
+        </span>
+      )}
+    </p>
+  )
+}
+
 const CANCEL_BUTTON =
   'text-text-muted hover:text-danger focus-visible:outline-primary cursor-pointer rounded-xl px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-2'
 
@@ -245,9 +268,12 @@ function ActiveBookingCard({
       </div>
 
       <div className="border-border/60 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-text text-sm font-semibold first-letter:uppercase">
-          {formatWindow(booking.start, booking.end)}
-        </p>
+        <div className="flex flex-col gap-1">
+          <p className="text-text text-sm font-semibold first-letter:uppercase">
+            {formatWindow(booking.start, booking.end)}
+          </p>
+          <Charges booking={booking} />
+        </div>
         <button
           type="button"
           onClick={onCancel}
@@ -308,6 +334,7 @@ function BookingRow({
           {booking.location !== null &&
             ` · ${CONNECTOR_TYPE_LABEL[booking.location.connectorType]} · ${formatPower(booking.location.maxPowerKw)}`}
         </p>
+        <Charges booking={booking} />
       </div>
 
       {label !== undefined && (

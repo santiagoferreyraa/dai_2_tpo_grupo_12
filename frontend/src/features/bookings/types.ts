@@ -101,6 +101,13 @@ export interface Booking {
   status: BookingStatus
   createdAt: Date
   location: BookingLocation | null
+  /** La seña cobrada al confirmar, en pesos. Ver `charges.ts`. */
+  deposit: number
+  /**
+   * Lo que costó la carga, en pesos. `null` mientras no se sepa: la reserva no se usó todavía, o
+   * el consumo (RF11) no está implementado y no hay de dónde sacarlo.
+   */
+  chargingCost: number | null
 }
 
 /** Un hueco libre de un conector, con fechas de verdad. Semiabierto, como en el backend. */

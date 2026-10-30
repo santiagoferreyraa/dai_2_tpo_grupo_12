@@ -25,6 +25,7 @@ import {
   windowEnd,
 } from '../slots'
 import { dayHasRoom, fits, startIsAvailable, useAvailability } from '../availability'
+import { DEPOSIT_ARS, formatMoney } from '../charges'
 import type { Booking, Hold } from '../types'
 import { useDragToScroll } from '../useDragToScroll'
 import { pendingHoldFor, type BookingFlow, type BookingFlowError } from '../useBookingFlow'
@@ -224,7 +225,8 @@ function NoCardNotice({ onCancel, cancelLabel }: { onCancel: () => void; cancelL
       <div className="border-border bg-surface/40 flex flex-col gap-1 rounded-2xl border px-4 py-3 text-sm">
         <p className="text-text font-semibold">Para reservar necesitás una tarjeta registrada</p>
         <p className="text-text-muted">
-          La tarjeta es obligatoria para reservar. Cargala desde tu perfil y volvé a este conector.
+          Con ella se paga la seña de {formatMoney(DEPOSIT_ARS)} al confirmar. Cargala desde tu
+          perfil y volvé a este conector.
         </p>
       </div>
 
@@ -464,6 +466,14 @@ function ChooseStep({
       )}
 
       {/*
+        La seña se anuncia desde el primer paso y no recién en la revisión: enterarse de un cobro
+        con el horario ya retenido y el reloj corriendo es tarde para pensarlo.
+      */}
+      <p className="text-text-muted text-xs">
+        Al confirmar se cobra una seña de {formatMoney(DEPOSIT_ARS)}.
+      </p>
+
+      {/*
         Mientras llegan los huecos se puede elegir igual: el aviso dice que las horas ocupadas
         todavía no están marcadas, en vez de bloquear el formulario por una consulta.
       */}
@@ -610,7 +620,10 @@ function ReviewStep({
             {formatWindow(hold.start, hold.end)}
           </dd>
           <dt className="text-text-muted">Seña</dt>
-          <dd className="text-text">Sin cobro por ahora</dd>
+          <dd className="text-text">
+            <span className="font-semibold">{formatMoney(DEPOSIT_ARS)}</span>
+            <span className="text-text-muted"> · se cobra al confirmar</span>
+          </dd>
         </dl>
 
         {/*
@@ -658,7 +671,7 @@ function ReviewStep({
                 : PRIMARY_BUTTON.replace('disabled:cursor-wait', 'disabled:cursor-not-allowed')
             }
           >
-            {busy ? 'Confirmando…' : 'Confirmar reserva'}
+            {busy ? 'Confirmando…' : `Confirmar y pagar ${formatMoney(DEPOSIT_ARS)}`}
           </button>
         </div>
       </div>
@@ -722,8 +735,8 @@ function ConfirmedStep({ booking, onDone }: { booking: Booking; onDone: () => vo
             {formatWindow(booking.start, booking.end)}
           </p>
           <p className="text-text-muted text-sm">
-            El conector queda bloqueado para vos en ese horario. La vas a ver en tu perfil, en
-            Reservas e historial.
+            Cobramos la seña de {formatMoney(booking.deposit)}. El conector queda bloqueado para vos
+            en ese horario. La vas a ver en tu perfil, en Reservas e historial.
           </p>
         </div>
       </div>
