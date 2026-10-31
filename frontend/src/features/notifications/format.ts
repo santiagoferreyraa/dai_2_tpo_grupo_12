@@ -1,4 +1,4 @@
-import { BoltIcon, CalendarIcon, CrossIcon } from '@/features/navigation/icons'
+import { BoltIcon, CalendarIcon, ClockIcon, CrossIcon } from '@/features/navigation/icons'
 
 import type { NotificationType } from './types'
 
@@ -33,6 +33,8 @@ interface NotificationLook {
 const NOTIFICATION_LOOK: Record<NotificationType, NotificationLook> = {
   BOOKING_CONFIRMED: { Icon: CalendarIcon, tint: 'text-primary' },
   BOOKING_CANCELLED: { Icon: CrossIcon, tint: 'text-danger' },
+  /* Una reserva que se perdió porque pasó el tiempo: el reloj, en el rojo de la cancelada. */
+  BOOKING_NO_SHOW: { Icon: ClockIcon, tint: 'text-danger' },
 }
 
 /**

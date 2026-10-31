@@ -307,7 +307,7 @@ dos ajustes:
 | `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN` | La clave con la que Pagos se presenta ante la pasarela simulada. La leen los dos |
 | `ECOPEDIA_POWER_GRID_PASSWORD` | La contraseña del UsernameToken con que RedEléctrica se presenta ante la distribuidora simulada. La leen los dos |
 | `ECOPEDIA_CHARGER_ACCESS_TOKEN` | La clave con la que Terminales (en core) se presenta ante los cargadores simulados. La leen los dos |
-| `ECOPEDIA_INTERNAL_TOKEN` | La clave de servicio entre artefactos de Ecopedia, para las rutas `/internal/**` (hoy, `charging` llamando a RedEléctrica en `integration`). La leen los dos |
+| `ECOPEDIA_INTERNAL_TOKEN` | La clave de servicio entre artefactos de Ecopedia, para las rutas `/internal/**` (hoy, `charging` llamando a RedEléctrica y al cobro de la seña en `integration`). La leen los dos |
 | `ECOPEDIA_LOGIN_MAX_FAILURES` | Cuántos logins fallidos seguidos bloquean una cuenta. Sin valor, 5 |
 | `ECOPEDIA_LOGIN_LOCK_MINUTES` | Cuántos minutos dura ese bloqueo. Sin valor, 15; para la demo conviene 1 |
 
@@ -467,6 +467,44 @@ log). La base está en `simulation/payment-gateway/data/`, que no se versiona.
 Dos cosas más: **escucha solo en `127.0.0.1`** y **pide una clave en cada llamada**
 (`Authorization: Bearer`), la de `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN`. Con `pnpm dev` y
 `pnpm dev:mem` los dos lados traen la misma de desarrollo.
+
+### La seña de la reserva
+
+Confirmar una reserva **cobra la seña de verdad**, contra la pasarela de arriba. El monto lo fija
+Tarificación por conector: **un conector sin esquema tarifario no pide seña**, y como core no
+siembra tarifas, en una base nueva todas las reservas salen sin seña hasta que el `ADMIN` cargue
+una en `/admin` → Tarifas. Para ver el cobro, cargá una tarifa con seña en el conector que vas a
+reservar.
+
+| Caso | Qué pasa |
+|------|----------|
+| Tarjeta que aprueba | Se cobra y se confirma |
+| `4000 0000 0000 0002` o `…9995` | 402 `CARD_DECLINED`: no se confirma y la retención sigue, para probar con otra |
+| `4000 0000 0000 0077` (8 s) | 503 `PAYMENT_UNAVAILABLE`. El reintento con la misma clave **no cobra dos veces** |
+| Cancelar hasta 5 h antes del inicio | Se devuelve la seña, sola, en unos segundos |
+| Cancelar después | La seña no se devuelve |
+| No presentarse | A los 15 min del inicio la reserva pasa a `NO_SHOW`, el conector se libera, la seña no se devuelve y llega un aviso |
+
+**El checkout pide la cabecera `Idempotency-Key`** (sin ella, 400 `IDEMPOTENCY_KEY_REQUIRED`): el
+mismo valor en cada reintento del mismo pedido devuelve la reserva ya hecha en vez de cobrar otra
+vez. El front la genera solo; con `curl`, `-H "Idempotency-Key: $(uuidgen)"`.
+
+`charging` cobra y devuelve por **`POST /internal/payments/deposits`** y
+**`POST /internal/payments/deposits/{id}/refund`** en `integration` (8083), con la clave de servicio,
+igual que RedEléctrica: el importe lo decide Tarificación, nunca el conductor, y por eso no hay una
+ruta pública de cobro.
+
+Los plazos son configurables en `charging`, y para una demo conviene achicarlos:
+
+| Variable | Qué es | Por defecto |
+|---|---|---|
+| `ECOPEDIA_BOOKING_DEPOSIT_REFUND_NOTICE` | Hasta cuánto antes del inicio cancelar devuelve la seña | `PT5H` |
+| `ECOPEDIA_BOOKING_NO_SHOW_GRACE` | La tolerancia desde el inicio antes de marcar la incomparecencia | `PT15M` |
+| `ECOPEDIA_BOOKING_NO_SHOW_SWEEP` | Cada cuánto se buscan incomparecencias | `PT1M` |
+| `ECOPEDIA_BOOKING_DEPOSIT_REFUND_RETRY` | Cada cuánto se reintenta una devolución que no salió | `PT15S` |
+
+Si se cambia la tolerancia, hay que cambiar también los textos que dicen "15 minutos" (el aviso de
+`async` y la pantalla de reservar).
 
 ### La distribuidora eléctrica simulada
 

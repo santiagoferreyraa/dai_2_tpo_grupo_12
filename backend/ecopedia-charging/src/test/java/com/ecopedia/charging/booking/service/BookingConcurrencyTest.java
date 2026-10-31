@@ -44,7 +44,9 @@ class BookingConcurrencyTest {
                 Clock.systemUTC(),
                 Duration.ofMinutes(10),
                 Duration.ofHours(4),
-                Duration.ofDays(30));
+                Duration.ofDays(30),
+                Duration.ofHours(5),
+                Duration.ofMinutes(15));
         service.start();
 
         Instant start = Instant.now().plus(Duration.ofDays(1));

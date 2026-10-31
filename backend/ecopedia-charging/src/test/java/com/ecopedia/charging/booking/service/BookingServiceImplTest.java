@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.ecopedia.charging.booking.domain.Booking;
+import com.ecopedia.charging.booking.domain.BookingDeposit;
 import com.ecopedia.charging.booking.domain.BookingEvent;
 import com.ecopedia.charging.booking.domain.BookingEventType;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
@@ -14,6 +15,7 @@ import com.ecopedia.charging.booking.domain.ConnectorCatalog;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
 import com.ecopedia.charging.booking.domain.ConnectorSnapshot;
+import com.ecopedia.charging.booking.domain.DepositStatus;
 import com.ecopedia.charging.booking.domain.DriverAlreadyBookedException;
 import com.ecopedia.charging.booking.domain.Hold;
 import com.ecopedia.charging.booking.domain.HoldExpiredException;
@@ -21,6 +23,7 @@ import com.ecopedia.charging.booking.domain.HoldNotFoundException;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
 import com.ecopedia.charging.booking.domain.TimeWindow;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -76,12 +79,23 @@ class BookingServiceImplTest {
 
     private static final Duration MAX_HORIZON = Duration.ofDays(30);
 
+    /** Cancelar hasta 5 horas antes devuelve la seña (Manuel, 31/10). */
+    private static final Duration REFUND_NOTICE = Duration.ofHours(5);
+
+    /** La tolerancia de RF09. */
+    private static final Duration NO_SHOW_GRACE = Duration.ofMinutes(15);
+
+    private static final BookingDeposit PAID = new BookingDeposit(new BigDecimal("8000.00"), 77L, "4242");
+
+    private InMemoryBookingRepository repository;
+
     /** El componente recién inicializado por el "contenedor", con el plazo de retención pedido. */
     private BookingServiceImpl started(ConnectorCatalog catalog, Duration holdTtl) {
         clock = new MutableClock(Instant.parse("2026-09-14T12:00:00Z"));
         events = new RecordingBookingEventPublisher();
+        repository = new InMemoryBookingRepository();
         service = new BookingServiceImpl(
-                catalog, new InMemoryBookingRepository(), events, clock, holdTtl, MAX_WINDOW, MAX_HORIZON);
+                catalog, repository, events, clock, holdTtl, MAX_WINDOW, MAX_HORIZON, REFUND_NOTICE, NO_SHOW_GRACE);
         service.start();
         return service;
     }
@@ -796,6 +810,190 @@ class BookingServiceImplTest {
 
             assertThatThrownBy(() -> service.getAvailability(
                             CONNECTOR, clock.instant().plus(Duration.ofHours(2)), clock.instant()))
+                    .isInstanceOf(InvalidBookingRequestException.class);
+        }
+    }
+
+    /** La seña al cancelar (ECO-53) y la incomparecencia (ECO-57). */
+    @Nested
+    class DepositAndNoShow {
+
+        /** Una reserva con seña cobrada que empieza dentro de {@code hoursFromNow} horas. */
+        private Booking paidBookingIn(long hoursFromNow) {
+            Hold hold = service.startHold(CONNECTOR, windowIn(hoursFromNow), DRIVER);
+            return service.confirmBooking(hold.id(), DRIVER, PAID, "checkout-key-1");
+        }
+
+        @Test
+        @DisplayName("Confirmar con seña la anota y fija la devolución hasta 5 horas antes del inicio")
+        void confirmingWithADepositRecordsIt() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+
+            Booking booking = paidBookingIn(24);
+
+            assertThat(booking.getDepositStatus()).isEqualTo(DepositStatus.CHARGED);
+            assertThat(booking.getDepositAmount()).isEqualByComparingTo("8000");
+            assertThat(booking.getDepositChargeId()).isEqualTo(77L);
+            assertThat(booking.getDepositRefundableUntil())
+                    .isEqualTo(booking.getWindow().start().minus(REFUND_NOTICE));
+            assertThat(service.findByCheckoutKey(DRIVER, "checkout-key-1")).contains(booking);
+            assertThat(service.findByCheckoutKey(OTHER_DRIVER, "checkout-key-1"))
+                    .isEmpty();
+        }
+
+        @Test
+        @DisplayName("Cancelar justo 5 horas antes del inicio devuelve la seña")
+        void cancellingExactlyAtTheDeadlineRefunds() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(6);
+
+            clock.advance(Duration.ofHours(1)); // faltan exactamente 5 horas
+            service.cancelBooking(booking.getId(), DRIVER);
+
+            Booking cancelled = repository.findById(booking.getId()).orElseThrow();
+            assertThat(cancelled.getStatus()).isEqualTo(BookingStatus.CANCELLED);
+            assertThat(cancelled.getDepositStatus()).isEqualTo(DepositStatus.REFUND_PENDING);
+            assertThat(service.findPendingDepositRefunds()).containsExactly(cancelled);
+
+            BookingEvent event = events.published().get(events.published().size() - 1);
+            assertThat(event.type()).isEqualTo(BookingEventType.BOOKING_CANCELLED);
+            assertThat(event.depositRefunded()).isTrue();
+            assertThat(event.cardLastFour()).isEqualTo("4242");
+        }
+
+        @Test
+        @DisplayName("Cancelar un segundo después del plazo no devuelve la seña")
+        void cancellingOneSecondLateForfeits() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(6);
+
+            clock.advance(Duration.ofHours(1).plusSeconds(1));
+            service.cancelBooking(booking.getId(), DRIVER);
+
+            Booking cancelled = repository.findById(booking.getId()).orElseThrow();
+            assertThat(cancelled.getDepositStatus()).isEqualTo(DepositStatus.FORFEITED);
+            assertThat(service.findPendingDepositRefunds()).isEmpty();
+            BookingEvent event = events.published().get(events.published().size() - 1);
+            assertThat(event.depositRefunded()).isFalse();
+            assertThat(event.depositAmount()).isEqualByComparingTo("8000");
+        }
+
+        @Test
+        @DisplayName("Cancelar una reserva sin seña no inventa una devolución")
+        void cancellingWithoutDepositHasNoRefund() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Hold hold = service.startHold(CONNECTOR, windowIn(24), DRIVER);
+            Booking booking = service.confirmBooking(hold.id(), DRIVER);
+
+            service.cancelBooking(booking.getId(), DRIVER);
+
+            assertThat(repository.findById(booking.getId()).orElseThrow().getDepositStatus())
+                    .isEqualTo(DepositStatus.NONE);
+            assertThat(events.published().get(events.published().size() - 1).depositRefunded())
+                    .isNull();
+        }
+
+        @Test
+        @DisplayName("Anotar la devolución deja la seña como devuelta")
+        void markingTheRefundCompletesIt() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(24);
+            service.cancelBooking(booking.getId(), DRIVER);
+
+            service.markDepositRefunded(booking.getId());
+
+            assertThat(repository.findById(booking.getId()).orElseThrow().getDepositStatus())
+                    .isEqualTo(DepositStatus.REFUNDED);
+            assertThat(service.findPendingDepositRefunds()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("Pasados 15 minutos del inicio sin presentarse, es una incomparecencia y la seña se pierde")
+        void noShowAfterTheGracePeriod() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(1);
+
+            clock.advance(Duration.ofHours(1).plus(NO_SHOW_GRACE));
+            int marked = service.expireNoShows();
+
+            assertThat(marked).isEqualTo(1);
+            Booking noShow = repository.findById(booking.getId()).orElseThrow();
+            assertThat(noShow.getStatus()).isEqualTo(BookingStatus.NO_SHOW);
+            assertThat(noShow.getDepositStatus()).isEqualTo(DepositStatus.FORFEITED);
+            BookingEvent event = events.published().get(events.published().size() - 1);
+            assertThat(event.type()).isEqualTo(BookingEventType.BOOKING_NO_SHOW);
+            assertThat(event.eventId()).isEqualTo("booking-" + booking.getId() + "-BOOKING_NO_SHOW");
+        }
+
+        @Test
+        @DisplayName("Un segundo antes de cumplirse la tolerancia, todavía no es una incomparecencia")
+        void notANoShowBeforeTheGracePeriodEnds() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(1);
+
+            clock.advance(Duration.ofHours(1).plus(NO_SHOW_GRACE).minusSeconds(1));
+
+            assertThat(service.expireNoShows()).isZero();
+            assertThat(repository.findById(booking.getId()).orElseThrow().getStatus())
+                    .isEqualTo(BookingStatus.CONFIRMED);
+        }
+
+        @Test
+        @DisplayName("El barrido no toca una reserva cancelada, y una incomparecencia no se marca dos veces")
+        void noShowOnlyTouchesConfirmedBookings() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking cancelled = paidBookingIn(1);
+            service.cancelBooking(cancelled.getId(), DRIVER);
+            Hold other = service.startHold(CONNECTOR + 1, windowIn(2), OTHER_DRIVER);
+            service.confirmBooking(other.id(), OTHER_DRIVER);
+
+            // La de OTHER_DRIVER empieza en 2 h y dura 1: a las 2 h 15 m está dentro de su ventana.
+            clock.advance(Duration.ofHours(2).plus(NO_SHOW_GRACE));
+
+            assertThat(service.expireNoShows()).isEqualTo(1);
+            assertThat(service.expireNoShows()).isZero();
+            assertThat(repository.findById(cancelled.getId()).orElseThrow().getStatus())
+                    .isEqualTo(BookingStatus.CANCELLED);
+        }
+
+        @Test
+        @DisplayName("Una reserva cuya ventana ya terminó entera no se marca: queda como estaba, sin aviso")
+        void finishedWindowsAreLeftAlone() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(1);
+            int eventsBefore = events.published().size();
+
+            // Termina a las 2 h: el barrido llega cuando ya terminó (reserva vieja o servidor apagado).
+            clock.advance(Duration.ofHours(2));
+
+            assertThat(service.expireNoShows()).isZero();
+            Booking untouched = repository.findById(booking.getId()).orElseThrow();
+            assertThat(untouched.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+            assertThat(untouched.getDepositStatus()).isEqualTo(DepositStatus.CHARGED);
+            assertThat(events.published()).hasSize(eventsBefore);
+        }
+
+        @Test
+        @DisplayName("Una incomparecencia libera al conductor y al conector, y ya no se puede cancelar")
+        void noShowFreesTheDriverAndTheConnector() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(1);
+            clock.advance(Duration.ofHours(1).plus(NO_SHOW_GRACE));
+
+            // Antes del barrido, la reserva en curso bloquea al conductor para cualquier otra.
+            assertThatThrownBy(() -> service.startHold(CONNECTOR + 1, windowIn(5), DRIVER))
+                    .isInstanceOf(DriverAlreadyBookedException.class);
+
+            service.expireNoShows();
+
+            assertThatCode(() -> service.startHold(CONNECTOR + 1, windowIn(5), DRIVER))
+                    .doesNotThrowAnyException();
+            // El resto de la ventana del conector vuelve a estar libre para otro conductor.
+            Instant now = clock.instant();
+            assertThat(service.getAvailability(
+                            CONNECTOR, now, booking.getWindow().end()))
+                    .containsExactly(new TimeWindow(now, booking.getWindow().end()));
+            assertThatThrownBy(() -> service.cancelBooking(booking.getId(), DRIVER))
                     .isInstanceOf(InvalidBookingRequestException.class);
         }
     }

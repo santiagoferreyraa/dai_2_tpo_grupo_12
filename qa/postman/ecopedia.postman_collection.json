@@ -2387,7 +2387,7 @@
           }
         },
         {
-          "name": "Checkout sin aceptar la tolerancia → 400",
+          "name": "Checkout sin Idempotency-Key → 400",
           "event": [
             {
               "listen": "test",
@@ -2397,7 +2397,8 @@
                   "let json = {};",
                   "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
                   "pm.test('responde 400', () => pm.response.to.have.status(400));",
-                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));"
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));",
+                  "pm.test(\"pm.expect(json.code).to.eql('IDEMPOTENCY_KEY_REQUIRED')\", () => { pm.expect(json.code).to.eql('IDEMPOTENCY_KEY_REQUIRED'); });"
                 ]
               }
             }
@@ -2421,6 +2422,50 @@
             "url": "{{chargingUrl}}/api/checkout/booking",
             "body": {
               "mode": "raw",
+              "raw": "{\n  \"holdId\": \"{{holdId}}\",\n  \"paymentMethodId\": {{cardId}},\n  \"acceptGracePeriod\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Checkout sin aceptar la tolerancia → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 400', () => pm.response.to.have.status(400));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));",
+                  "pm.test(\"pm.expect(json.code).to.eql('GRACE_PERIOD_NOT_ACCEPTED')\", () => { pm.expect(json.code).to.eql('GRACE_PERIOD_NOT_ACCEPTED'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driverToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{chargingUrl}}/api/checkout/booking",
+            "body": {
+              "mode": "raw",
               "raw": "{\n  \"holdId\": \"{{holdId}}\",\n  \"paymentMethodId\": {{cardId}},\n  \"acceptGracePeriod\": false\n}"
             }
           }
@@ -2428,6 +2473,15 @@
         {
           "name": "Checkout de la reserva → 201",
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('checkoutKey', pm.variables.replaceIn('{{$guid}}'))"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
@@ -2452,6 +2506,53 @@
               {
                 "key": "Authorization",
                 "value": "Bearer {{driverToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{checkoutKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{chargingUrl}}/api/checkout/booking",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"holdId\": \"{{holdId}}\",\n  \"paymentMethodId\": {{cardId}},\n  \"acceptGracePeriod\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Checkout repetido con la misma clave (QA-29) → 201",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 201', () => pm.response.to.have.status(201));",
+                  "pm.test(\"pm.expect(json.bookingId).to.eql(Number(pm.collectionVariables.get('bookingId')))\", () => { pm.expect(json.bookingId).to.eql(Number(pm.collectionVariables.get('bookingId'))); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driverToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{checkoutKey}}"
               },
               {
                 "key": "Content-Type",
@@ -3191,6 +3292,10 @@
     },
     {
       "key": "pollTries",
+      "value": ""
+    },
+    {
+      "key": "checkoutKey",
       "value": ""
     }
   ]

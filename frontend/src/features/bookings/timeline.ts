@@ -21,11 +21,12 @@ import type { Booking } from './types'
  * - `inProgress`: confirmada y su ventana está corriendo. Lo que falta es para que termine.
  * - `finished`: confirmada, pero su ventana ya pasó.
  * - `cancelled`: la canceló el conductor.
+ * - `noShow`: el conductor no se presentó; pasó la tolerancia y el backend la cerró (ECO-57).
  *
  * `inProgress` no significa que el auto esté cargando: eso es una sesión de carga (RF11), otro
  * componente que todavía no existe. Significa que el conector está bloqueado para él ahora mismo.
  */
-export type BookingPhase = 'upcoming' | 'inProgress' | 'finished' | 'cancelled'
+export type BookingPhase = 'upcoming' | 'inProgress' | 'finished' | 'cancelled' | 'noShow'
 
 /**
  * La fase de una reserva en un instante.
@@ -35,6 +36,7 @@ export type BookingPhase = 'upcoming' | 'inProgress' | 'finished' | 'cancelled'
  */
 export function bookingPhase(booking: Booking, now: Date): BookingPhase {
   if (booking.status === 'CANCELLED') return 'cancelled'
+  if (booking.status === 'NO_SHOW') return 'noShow'
   if (now.getTime() >= booking.end.getTime()) return 'finished'
   if (now.getTime() >= booking.start.getTime()) return 'inProgress'
   return 'upcoming'

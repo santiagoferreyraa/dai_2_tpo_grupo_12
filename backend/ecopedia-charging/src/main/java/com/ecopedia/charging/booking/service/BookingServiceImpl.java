@@ -1,6 +1,7 @@
 package com.ecopedia.charging.booking.service;
 
 import com.ecopedia.charging.booking.domain.Booking;
+import com.ecopedia.charging.booking.domain.BookingDeposit;
 import com.ecopedia.charging.booking.domain.BookingEvent;
 import com.ecopedia.charging.booking.domain.BookingEventPublisher;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
@@ -11,6 +12,7 @@ import com.ecopedia.charging.booking.domain.ConnectorCatalog;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
 import com.ecopedia.charging.booking.domain.ConnectorSnapshot;
+import com.ecopedia.charging.booking.domain.DepositStatus;
 import com.ecopedia.charging.booking.domain.DriverAlreadyBookedException;
 import com.ecopedia.charging.booking.domain.FreeWindows;
 import com.ecopedia.charging.booking.domain.Hold;
@@ -36,6 +38,7 @@ import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -101,6 +104,8 @@ public class BookingServiceImpl implements BookingService {
     private final Duration holdTtl;
     private final Duration maxWindow;
     private final Duration maxHorizon;
+    private final Duration depositRefundNotice;
+    private final Duration noShowGrace;
 
     /** El estado conversacional del componente: las retenciones vigentes, por id. */
     private final Map<UUID, Hold> holds = new ConcurrentHashMap<>();
@@ -135,7 +140,9 @@ public class BookingServiceImpl implements BookingService {
             Clock clock,
             @Value("${ecopedia.booking.hold-ttl}") Duration holdTtl,
             @Value("${ecopedia.booking.max-window}") Duration maxWindow,
-            @Value("${ecopedia.booking.max-horizon}") Duration maxHorizon) {
+            @Value("${ecopedia.booking.max-horizon}") Duration maxHorizon,
+            @Value("${ecopedia.booking.deposit-refund-notice}") Duration depositRefundNotice,
+            @Value("${ecopedia.booking.no-show-grace}") Duration noShowGrace) {
         this.connectorCatalog = connectorCatalog;
         this.bookingRepository = bookingRepository;
         this.eventPublisher = eventPublisher;
@@ -143,6 +150,8 @@ public class BookingServiceImpl implements BookingService {
         this.holdTtl = holdTtl;
         this.maxWindow = maxWindow;
         this.maxHorizon = maxHorizon;
+        this.depositRefundNotice = depositRefundNotice;
+        this.noShowGrace = noShowGrace;
     }
 
     /**
@@ -389,7 +398,7 @@ public class BookingServiceImpl implements BookingService {
     }
 
     @Override
-    public Booking confirmBooking(UUID holdId, Long driverId) {
+    public Booking confirmBooking(UUID holdId, Long driverId, BookingDeposit deposit, String checkoutKey) {
         Instant now = clock.instant();
         Booking booking;
 
@@ -435,7 +444,15 @@ public class BookingServiceImpl implements BookingService {
             requireDriverFree(driverId, hold.window(), now);
             requireFreeSlot(hold.connectorId(), hold.window(), now, driverId);
 
-            booking = bookingRepository.save(new Booking(hold.connectorId(), driverId, hold.window(), now));
+            booking = bookingRepository.save(new Booking(
+                    hold.connectorId(),
+                    driverId,
+                    hold.window(),
+                    now,
+                    deposit,
+                    depositRefundDeadline(hold.window()),
+                    holdId,
+                    checkoutKey));
             holds.remove(holdId);
         }
 
@@ -474,6 +491,11 @@ public class BookingServiceImpl implements BookingService {
             // Idempotente: lo que el conductor pidió ya está hecho, así que no es un error.
             return;
         }
+        if (!booking.isConfirmed()) {
+            // Una incomparecencia ya terminó por su cuenta: cancelarla reescribiría por qué terminó.
+            throw new InvalidBookingRequestException(
+                    "La reserva " + bookingId + " ya se cerró porque no te presentaste: no se puede cancelar");
+        }
         /*
          * Una ventana que ya terminó no se cancela: no hay nada que liberar, y dejar reescribirla
          * sería permitir borrar el historial de una reserva que el conductor usó o a la que no se
@@ -483,18 +505,89 @@ public class BookingServiceImpl implements BookingService {
             throw new InvalidBookingRequestException("La reserva " + bookingId + " ya terminó y no se puede cancelar");
         }
 
-        booking.cancel();
-        bookingRepository.save(booking);
+        Instant now = clock.instant();
+        booking.cancel(now);
+        /*
+         * Si el barrido de la incomparecencia la tocó entre la lectura y acá, el save choca con la
+         * versión (bloqueo optimista) y el conductor recibe un 409: la reserva ya no está como la vio.
+         */
+        booking = bookingRepository.save(booking);
         log.info(
-                "Reserva {} cancelada por el conductor {}: el conector {} vuelve a estar libre entre {} y {}",
+                "Reserva {} cancelada por el conductor {}: el conector {} vuelve a estar libre entre {} y {}. Seña: {}",
                 bookingId,
                 driverId,
                 booking.getConnectorId(),
                 booking.getWindow().start(),
-                booking.getWindow().end());
+                booking.getWindow().end(),
+                booking.getDepositStatus());
 
         // Solo la primera cancelación avisa: la segunda ya salió por el `return` de arriba.
-        eventPublisher.publish(BookingEvent.cancelled(booking, clock.instant()));
+        eventPublisher.publish(BookingEvent.cancelled(booking, now));
+    }
+
+    @Override
+    public Optional<Booking> findByCheckoutKey(Long driverId, String checkoutKey) {
+        return bookingRepository.findByDriverIdAndCheckoutKey(driverId, checkoutKey);
+    }
+
+    @Override
+    public Instant depositRefundDeadline(TimeWindow window) {
+        return window.start().minus(depositRefundNotice);
+    }
+
+    /**
+     * El barrido de la incomparecencia (ECO-57).
+     *
+     * <p><b>Sin el candado de las retenciones</b>: no compromete ninguna ventana, la libera. Y cada
+     * reserva se guarda por su cuenta: si una choca con la versión —el conductor la canceló en ese
+     * mismo instante—, se saltea y gana la cancelación, que es lo que el conductor hizo de verdad.
+     *
+     * <p><b>Solo mira reservas cuya ventana todavía no terminó.</b> Una que ya terminó entera se queda
+     * como está, y la pantalla la muestra como "Terminada". Son dos casos: las reservas de antes de que
+     * existiera la incomparecencia —no se sabe si el conductor fue, porque las sesiones de carga
+     * todavía no existen—, que la primera versión marcaba en masa y avisaba de cada una (lo encontró
+     * Manuel el 31/10); y un servidor apagado durante toda la ventana, donde avisar tarde de algo que ya
+     * pasó no le sirve a nadie. La seña de esas no se mueve: queda cobrada, que es lo mismo que perderla.
+     */
+    @Override
+    public int expireNoShows() {
+        Instant now = clock.instant();
+        List<Booking> overdue = bookingRepository.findByStatusAndWindowStartLessThanEqualAndWindowEndAfter(
+                BookingStatus.CONFIRMED, now.minus(noShowGrace), now);
+        int marked = 0;
+        for (Booking booking : overdue) {
+            booking.markNoShow();
+            Booking saved;
+            try {
+                saved = bookingRepository.save(booking);
+            } catch (OptimisticLockingFailureException changedMeanwhile) {
+                log.info(
+                        "La reserva {} cambió mientras se la marcaba como incomparecencia: se saltea", booking.getId());
+                continue;
+            }
+            marked++;
+            log.info(
+                    "Reserva {} del conductor {}: no se presentó. El conector {} queda libre; la seña ({}) queda para el operador",
+                    saved.getId(),
+                    saved.getDriverId(),
+                    saved.getConnectorId(),
+                    saved.getDepositAmount());
+            eventPublisher.publish(BookingEvent.noShow(saved, now));
+        }
+        return marked;
+    }
+
+    @Override
+    public List<Booking> findPendingDepositRefunds() {
+        return bookingRepository.findByDepositStatus(DepositStatus.REFUND_PENDING);
+    }
+
+    @Override
+    public void markDepositRefunded(Long bookingId) {
+        Booking booking =
+                bookingRepository.findById(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
+        booking.markDepositRefunded();
+        bookingRepository.save(booking);
     }
 
     @Override

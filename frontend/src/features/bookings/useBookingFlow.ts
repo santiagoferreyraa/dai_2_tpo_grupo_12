@@ -102,6 +102,43 @@ function forgetHold(connectorId: number) {
   if (pendingHold?.connectorId === connectorId) pendingHold = null
 }
 
+/**
+ * La `Idempotency-Key` del intento de confirmación que quedó sin respuesta clara (QA-29).
+ *
+ * **Se reusa solo cuando no se sabe qué pasó**: la red se cortó o el servidor no contestó (un 5xx).
+ * Ahí la seña pudo haberse cobrado, y el reintento con la misma clave lo averigua sin cobrar de
+ * nuevo. Con una respuesta clara —la tarjeta rechazada, la tolerancia sin aceptar— la clave ya
+ * nombra ese resultado, y reusarla devolvería el mismo rechazo aunque el conductor eligiera otra
+ * tarjeta: se pide una nueva. También si cambió la retención o la tarjeta, que es otro pedido.
+ *
+ * Vive fuera del componente por lo mismo que `pendingHold`: cerrar el diálogo después de un corte
+ * y volver a confirmar tiene que seguir siendo el mismo intento.
+ */
+let uncertainAttempt: { holdId: string; cardId: number | null; key: string } | null = null
+
+function attemptKey(holdId: string, cardId: number | null): string {
+  if (uncertainAttempt?.holdId === holdId && uncertainAttempt.cardId === cardId) {
+    return uncertainAttempt.key
+  }
+  return newIdempotencyKey()
+}
+
+/** Si el intento terminó sin saber si se cobró: sin conexión, o el servidor no contestó. */
+function isUncertain(reason: unknown): boolean {
+  return reason instanceof ApiError && (reason.status === 0 || reason.status >= 500)
+}
+
+/**
+ * Una clave nueva. `crypto.randomUUID` existe solo en contextos seguros (https o localhost), y el
+ * ambiente compartido de la demo se abre por la IP de la red local: ahí se arma con
+ * `getRandomValues`, que sí está siempre.
+ */
+function newIdempotencyKey(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 export function useBookingFlow(connectorId: number): BookingFlow {
   const [step, setStep] = useState<BookingStep>({ kind: 'choosing' })
   const [error, setError] = useState<BookingFlowError | null>(null)
@@ -155,8 +192,10 @@ export function useBookingFlow(connectorId: number): BookingFlow {
       setError(null)
       setStep({ kind: 'confirming', hold })
 
-      checkoutBooking(hold.id, paymentMethodId, acceptGracePeriod).then(
+      const key = attemptKey(hold.id, paymentMethodId)
+      checkoutBooking(hold.id, paymentMethodId, acceptGracePeriod, key).then(
         (booking) => {
+          uncertainAttempt = null
           forgetHold(connectorId)
           /* La franja y el perfil muestran las reservas: se enteran de la nueva sin recargar. */
           refreshMyBookings()
@@ -169,6 +208,9 @@ export function useBookingFlow(connectorId: number): BookingFlow {
           setStep({ kind: 'confirmed', booking })
         },
         (reason: unknown) => {
+          uncertainAttempt = isUncertain(reason)
+            ? { holdId: hold.id, cardId: paymentMethodId, key }
+            : null
           if (!mounted.current) return
           const status = reason instanceof ApiError ? reason.status : null
 
@@ -280,6 +322,23 @@ function confirmErrorMessage(reason: unknown): BookingFlowError {
     case 'PAYMENT_CHECK_UNAVAILABLE':
       return plain(
         'No pudimos verificar tu medio de pago. Esperá unos segundos y volvé a intentar: tu horario sigue guardado.',
+      )
+    case 'CARD_DECLINED':
+      return plain(
+        'No pudimos cobrar la seña con esa tarjeta. Probá con otra o revisá sus datos: tu horario sigue guardado.',
+      )
+    case 'PAYMENT_METHOD_INVALID':
+      return {
+        message: 'Esa tarjeta ya no se puede usar. Elegí otra o cargá una nueva.',
+        addCard: true,
+      }
+    case 'PAYMENT_UNAVAILABLE':
+      return plain(
+        'No pudimos procesar el pago ahora. Probá de nuevo en un momento: tu horario sigue guardado y no te vamos a cobrar dos veces.',
+      )
+    case 'PRICING_UNAVAILABLE':
+      return plain(
+        'No pudimos calcular la seña ahora. Probá de nuevo en un momento: tu horario sigue guardado.',
       )
     case 'GRACE_PERIOD_NOT_ACCEPTED':
       return plain(`Para confirmar, aceptá la tolerancia de ${GRACE_MINUTES} minutos.`)

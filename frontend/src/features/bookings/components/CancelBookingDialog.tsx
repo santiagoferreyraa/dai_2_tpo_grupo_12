@@ -4,10 +4,12 @@ import { createPortal } from 'react-dom'
 import { refreshNotificationsSoon } from '@/features/notifications/data/notificationsStore'
 import { ApiError } from '@/lib/api'
 
+import { formatHours, formatMoney, refundNoticeHours } from '../charges'
 import { cancelBooking } from '../data/bookingsRepository'
 import { refreshMyBookings } from '../data/myBookingsStore'
-import { formatWindow } from '../slots'
+import { formatWindow, graceDeadline } from '../slots'
 import type { Booking } from '../types'
+import { useNow } from '../useNow'
 
 /**
  * La confirmación antes de cancelar una reserva.
@@ -29,6 +31,8 @@ export default function CancelBookingDialog({ booking, onClose }: CancelBookingD
   const keepRef = useRef<HTMLButtonElement>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /* El plazo de devolución se puede cumplir con el diálogo abierto: la línea se recalcula sola. */
+  const now = useNow(15_000)
 
   const close = useCallback(() => {
     if (!busy) onClose()
@@ -62,12 +66,19 @@ export default function CancelBookingDialog({ booking, onClose }: CancelBookingD
       (reason: unknown) => {
         setBusy(false)
         /*
-          Un 400 es que la ventana terminó mientras se decidía: ya no hay nada que liberar, y la
-          lista se refresca para que la reserva pase al historial. Un 404, que ya no existe.
+          Un 400 es que la ventana terminó mientras se decidía, o que pasó la tolerancia y el
+          backend la cerró por incomparecencia (ECO-57); un 409, que esto último pasó justo en el
+          mismo instante. En los tres la lista se refresca para que la reserva pase al historial.
+          Un 404, que ya no existe.
         */
-        if (reason instanceof ApiError && reason.status === 400) {
+        if (reason instanceof ApiError && (reason.status === 400 || reason.status === 409)) {
           refreshMyBookings()
-          setError('Esta reserva ya terminó, así que no hay nada que cancelar.')
+          setError(
+            Date.now() >= graceDeadline(booking.start).getTime() &&
+              Date.now() < booking.end.getTime()
+              ? 'Pasó la tolerancia y la reserva se cerró porque no te presentaste.'
+              : 'Esta reserva ya terminó, así que no hay nada que cancelar.',
+          )
           return
         }
         if (reason instanceof ApiError && reason.status === 404) {
@@ -114,6 +125,8 @@ export default function CancelBookingDialog({ booking, onClose }: CancelBookingD
           . El horario queda libre y cualquier otro conductor lo puede reservar.
         </p>
 
+        <DepositLine booking={booking} now={now} />
+
         {error !== null && (
           <p role="alert" className="text-danger mt-3 text-sm">
             {error}
@@ -142,5 +155,32 @@ export default function CancelBookingDialog({ booking, onClose }: CancelBookingD
       </div>
     </div>,
     document.body,
+  )
+}
+
+/**
+ * Qué pasa con la seña si se cancela ahora (decidido por Manuel el 31/10): hasta el límite se
+ * devuelve; después, no. Sin seña no hay línea. El límite y el monto vienen con la reserva.
+ */
+function DepositLine({ booking, now }: { booking: Booking; now: Date }) {
+  const until = booking.depositRefundableUntil
+  if (booking.depositStatus !== 'CHARGED' || until === null) return null
+
+  const amount = formatMoney(booking.depositAmount)
+  const refunds = now.getTime() <= until.getTime()
+  return (
+    <p
+      className={`mt-3 rounded-2xl border px-4 py-3 text-sm leading-relaxed ${
+        refunds ? 'border-primary/40 text-text' : 'border-danger/50 text-danger'
+      }`}
+    >
+      {refunds
+        ? `Te devolvemos la seña de ${amount}${
+            booking.cardLastFour === null
+              ? ''
+              : ` a tu tarjeta terminada en ${booking.cardLastFour}`
+          }.`
+        : `Faltan menos de ${formatHours(refundNoticeHours(booking.start, until))} para el inicio: si cancelás, la seña de ${amount} no se devuelve.`}
+    </p>
   )
 }

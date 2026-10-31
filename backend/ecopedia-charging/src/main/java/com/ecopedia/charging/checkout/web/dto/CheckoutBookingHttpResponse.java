@@ -2,6 +2,7 @@ package com.ecopedia.charging.checkout.web.dto;
 
 import com.ecopedia.charging.booking.domain.Booking;
 import com.ecopedia.charging.booking.domain.BookingStatus;
+import com.ecopedia.charging.booking.domain.DepositStatus;
 import com.ecopedia.charging.checkout.domain.CheckoutResult;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -16,6 +17,9 @@ public record CheckoutBookingHttpResponse(
         Instant end,
         BookingStatus status,
         BigDecimal depositAmount,
+        DepositStatus depositStatus,
+        String cardLastFour,
+        Instant depositRefundableUntil,
         String paymentSummary,
         Instant checkedOutAt) {
 
@@ -28,6 +32,9 @@ public record CheckoutBookingHttpResponse(
                 booking.getWindow().end(),
                 booking.getStatus(),
                 result.depositAmount(),
+                booking.getDepositStatus(),
+                booking.getDepositCardLastFour(),
+                booking.getDepositRefundableUntil(),
                 result.paymentSummary(),
                 result.checkedOutAt());
     }

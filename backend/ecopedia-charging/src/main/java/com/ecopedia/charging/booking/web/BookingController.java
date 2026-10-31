@@ -53,7 +53,8 @@ public class BookingController {
     public ResponseEntity<HoldResponse> startHold(
             @AuthenticationPrincipal AuthenticatedUser driver, @Valid @RequestBody HoldRequest request) {
         Hold hold = bookingService.startHold(request.connectorId(), request.toWindow(), driver.id());
-        return ResponseEntity.status(HttpStatus.CREATED).body(HoldResponse.fromDomain(hold));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(HoldResponse.fromDomain(hold, bookingService.depositRefundDeadline(hold.window())));
     }
 
     /** Las reservas del conductor que pregunta. */

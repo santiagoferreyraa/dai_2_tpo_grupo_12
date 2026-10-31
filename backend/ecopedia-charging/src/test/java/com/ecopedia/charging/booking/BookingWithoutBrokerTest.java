@@ -102,6 +102,7 @@ class BookingWithoutBrokerTest {
                 .getContentAsString();
 
         mockMvc.perform(post("/api/checkout/booking")
+                        .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
                         .header(HttpHeaders.AUTHORIZATION, driver)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(

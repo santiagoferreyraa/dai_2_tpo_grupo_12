@@ -20,11 +20,15 @@
  * De qué avisa un aviso. Equivale al enum `NotificationType`.
  *
  * Se escribe como unión de textos y no como enum de TypeScript porque es exactamente lo que llega
- * en el JSON. Hoy son dos; el día que el backend agregue una, esto es lo único que hay que tocar
+ * en el JSON. Hoy son tres; el día que el backend agregue una, esto es lo único que hay que tocar
  * del lado de los tipos, y `NOTIFICATION_LOOK` en `format.ts` avisa en tiempo de compilación que
  * falta decidir con qué dibujo se muestra.
  */
-export type NotificationType = 'BOOKING_CONFIRMED' | 'BOOKING_CANCELLED'
+/**
+ * `BOOKING_NO_SHOW` es la incomparecencia (ECO-57): el conductor no se presentó y la reserva se
+ * cerró sola.
+ */
+export type NotificationType = 'BOOKING_CONFIRMED' | 'BOOKING_CANCELLED' | 'BOOKING_NO_SHOW'
 
 /** Un aviso como lo devuelve el backend. Equivale a NotificationResponse. */
 export interface NotificationResponse {

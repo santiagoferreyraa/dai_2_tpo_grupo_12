@@ -2,6 +2,7 @@ package com.ecopedia.async.notification.messaging;
 
 import com.ecopedia.async.notification.domain.NotificationToDispatch;
 import com.ecopedia.async.notification.domain.NotificationType;
+import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
@@ -20,9 +21,24 @@ public record BookingEventMessage(
         Long connectorId,
         Instant windowStart,
         Instant windowEnd,
-        Instant occurredAt) {
+        Instant occurredAt,
+        BigDecimal depositAmount,
+        Boolean depositRefunded,
+        String cardLastFour,
+        Instant depositRefundableUntil) {
 
     NotificationToDispatch toDispatch() {
-        return new NotificationToDispatch(eventId, type, driverId, bookingId, connectorId, windowStart, windowEnd);
+        return new NotificationToDispatch(
+                eventId,
+                type,
+                driverId,
+                bookingId,
+                connectorId,
+                windowStart,
+                windowEnd,
+                depositAmount,
+                depositRefunded,
+                cardLastFour,
+                depositRefundableUntil);
     }
 }

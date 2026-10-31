@@ -19,8 +19,22 @@ import type { ConnectorType } from '@/features/terminals/types'
  * ---------------------------------------------------------------------------
  */
 
-/** Equivale al enum BookingStatus. La incomparecencia y el consumo (RF09, RF11) todavía no existen. */
-export type BookingStatus = 'CONFIRMED' | 'CANCELLED'
+/**
+ * Equivale al enum BookingStatus. `NO_SHOW` es la incomparecencia (RF09, ECO-57): pasó la
+ * tolerancia sin que el conductor se presentara. El consumo de la reserva (RF11) todavía no existe.
+ */
+export type BookingStatus = 'CONFIRMED' | 'CANCELLED' | 'NO_SHOW'
+
+/**
+ * Qué pasó con la seña. Equivale al enum DepositStatus (ECO-53).
+ *
+ * - `NONE`: no hubo seña (el conector no la pide, o la reserva es de antes de que se cobrara).
+ * - `CHARGED`: cobrada, con la reserva en pie.
+ * - `REFUND_PENDING`: se canceló a tiempo y la devolución está en camino.
+ * - `REFUNDED`: devuelta a la tarjeta.
+ * - `FORFEITED`: quedó para el operador, por cancelar tarde o no presentarse.
+ */
+export type DepositStatus = 'NONE' | 'CHARGED' | 'REFUND_PENDING' | 'REFUNDED' | 'FORFEITED'
 
 /** Lo que se manda para retener un slot. Equivale a HoldRequest. */
 export interface HoldRequest {
@@ -37,6 +51,8 @@ export interface HoldResponse {
   start: string
   end: string
   expiresAt: string
+  /** Hasta cuándo, una vez confirmada, cancelar devolvería la seña. */
+  depositRefundableUntil: string
 }
 
 /** Un hueco libre de un conector, `[start, end)`. Equivale a FreeWindowResponse (ECO-33). */
@@ -53,6 +69,12 @@ export interface BookingResponse {
   end: string
   status: BookingStatus
   createdAt: string
+  depositAmount: number
+  depositStatus: DepositStatus
+  /** `null` si no hubo seña. */
+  depositRefundableUntil: string | null
+  /** La tarjeta con la que se cobró la seña; `null` si no hubo. */
+  cardLastFour: string | null
 }
 
 /*
@@ -73,6 +95,8 @@ export interface Hold {
   start: Date
   end: Date
   expiresAt: Date
+  /** Hasta cuándo cancelar devolvería la seña: se le dice al conductor antes de pagar. */
+  depositRefundableUntil: Date
 }
 
 /**
@@ -101,8 +125,13 @@ export interface Booking {
   status: BookingStatus
   createdAt: Date
   location: BookingLocation | null
-  /** La seña cobrada al confirmar, en pesos. Ver `charges.ts`. */
-  deposit: number
+  /** La seña cobrada al confirmar, en pesos. 0 si no hubo. */
+  depositAmount: number
+  depositStatus: DepositStatus
+  /** Hasta cuándo cancelar devuelve la seña. `null` si no hubo seña. */
+  depositRefundableUntil: Date | null
+  /** Los últimos cuatro de la tarjeta con la que se cobró. `null` si no hubo seña. */
+  cardLastFour: string | null
   /**
    * Lo que costó la carga, en pesos. `null` mientras no se sepa: la reserva no se usó todavía, o
    * el consumo (RF11) no está implementado y no hay de dónde sacarlo.

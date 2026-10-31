@@ -2,7 +2,6 @@ import { fetchAllStations } from '@/features/terminals/data/allStations'
 import type { StationResult } from '@/features/terminals/types'
 import { api } from '@/lib/api'
 
-import { DEPOSIT_ARS } from '../charges'
 import type {
   Booking,
   BookingLocation,
@@ -97,17 +96,26 @@ export async function getAvailability(
  * sin preguntar por la tarjeta. Desde acá el conector queda bloqueado para el resto durante esa
  * ventana.
  *
+ * **Cobra la seña** (ECO-53) con la tarjeta elegida, antes de confirmar. Por eso viaja la
+ * `Idempotency-Key` (QA-29): la misma en cada reintento del mismo intento, para que un doble clic o
+ * una respuesta perdida devuelvan la reserva ya hecha en vez de cobrar dos veces. Quién la genera y
+ * cuándo la renueva lo decide `useBookingFlow`.
+ *
  * Errores que la pantalla tiene que tratar aparte:
  * - **404 / 410**: la retención venció o no existe (las retenciones viven en memoria, y un
  *   reinicio de Reservas las borra). Hay que volver a elegir el horario.
  * - **409**: mientras tanto se guardó otra reserva que se cruza.
  * - **400 con `code`**: `PAYMENT_METHOD_REQUIRED` (no hay tarjeta) o `GRACE_PERIOD_NOT_ACCEPTED`.
- * - **503 con `code` `PAYMENT_CHECK_UNAVAILABLE`**: Pagos no contestó. La retención sigue en pie.
+ * - **402 `CARD_DECLINED`**: la pasarela rechazó la tarjeta. La retención sigue: se prueba con otra.
+ * - **422 `PAYMENT_METHOD_INVALID`**: la tarjeta elegida ya no sirve (dada de baja, vencida).
+ * - **503 con `code`**: `PAYMENT_CHECK_UNAVAILABLE` o `PAYMENT_UNAVAILABLE` (Pagos no contestó) y
+ *   `PRICING_UNAVAILABLE` (Tarificación no contestó). La retención sigue en pie.
  */
 export async function checkoutBooking(
   holdId: string,
-  paymentMethodId?: number | null,
-  acceptGracePeriod: boolean = true,
+  paymentMethodId: number | null,
+  acceptGracePeriod: boolean,
+  idempotencyKey: string,
 ): Promise<Booking> {
   const response = await api.post<{
     bookingId: number
@@ -116,13 +124,16 @@ export async function checkoutBooking(
     end: string
     status: BookingResponse['status']
     depositAmount: number
+    depositStatus: BookingResponse['depositStatus']
+    cardLastFour: string | null
+    depositRefundableUntil: string | null
     paymentSummary: string
     checkedOutAt: string
-  }>('/checkout/booking', {
-    holdId,
-    paymentMethodId: paymentMethodId ?? null,
-    acceptGracePeriod,
-  })
+  }>(
+    '/checkout/booking',
+    { holdId, paymentMethodId, acceptGracePeriod },
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  )
 
   const [booking] = await withLocations([
     {
@@ -132,6 +143,10 @@ export async function checkoutBooking(
       end: response.end,
       status: response.status,
       createdAt: response.checkedOutAt,
+      depositAmount: response.depositAmount,
+      depositStatus: response.depositStatus,
+      depositRefundableUntil: response.depositRefundableUntil,
+      cardLastFour: response.cardLastFour,
     },
   ])
   return booking
@@ -156,9 +171,14 @@ export async function listMyBookings(signal?: AbortSignal): Promise<Booking[]> {
  * Es idempotente en el backend: cancelar una reserva ya cancelada no es un error. Si el pedido se
  * cortó, se puede mandar de nuevo sin preguntar antes cómo quedó.
  *
+ * Con seña, cancelar hasta `depositRefundableUntil` la devuelve y después no (decidido por Manuel
+ * el 31/10). La devolución la hace el backend por su cuenta: la reserva vuelve con
+ * `REFUND_PENDING` y en segundos pasa a `REFUNDED`.
+ *
  * Errores que la pantalla tiene que tratar aparte:
- * - **400**: la ventana ya terminó y no hay nada que liberar.
+ * - **400**: la ventana ya terminó, o la reserva ya se cerró porque el conductor no se presentó.
  * - **404**: la reserva no existe.
+ * - **409 `BOOKING_CHANGED`**: la reserva cambió mientras se cancelaba (se cerró por incomparecencia).
  */
 export function cancelBooking(bookingId: number): Promise<void> {
   return api.delete(`/bookings/${String(bookingId)}`)
@@ -177,6 +197,7 @@ function toHold(response: HoldResponse): Hold {
     start: new Date(response.start),
     end: new Date(response.end),
     expiresAt: new Date(response.expiresAt),
+    depositRefundableUntil: new Date(response.depositRefundableUntil),
   }
 }
 
@@ -205,7 +226,11 @@ async function withLocations(responses: BookingResponse[]): Promise<Booking[]> {
     status: response.status,
     createdAt: new Date(response.createdAt),
     location: locations.get(response.connectorId) ?? null,
-    deposit: DEPOSIT_ARS,
+    depositAmount: response.depositAmount,
+    depositStatus: response.depositStatus,
+    depositRefundableUntil:
+      response.depositRefundableUntil === null ? null : new Date(response.depositRefundableUntil),
+    cardLastFour: response.cardLastFour,
     chargingCost: null,
   }))
 }

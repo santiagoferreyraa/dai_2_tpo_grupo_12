@@ -65,6 +65,11 @@ export interface RequestOptions {
   params?: Record<string, ParamValue | undefined>
   /** Para cancelar la petición si la pantalla se desmonta antes de que responda. */
   signal?: AbortSignal
+  /**
+   * Cabeceras propias de esa llamada, como la `Idempotency-Key` del checkout. Las de siempre
+   * —`Accept`, `Content-Type` y la sesión— las pone el cliente y no se pisan desde acá.
+   */
+  headers?: Record<string, string>
 }
 
 function buildUrl(path: string, params: RequestOptions['params']): string {
@@ -121,7 +126,7 @@ async function request<T>(
   body?: unknown,
   options?: RequestOptions,
 ): Promise<T> {
-  const headers: Record<string, string> = { Accept: 'application/json' }
+  const headers: Record<string, string> = { ...options?.headers, Accept: 'application/json' }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   if (sessionToken !== null) headers['Authorization'] = `Bearer ${sessionToken}`
 
