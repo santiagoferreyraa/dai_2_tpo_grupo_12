@@ -10,6 +10,7 @@ import com.ecopedia.charging.booking.domain.HoldNotFoundException;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
 import java.util.stream.Collectors;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -70,6 +71,19 @@ public class BookingExceptionHandler {
     public ProblemDetail handleDriverAlreadyBooked(DriverAlreadyBookedException exception) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
         problem.setProperty("code", exception.code());
+        return problem;
+    }
+
+    /**
+     * La reserva cambió entre que se leyó y se guardó: el barrido de la incomparecencia la cerró
+     * mientras el conductor la cancelaba. 409 con {@code code}, para que el front recargue la lista
+     * en vez de decir que se canceló.
+     */
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ProblemDetail handleChangedMeanwhile(OptimisticLockingFailureException exception) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT, "La reserva cambió mientras se la modificaba: " + exception.getMessage());
+        problem.setProperty("code", "BOOKING_CHANGED");
         return problem;
     }
 

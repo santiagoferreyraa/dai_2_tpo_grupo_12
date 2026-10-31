@@ -163,6 +163,7 @@ class BookingApiTest {
     /** Confirma la retención y devuelve la reserva creada. */
     private JsonNode confirm(String holdId, long userId) throws Exception {
         String response = mockMvc.perform(post("/api/checkout/booking")
+                        .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
                         .header(HttpHeaders.AUTHORIZATION, driver(userId))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(confirmBody(holdId)))
@@ -268,6 +269,7 @@ class BookingApiTest {
         confirm(holdId, DRIVER);
 
         mockMvc.perform(post("/api/checkout/booking")
+                        .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
                         .header(HttpHeaders.AUTHORIZATION, driver(DRIVER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(confirmBody(holdId)))
@@ -278,6 +280,7 @@ class BookingApiTest {
     @DisplayName("Confirmar una retención inventada recibe 404")
     void rejectsUnknownHold() throws Exception {
         mockMvc.perform(post("/api/checkout/booking")
+                        .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
                         .header(HttpHeaders.AUTHORIZATION, driver(DRIVER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(confirmBody(UUID.randomUUID().toString())))
@@ -290,6 +293,7 @@ class BookingApiTest {
         String holdId = holdSlot(14L, nextWindowStart(), DRIVER);
 
         mockMvc.perform(post("/api/checkout/booking")
+                        .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
                         .header(HttpHeaders.AUTHORIZATION, driver(OTHER_DRIVER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(confirmBody(holdId)))

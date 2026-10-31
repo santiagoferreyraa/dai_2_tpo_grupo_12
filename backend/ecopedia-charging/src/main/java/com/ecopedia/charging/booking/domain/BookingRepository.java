@@ -74,4 +74,19 @@ public interface BookingRepository {
      * instante} y {@code fin > instante}. Lista y no booleano por lo mismo que arriba.
      */
     List<Booking> findInProgressForDriver(Long driverId, BookingStatus status, Instant at);
+
+    /** La reserva que el conductor confirmó con esa clave de checkout, si la hay (QA-29). */
+    Optional<Booking> findByDriverIdAndCheckoutKey(Long driverId, String checkoutKey);
+
+    /**
+     * Las reservas en ese estado que empezaron hasta {@code startedBy} y cuya ventana todavía no
+     * terminó en {@code now}. Con {@code CONFIRMED} y el inicio menos la tolerancia, son las de un
+     * conductor que no se presentó (ECO-57). Las que ya terminaron enteras no entran: ver
+     * {@code BookingServiceImpl#expireNoShows}.
+     */
+    List<Booking> findByStatusAndWindowStartLessThanEqualAndWindowEndAfter(
+            BookingStatus status, Instant startedBy, Instant now);
+
+    /** Las reservas con la seña en ese estado: con {@code REFUND_PENDING}, las que esperan devolución. */
+    List<Booking> findByDepositStatus(DepositStatus depositStatus);
 }

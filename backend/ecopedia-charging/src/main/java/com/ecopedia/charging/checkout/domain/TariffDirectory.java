@@ -14,7 +14,8 @@ public interface TariffDirectory {
      * Calcula la seña aplicable para una reserva en el conector indicado.
      *
      * @param connectorId Identificador del conector
-     * @return Monto de la seña (depósito previo a la carga)
+     * @return Monto de la seña (depósito previo a la carga); 0 si el conector no tiene esquema tarifario
+     * @throws PricingUnavailableException si Tarificación no contestó: no se sabe cuánto es
      */
     BigDecimal calculateDeposit(Long connectorId);
 }

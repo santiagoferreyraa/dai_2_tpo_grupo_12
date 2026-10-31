@@ -4,7 +4,7 @@ import { Link } from 'react-router'
 import { useSession } from '@/features/auth/session'
 import { CONNECTOR_TYPE_LABEL, formatPower } from '@/features/terminals/format'
 
-import { formatMoney } from './charges'
+import { DEPOSIT_OUTCOME_LABEL, formatMoney } from './charges'
 import CancelBookingDialog from './components/CancelBookingDialog'
 import { refreshMyBookings, useMyBookings } from './data/myBookingsStore'
 import { formatRelative, formatWindow } from './slots'
@@ -204,18 +204,25 @@ function EmptyActive() {
 }
 
 /**
- * Lo que se pagó por la reserva: la seña siempre, y la carga cuando se sepa cuánto costó.
+ * Lo que se pagó por la reserva: la seña cobrada de verdad, qué pasó con ella, y la carga cuando se
+ * sepa cuánto costó.
  *
  * Los montos van juntos en un renglón propio y no mezclados con el lugar: es lo que se busca al
  * revisar un gasto, y así se encuentra sin leer el resto. La carga no aparece hasta tener un
  * número —ni en cero ni con un guion—: una reserva que todavía no se usó no costó "$ 0".
  */
 function Charges({ booking }: { booking: Booking }) {
+  const outcome = DEPOSIT_OUTCOME_LABEL[booking.depositStatus]
   return (
     <p className="text-text-muted flex flex-wrap gap-x-3 text-xs tabular-nums">
-      <span>
-        Seña <span className="text-text font-semibold">{formatMoney(booking.deposit)}</span>
-      </span>
+      {booking.depositAmount > 0 ? (
+        <span>
+          Seña <span className="text-text font-semibold">{formatMoney(booking.depositAmount)}</span>
+          {outcome !== undefined && ` · ${outcome}`}
+        </span>
+      ) : (
+        <span>Sin seña</span>
+      )}
       {booking.chargingCost !== null && (
         <span>
           Carga <span className="text-text font-semibold">{formatMoney(booking.chargingCost)}</span>
@@ -289,6 +296,7 @@ function ActiveBookingCard({
 const PHASE_LABEL: Partial<Record<BookingPhase, string>> = {
   finished: 'Terminada',
   cancelled: 'Cancelada',
+  noShow: 'No te presentaste',
 }
 
 /**
@@ -298,6 +306,7 @@ const PHASE_LABEL: Partial<Record<BookingPhase, string>> = {
 const PHASE_LABEL_CLASS: Partial<Record<BookingPhase, string>> = {
   finished: 'border-primary/60 text-primary',
   cancelled: 'border-danger/60 text-danger',
+  noShow: 'border-danger/60 text-danger',
 }
 
 /**

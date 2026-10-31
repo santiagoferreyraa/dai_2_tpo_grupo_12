@@ -27,6 +27,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/checkout")
 public class CheckoutController {
 
+    static final String IDEMPOTENCY_KEY = "Idempotency-Key";
+
     private final CheckoutFacade checkoutFacade;
 
     public CheckoutController(CheckoutFacade checkoutFacade) {
@@ -36,8 +38,13 @@ public class CheckoutController {
     /**
      * Procesa el checkout completo de una reserva (ECO-35, Patrón Facade).
      *
+     * <p><b>Pide la cabecera {@code Idempotency-Key}</b> (QA-29): el mismo valor en cada reintento del
+     * mismo pedido. Con ella, un doble clic o una respuesta perdida devuelven la reserva ya confirmada
+     * en vez de cobrar la seña dos veces. Sin ella, 400 con {@code IDEMPOTENCY_KEY_REQUIRED}.
+     *
      * @param driver Conductor autenticado que origina la solicitud
      * @param authHeader Encabezado Authorization con el JWT para propagación si corresponde
+     * @param idempotencyKey La clave del pedido; la valida el Facade
      * @param request Datos del checkout (retención, medio de pago, consentimiento)
      */
     @PostMapping("/booking")
@@ -45,11 +52,13 @@ public class CheckoutController {
     public ResponseEntity<CheckoutBookingHttpResponse> processBookingCheckout(
             @AuthenticationPrincipal AuthenticatedUser driver,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
+            @RequestHeader(value = IDEMPOTENCY_KEY, required = false) String idempotencyKey,
             @Valid @RequestBody CheckoutBookingHttpRequest request) {
 
         String token = authHeader != null && authHeader.startsWith("Bearer ") ? authHeader.substring(7) : null;
 
-        CheckoutResult result = checkoutFacade.processBookingCheckout(driver.id(), request.toDomain(), token);
+        CheckoutResult result =
+                checkoutFacade.processBookingCheckout(driver.id(), request.toDomain(), idempotencyKey, token);
         return ResponseEntity.status(HttpStatus.CREATED).body(CheckoutBookingHttpResponse.fromDomain(result));
     }
 }

@@ -42,6 +42,22 @@ public class PricingController {
         return ResponseEntity.ok(PricingSchemeResponse.fromDomain(scheme));
     }
 
+    /**
+     * RF06 / ECO-53: la seña que pide el conector para reservarlo. Pública, como la estimación: es
+     * un precio que se anuncia antes de comprometerse.
+     *
+     * <p>La consultan el checkout (para cobrarla) y la pantalla de reservar (para anunciarla), y
+     * tiene que ser la misma respuesta para los dos. Antes las dos la sacaban de {@code /estimate}
+     * con un consumo fijo de 10 kWh, que daba 400 con cualquier seña mayor a ese consumo.
+     *
+     * <p>Un conector sin esquema tarifario contesta 400, por el manejador de abajo: quien llama lo
+     * lee como "este conector no pide seña".
+     */
+    @GetMapping("/deposit")
+    public DepositResponse deposit(@RequestParam Long connectorId) {
+        return new DepositResponse(connectorId, pricingService.calculateDeposit(connectorId));
+    }
+
     /** RF06: Estimar importe proyectado para una reserva/carga. */
     @GetMapping("/estimate")
     public ResponseEntity<EstimateCostResponse> estimateCost(

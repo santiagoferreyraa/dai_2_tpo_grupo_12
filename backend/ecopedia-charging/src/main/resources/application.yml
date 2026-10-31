@@ -103,6 +103,22 @@ ecopedia:
     max-window: ${ECOPEDIA_BOOKING_MAX_WINDOW:PT4H}
     max-horizon: ${ECOPEDIA_BOOKING_MAX_HORIZON:P30D}
 
+    # Hasta cuánto antes del inicio cancelar devuelve la seña (ECO-53). Decidido por Manuel el
+    # 31/10: 5 horas, inclusive. Se fija en cada reserva al confirmarla, así que cambiarlo no toca
+    # las que ya están: se rigen por lo que se le dijo al conductor al pagar.
+    deposit-refund-notice: ${ECOPEDIA_BOOKING_DEPOSIT_REFUND_NOTICE:PT5H}
+
+    # Cada cuánto se reintenta devolver una seña que Pagos no pudo devolver en el momento.
+    deposit-refund-retry-interval: ${ECOPEDIA_BOOKING_DEPOSIT_REFUND_RETRY:PT15S}
+
+    # La tolerancia de RF09: pasado este tiempo desde el inicio sin presentarse, la reserva es una
+    # incomparecencia y la seña queda para el operador (ECO-57). Los avisos y la pantalla dicen
+    # "15 minutos": si se cambia acá, hay que cambiar esos textos.
+    no-show-grace: ${ECOPEDIA_BOOKING_NO_SHOW_GRACE:PT15M}
+
+    # Cada cuánto se buscan incomparecencias.
+    no-show-sweep-interval: ${ECOPEDIA_BOOKING_NO_SHOW_SWEEP:PT1M}
+
 ---
 # Perfil de desarrollo: base en memoria, para levantar el módulo sin PostgreSQL instalado.
 # Las demos de las entregas corren sobre PostgreSQL, no sobre H2.

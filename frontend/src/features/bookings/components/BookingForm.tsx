@@ -15,6 +15,7 @@ import {
   DURATIONS_MINUTES,
   formatCountdown,
   formatDuration,
+  formatLongDate,
   formatTime,
   formatTimeAfter,
   formatWindow,
@@ -25,10 +26,11 @@ import {
   windowEnd,
 } from '../slots'
 import { dayHasRoom, fits, startIsAvailable, useAvailability } from '../availability'
-import { DEPOSIT_ARS, formatMoney } from '../charges'
+import { formatHours, formatMoney, refundNoticeHours } from '../charges'
 import type { Booking, Hold } from '../types'
 import { useDragToScroll } from '../useDragToScroll'
 import { pendingHoldFor, type BookingFlow, type BookingFlowError } from '../useBookingFlow'
+import { useDeposit, type DepositState } from '../useDeposit'
 import { useNow } from '../useNow'
 import { usePaymentReadiness } from '../usePaymentReadiness'
 
@@ -101,6 +103,8 @@ export default function BookingForm({
 }: BookingFormProps) {
   const { step } = flow
   const payment = usePaymentReadiness()
+  /* La seña de este conector, de Tarificación: la misma que va a cobrar el checkout (ECO-53). */
+  const deposit = useDeposit(connector.connectorId)
   const [choice, setChoice] = useState<Choice>({
     day: null,
     start: null,
@@ -139,7 +143,7 @@ export default function BookingForm({
       )}
 
       {(step.kind === 'choosing' || step.kind === 'holding') && payment.status === 'missing' && (
-        <NoCardNotice onCancel={onCancel} cancelLabel={cancelLabel} />
+        <NoCardNotice deposit={deposit} onCancel={onCancel} cancelLabel={cancelLabel} />
       )}
 
       {(step.kind === 'choosing' || step.kind === 'holding') && payment.status === 'ready' && (
@@ -148,6 +152,7 @@ export default function BookingForm({
           connectorId={connector.connectorId}
           choice={choice}
           onChoiceChange={setChoice}
+          deposit={deposit}
           busy={step.kind === 'holding'}
           error={flow.error}
           onSubmit={flow.requestHold}
@@ -160,6 +165,7 @@ export default function BookingForm({
         <ReviewStep
           key={step.hold.id}
           hold={step.hold}
+          deposit={deposit}
           busy={step.kind === 'confirming'}
           error={flow.error}
           cards={cards}
@@ -219,14 +225,24 @@ const ADD_CARD_PATH = '/profile/payment-methods'
  * retenerle un conector diez minutos —y quitárselo a otro— para terminar en un error. Ver
  * `usePaymentReadiness`.
  */
-function NoCardNotice({ onCancel, cancelLabel }: { onCancel: () => void; cancelLabel: string }) {
+function NoCardNotice({
+  deposit,
+  onCancel,
+  cancelLabel,
+}: {
+  deposit: DepositState
+  onCancel: () => void
+  cancelLabel: string
+}) {
   return (
     <div className="flex flex-col gap-5">
       <div className="border-border bg-surface/40 flex flex-col gap-1 rounded-2xl border px-4 py-3 text-sm">
         <p className="text-text font-semibold">Para reservar necesitás una tarjeta registrada</p>
         <p className="text-text-muted">
-          Con ella se paga la seña de {formatMoney(DEPOSIT_ARS)} al confirmar. Cargala desde tu
-          perfil y volvé a este conector.
+          {deposit.status === 'ready' && deposit.amount > 0
+            ? `Con ella se paga la seña de ${formatMoney(deposit.amount)} al confirmar. `
+            : 'La tarjeta es obligatoria para reservar, aunque el conector no pida seña. '}
+          Cargala desde tu perfil y volvé a este conector.
         </p>
       </div>
 
@@ -253,6 +269,7 @@ interface ChooseStepProps {
   connectorId: number
   choice: Choice
   onChoiceChange: (choice: Choice) => void
+  deposit: DepositState
   busy: boolean
   error: BookingFlowError | null
   onSubmit: (start: Date, end: Date) => void
@@ -265,6 +282,7 @@ function ChooseStep({
   connectorId,
   choice,
   onChoiceChange,
+  deposit,
   busy,
   error,
   onSubmit,
@@ -469,9 +487,7 @@ function ChooseStep({
         La seña se anuncia desde el primer paso y no recién en la revisión: enterarse de un cobro
         con el horario ya retenido y el reloj corriendo es tarde para pensarlo.
       */}
-      <p className="text-text-muted text-xs">
-        Al confirmar se cobra una seña de {formatMoney(DEPOSIT_ARS)}.
-      </p>
+      <p className="text-text-muted text-xs">{depositNotice(deposit)}</p>
 
       {/*
         Mientras llegan los huecos se puede elegir igual: el aviso dice que las horas ocupadas
@@ -517,6 +533,7 @@ function ChooseStep({
 
 interface ReviewStepProps {
   hold: Hold
+  deposit: DepositState
   busy: boolean
   error: BookingFlowError | null
   /** Las tarjetas para elegir con cuál pagar. Vacío si no se pudieron traer: no se ofrece elegir. */
@@ -530,6 +547,7 @@ interface ReviewStepProps {
 
 function ReviewStep({
   hold,
+  deposit,
   busy,
   error,
   cards,
@@ -566,6 +584,17 @@ function ReviewStep({
   const [accepted, setAccepted] = useState(false)
   const deadline = formatTimeAfter(hold.start, graceDeadline(hold.start))
   const withCards = cards.length > 0
+
+  /*
+   * Sin seña no hay nada que devolver ni que perder, y no se habla de plata. Con la seña desconocida
+   * (Tarificación no contestó) se habla igual: el checkout la vuelve a pedir y la cobra.
+   */
+  const charges = deposit.status !== 'ready' || deposit.amount > 0
+  /*
+   * Sin el monto en el botón (Manuel, 31/10): con una seña grande el botón cambiaba de tamaño y en el
+   * celular se leía mal. El monto está a la vista en el renglón "Seña", justo arriba.
+   */
+  const confirmLabel = charges ? 'Confirmar y pagar' : 'Confirmar reserva'
 
   return (
     /*
@@ -621,10 +650,26 @@ function ReviewStep({
           </dd>
           <dt className="text-text-muted">Seña</dt>
           <dd className="text-text">
-            <span className="font-semibold">{formatMoney(DEPOSIT_ARS)}</span>
-            <span className="text-text-muted"> · se cobra al confirmar</span>
+            {deposit.status === 'ready' && deposit.amount === 0 ? (
+              <span className="font-semibold">Este conector no pide seña</span>
+            ) : (
+              <>
+                <span className="font-semibold">
+                  {deposit.status === 'ready'
+                    ? formatMoney(deposit.amount)
+                    : 'Se calcula al confirmar'}
+                </span>
+                <span className="text-text-muted"> · se cobra al confirmar</span>
+              </>
+            )}
           </dd>
         </dl>
+
+        {/*
+          Hasta cuándo cancelar devuelve la seña, ANTES de pagar: es parte de lo que se acepta. El
+          límite lo manda el backend con la retención, así que acá no hay ningún plazo escrito.
+        */}
+        {charges && <RefundNotice hold={hold} now={now} />}
 
         {/*
         Todo el texto es la etiqueta: tocar cualquier parte tilda el check, que en el celular es la
@@ -671,7 +716,7 @@ function ReviewStep({
                 : PRIMARY_BUTTON.replace('disabled:cursor-wait', 'disabled:cursor-not-allowed')
             }
           >
-            {busy ? 'Confirmando…' : `Confirmar y pagar ${formatMoney(DEPOSIT_ARS)}`}
+            {busy ? 'Confirmando…' : confirmLabel}
           </button>
         </div>
       </div>
@@ -701,6 +746,35 @@ function ReviewStep({
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * La seña, anunciada desde el primer paso y no recién en la revisión: enterarse de un cobro con el
+ * horario ya retenido y el reloj corriendo es tarde para pensarlo.
+ */
+function depositNotice(deposit: DepositState): string {
+  if (deposit.status === 'loading') return 'Calculando la seña de este conector…'
+  if (deposit.status === 'unknown') return 'Al confirmar se cobra la seña que fije este conector.'
+  if (deposit.amount === 0) return 'Este conector no pide seña.'
+  return `Al confirmar se cobra una seña de ${formatMoney(deposit.amount)}.`
+}
+
+/**
+ * Hasta cuándo cancelar devuelve la seña (decidido por Manuel el 31/10).
+ *
+ * Si la reserva empieza antes de ese plazo, desde el vamos la seña no se devuelve, y se lo dice así
+ * en vez de mostrar una fecha que ya pasó.
+ */
+function RefundNotice({ hold, now }: { hold: Hold; now: Date }) {
+  const until = hold.depositRefundableUntil
+  const hours = formatHours(refundNoticeHours(hold.start, until))
+  return (
+    <p className="text-text-muted text-xs leading-relaxed">
+      {now.getTime() <= until.getTime()
+        ? `Si cancelás hasta el ${formatLongDate(until)} a las ${formatTime(until)}, te devolvemos la seña.`
+        : `Esta reserva empieza en menos de ${hours}: si la cancelás, la seña no se devuelve.`}
+    </p>
   )
 }
 
@@ -735,8 +809,14 @@ function ConfirmedStep({ booking, onDone }: { booking: Booking; onDone: () => vo
             {formatWindow(booking.start, booking.end)}
           </p>
           <p className="text-text-muted text-sm">
-            Cobramos la seña de {formatMoney(booking.deposit)}. El conector queda bloqueado para vos
-            en ese horario. La vas a ver en tu perfil, en Reservas e historial.
+            {booking.depositAmount > 0 &&
+              `Cobramos la seña de ${formatMoney(booking.depositAmount)}${
+                booking.cardLastFour === null
+                  ? ''
+                  : ` a tu tarjeta terminada en ${booking.cardLastFour}`
+              }. `}
+            El conector queda bloqueado para vos en ese horario. La vas a ver en tu perfil, en
+            Reservas e historial.
           </p>
         </div>
       </div>

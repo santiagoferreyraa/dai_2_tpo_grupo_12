@@ -3,8 +3,10 @@ package com.ecopedia.charging.booking.data;
 import com.ecopedia.charging.booking.domain.Booking;
 import com.ecopedia.charging.booking.domain.BookingRepository;
 import com.ecopedia.charging.booking.domain.BookingStatus;
+import com.ecopedia.charging.booking.domain.DepositStatus;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -18,6 +20,16 @@ public interface JpaBookingRepository extends JpaRepository<Booking, Long>, Book
 
     @Override
     List<Booking> findByDriverIdOrderByWindowStartAsc(Long driverId);
+
+    @Override
+    Optional<Booking> findByDriverIdAndCheckoutKey(Long driverId, String checkoutKey);
+
+    @Override
+    List<Booking> findByStatusAndWindowStartLessThanEqualAndWindowEndAfter(
+            BookingStatus status, Instant startedBy, Instant now);
+
+    @Override
+    List<Booking> findByDepositStatus(DepositStatus depositStatus);
 
     /**
      * El cruce de ventanas, resuelto en la base.

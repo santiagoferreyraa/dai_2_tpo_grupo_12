@@ -26,9 +26,10 @@ CORE, CHARGING, INTEGRATION, ASYNC = "{{coreUrl}}", "{{chargingUrl}}", "{{integr
 
 
 def case(name, method, url, expect, token=None, body=None, save=None, check=None, pre=None, defect=None,
-         poll=None):
+         poll=None, headers=None):
     return dict(name=name, method=method, url=url, expect=expect, token=token, body=body,
-                save=save or {}, check=check or [], pre=pre or [], defect=defect, poll=poll)
+                save=save or {}, check=check or [], pre=pre or [], defect=defect, poll=poll,
+                headers=headers or {})
 
 
 FOLDERS = [
@@ -211,12 +212,25 @@ FOLDERS = [
              check=["pm.expect(json.expiresAt).to.be.a('string')"]),
         case("Retener con el fin antes que el inicio", "POST", f"{CHARGING}/api/bookings/holds", 400, token="driver",
              body={"connectorId": "{{seedConnectorId}}", "start": "{{holdEnd}}", "end": "{{holdStart}}"}),
+        # El checkout pide Idempotency-Key desde ECO-53 / QA-29: cobra la seña, y la clave es lo que
+        # evita cobrarla dos veces si el pedido se repite.
+        case("Checkout sin Idempotency-Key", "POST", f"{CHARGING}/api/checkout/booking", 400, token="driver",
+             body={"holdId": "{{holdId}}", "paymentMethodId": "{{cardId}}", "acceptGracePeriod": True},
+             check=["pm.expect(json.code).to.eql('IDEMPOTENCY_KEY_REQUIRED')"]),
         case("Checkout sin aceptar la tolerancia", "POST", f"{CHARGING}/api/checkout/booking", 400, token="driver",
-             body={"holdId": "{{holdId}}", "paymentMethodId": "{{cardId}}", "acceptGracePeriod": False}),
+             headers={"Idempotency-Key": "{{$guid}}"},
+             body={"holdId": "{{holdId}}", "paymentMethodId": "{{cardId}}", "acceptGracePeriod": False},
+             check=["pm.expect(json.code).to.eql('GRACE_PERIOD_NOT_ACCEPTED')"]),
         case("Checkout de la reserva", "POST", f"{CHARGING}/api/checkout/booking", 201, token="driver",
+             pre=["pm.collectionVariables.set('checkoutKey', pm.variables.replaceIn('{{$guid}}'))"],
+             headers={"Idempotency-Key": "{{checkoutKey}}"},
              body={"holdId": "{{holdId}}", "paymentMethodId": "{{cardId}}", "acceptGracePeriod": True},
              save={"bookingId": "json.bookingId"},
              check=["pm.expect(json.status).to.eql('CONFIRMED')"]),
+        case("Checkout repetido con la misma clave (QA-29)", "POST", f"{CHARGING}/api/checkout/booking", 201,
+             token="driver", headers={"Idempotency-Key": "{{checkoutKey}}"},
+             body={"holdId": "{{holdId}}", "paymentMethodId": "{{cardId}}", "acceptGracePeriod": True},
+             check=["pm.expect(json.bookingId).to.eql(Number(pm.collectionVariables.get('bookingId')))"]),
         case("Mis reservas", "GET", f"{CHARGING}/api/bookings/mine", 200, token="driver",
              check=["pm.expect(json.map(b => b.id)).to.include(Number(pm.collectionVariables.get('bookingId')))"]),
         case("Mis reservas con token de CPO (SEC-05)", "GET", f"{CHARGING}/api/bookings/mine", 404, token="cpo"),
@@ -263,6 +277,8 @@ def build_item(c):
     headers = [{"key": "Accept", "value": "application/json"}]
     if c["token"]:
         headers.append({"key": "Authorization", "value": "Bearer " + TOKENS[c["token"]]})
+    for key, value in c["headers"].items():
+        headers.append({"key": key, "value": value})
     request = {"method": c["method"], "header": headers, "url": c["url"]}
     if c["body"] is not None:
         headers.append({"key": "Content-Type", "value": "application/json"})
@@ -328,7 +344,7 @@ def main():
             "adminToken", "adminId", "cpoToken", "cpoId", "driverEmail", "driverPassword", "newDriverPassword",
             "driverId", "driverToken", "otherEmail", "otherId", "roleEmail", "seedConnectorId", "newStationId",
             "newConnectorId", "cardId", "availFrom", "availTo", "holdStart", "holdEnd", "holdId", "bookingId",
-            "notificationId", "pollTries")],
+            "notificationId", "pollTries", "checkoutKey")],
     }
     out = HERE / "ecopedia.postman_collection.json"
     out.write_text(json.dumps(collection, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
