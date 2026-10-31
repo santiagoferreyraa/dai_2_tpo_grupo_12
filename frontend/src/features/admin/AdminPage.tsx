@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react'
 
 import type { Role } from '@/features/auth/types'
+import {
+  fetchNetworkRates,
+  fetchStationPricing,
+  saveNetworkRates,
+  saveStationPricing,
+} from '@/features/pricing/data/pricingRepository'
+import type { NetworkRates } from '@/features/pricing/types'
+import { describePeak } from '@/features/pricing/usePricing'
 import { normalizeGridNode, toGridNodeId, validateGridNode } from '@/features/terminals/gridNode'
 import {
   activateUser,
@@ -13,21 +21,12 @@ import {
   deleteConnector,
   fetchAdminDashboard,
   fetchConnectors,
-  fetchPricingScheme,
   fetchStations,
   fetchUsers,
-  savePricingScheme,
   updateStation,
   updateUserRole,
 } from './data/adminRepository'
-import type {
-  AdminDashboardMetrics,
-  ConnectorItem,
-  PricingSchemeResponse,
-  PricingStrategyType,
-  StationItem,
-  UserItem,
-} from './types'
+import type { AdminDashboardMetrics, ConnectorItem, StationItem, UserItem } from './types'
 
 const CONNECTOR_TYPES = ['TYPE_1', 'TYPE_2', 'CCS2', 'CHADEMO', 'TESLA_SUPERCHARGER']
 
@@ -85,17 +84,17 @@ export default function AdminPage() {
   const [connectorStationFilter, setConnectorStationFilter] = useState<number | 'ALL'>('ALL')
   const [updatingConnectorStatusId, setUpdatingConnectorStatusId] = useState<number | null>(null)
 
-  // Pricing Scheme State
-  const [pricingConnectorId, setPricingConnectorId] = useState<number>(1)
-  const [pricingScheme, setPricingScheme] = useState<PricingSchemeResponse | null>(null)
-  const [strategyType, setStrategyType] = useState<PricingStrategyType>('FLAT_RATE')
-  const [kwhRate, setKwhRate] = useState<number>(150)
-  const [depositAmount, setDepositAmount] = useState<number>(500)
-  const [excessPenaltyPerMin, setExcessPenaltyPerMin] = useState<number>(10)
-  const [peakKwhRate, setPeakKwhRate] = useState<number>(250)
+  // Precios de la red (Manuel, 31/10: los fija solo el ADMIN, para todas las estaciones)
+  const [networkRates, setNetworkRates] = useState<NetworkRates | null>(null)
+  const [ratesForm, setRatesForm] = useState({ normal: '', fast: '', penalty: '' })
   const [pricingSuccessMsg, setPricingSuccessMsg] = useState<string | null>(null)
   const [pricingErrorMsg, setPricingErrorMsg] = useState<string | null>(null)
   const [loadingPricing, setLoadingPricing] = useState(false)
+
+  // Seña y hora pico de la estación del formulario: se guardan aparte, en Tarificación
+  const [stationPricingForm, setStationPricingForm] = useState({ deposit: '0', peak: true })
+  const [stationPricingLoaded, setStationPricingLoaded] = useState(true)
+  const [stationDepositError, setStationDepositError] = useState<string | null>(null)
 
   // Global Action Feedback
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
@@ -151,6 +150,24 @@ export default function AdminPage() {
     }
   }
 
+  const loadRates = async () => {
+    setLoadingPricing(true)
+    setPricingErrorMsg(null)
+    try {
+      const rates = await fetchNetworkRates()
+      setNetworkRates(rates)
+      setRatesForm({
+        normal: String(rates.normalKwhRate),
+        fast: String(rates.fastKwhRate),
+        penalty: String(rates.excessPenaltyPerMin),
+      })
+    } catch {
+      setPricingErrorMsg('No pudimos traer los precios. Probá de nuevo en un momento.')
+    } finally {
+      setLoadingPricing(false)
+    }
+  }
+
   useEffect(() => {
     loadMetrics()
   }, [])
@@ -158,10 +175,11 @@ export default function AdminPage() {
   useEffect(() => {
     if (activeTab === 'users') loadUsers()
     if (activeTab === 'stations') loadStations()
-    if (activeTab === 'connectors' || activeTab === 'pricing') {
+    if (activeTab === 'connectors') {
       loadStations()
       loadConnectors()
     }
+    if (activeTab === 'pricing') loadRates()
   }, [activeTab, selectedRole, connectorStationFilter])
 
   // Change User Role
@@ -239,6 +257,10 @@ export default function AdminPage() {
     setEditingStation(null)
     setStationForm({ name: '', address: '', latitude: -34.6037, longitude: -58.3816, nodeId: '' })
     setStationNodeError(null)
+    // Una estación nueva arranca sin seña y con hora pico, como una sin configurar en el backend.
+    setStationPricingForm({ deposit: '0', peak: true })
+    setStationPricingLoaded(true)
+    setStationDepositError(null)
     setStationModalOpen('create')
   }
 
@@ -252,14 +274,33 @@ export default function AdminPage() {
       nodeId: station.nodeId ?? '',
     })
     setStationNodeError(null)
+    setStationDepositError(null)
+    setStationPricingLoaded(false)
     setStationModalOpen('edit')
+    fetchStationPricing(station.id).then(
+      (pricing) => {
+        setStationPricingForm({
+          deposit: String(pricing.depositAmount),
+          peak: pricing.peakPricingEnabled,
+        })
+        setStationPricingLoaded(true)
+      },
+      () => setStationDepositError('No pudimos traer la seña de la estación.'),
+    )
   }
 
   const handleStationSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const nodeError = validateGridNode(stationForm.nodeId)
     setStationNodeError(nodeError)
-    if (nodeError) return
+    const deposit = Number(stationPricingForm.deposit.replace(',', '.'))
+    const depositError =
+      stationPricingForm.deposit.trim() === '' || !Number.isFinite(deposit) || deposit < 0
+        ? 'La seña tiene que ser un monto en pesos, de 0 en adelante.'
+        : null
+    setStationDepositError(depositError)
+    if (nodeError || depositError) return
+    const pricing = { depositAmount: deposit, peakPricingEnabled: stationPricingForm.peak }
 
     const payload = { ...stationForm, nodeId: toGridNodeId(stationForm.nodeId) }
     setSubmittingStation(true)
@@ -268,9 +309,12 @@ export default function AdminPage() {
     try {
       if (stationModalOpen === 'create') {
         const created = await createStation(payload)
+        await saveStationPricing(created.id, pricing)
         setActionSuccess(`¡"${created.name}" creada exitosamente con ID ${created.id}!`)
       } else if (stationModalOpen === 'edit' && editingStation) {
         const updated = await updateStation(editingStation.id, payload)
+        // Si no se pudo leer la seña, no se pisa con la que muestra el formulario por omisión.
+        if (stationPricingLoaded) await saveStationPricing(updated.id, pricing)
         setActionSuccess(`¡Estación ${updated.id} "${updated.name}" actualizada correctamente!`)
       }
       setStationModalOpen(null)
@@ -358,60 +402,31 @@ export default function AdminPage() {
     }
   }
 
-  // Pricing Scheme Handlers
-  const handleSelectConnectorForPricing = (connectorId: number) => {
-    setPricingConnectorId(connectorId)
-    setActiveTab('pricing')
-    handleQueryPricingSchemeForId(connectorId)
-  }
-
-  const handleQueryPricingSchemeForId = async (id: number) => {
-    if (!id || id <= 0) return
-    setLoadingPricing(true)
-    setPricingSuccessMsg(null)
-    setPricingErrorMsg(null)
-    try {
-      const scheme = await fetchPricingScheme(id)
-      setPricingScheme(scheme)
-      setStrategyType(scheme.strategyType || 'FLAT_RATE')
-      setKwhRate(scheme.kwhRate || 150)
-      setDepositAmount(scheme.depositAmount || 500)
-      setExcessPenaltyPerMin(scheme.excessPenaltyPerMin || 0)
-      setPeakKwhRate(scheme.peakKwhRate || 250)
-    } catch (err) {
-      setPricingScheme(null)
-      setPricingErrorMsg(
-        err instanceof Error
-          ? err.message
-          : `No se encontró esquema configurado para el conector ${id}`,
-      )
-    } finally {
-      setLoadingPricing(false)
-    }
-  }
-
-  const handleSavePricingScheme = async (e: React.FormEvent) => {
+  // Precios de la red
+  const handleSaveRates = async (e: React.FormEvent) => {
     e.preventDefault()
+    const normal = Number(ratesForm.normal.replace(',', '.'))
+    const fast = Number(ratesForm.fast.replace(',', '.'))
+    const penalty = Number(ratesForm.penalty.replace(',', '.'))
+    if (!(normal > 0) || !(fast > 0) || !(penalty >= 0)) {
+      setPricingErrorMsg(
+        'Los precios del kWh tienen que ser mayores a cero, y la multa, de 0 en adelante.',
+      )
+      return
+    }
     setLoadingPricing(true)
     setPricingSuccessMsg(null)
     setPricingErrorMsg(null)
     try {
-      const resp = await savePricingScheme({
-        connectorId: pricingConnectorId,
-        strategyType,
-        kwhRate,
-        depositAmount,
-        excessPenaltyPerMin,
-        peakKwhRate: strategyType === 'PEAK_OFF_PEAK' ? peakKwhRate : null,
+      const rates = await saveNetworkRates({
+        normalKwhRate: normal,
+        fastKwhRate: fast,
+        excessPenaltyPerMin: penalty,
       })
-      setPricingScheme(resp)
-      setPricingSuccessMsg(
-        `¡Esquema tarifario para el conector ${pricingConnectorId} guardado exitosamente!`,
-      )
-    } catch (err) {
-      setPricingErrorMsg(
-        err instanceof Error ? err.message : 'Error al guardar el esquema tarifario.',
-      )
+      setNetworkRates(rates)
+      setPricingSuccessMsg('Precios guardados. Valen desde ahora para todas las estaciones.')
+    } catch {
+      setPricingErrorMsg('No pudimos guardar los precios. Probá de nuevo en un momento.')
     } finally {
       setLoadingPricing(false)
     }
@@ -994,13 +1009,6 @@ export default function AdminPage() {
                             <div className="flex items-center justify-end gap-2">
                               <button
                                 type="button"
-                                onClick={() => handleSelectConnectorForPricing(connector.id)}
-                                className="rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary hover:bg-primary hover:text-on-primary"
-                              >
-                                Configurar Tarifa
-                              </button>
-                              <button
-                                type="button"
                                 onClick={() => openEditConnectorModal(connector)}
                                 className="rounded-lg border border-border/80 bg-surface/80 px-2.5 py-1 text-xs font-semibold text-text hover:border-primary/40"
                               >
@@ -1025,13 +1033,14 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* TAB 5: ESQUEMAS TARIFARIOS */}
+        {/* TAB 5: PRECIOS DE LA RED */}
         {activeTab === 'pricing' && (
           <div className="rounded-2xl border border-border/80 bg-surface/80 p-6 shadow-xl backdrop-blur-xl">
             <div>
-              <h2 className="text-xl font-bold text-text">Gestión de Esquemas Tarifarios</h2>
+              <h2 className="text-xl font-bold text-text">Precios de la carga</h2>
               <p className="text-sm text-text-muted">
-                Define y consulta la tarifa vigente de los conectores de la red.
+                Valen para todas las estaciones. La seña y la hora pico las define cada operador en
+                su estación.
               </p>
             </div>
 
@@ -1046,177 +1055,82 @@ export default function AdminPage() {
               </div>
             )}
 
-            <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-              {/* Selector interactivo de conector */}
-              <div className="rounded-xl border border-border/60 bg-surface/40 p-5">
-                <h3 className="text-sm font-bold text-text">1. Seleccionar Conector</h3>
-                <p className="mt-1 text-xs text-text-muted">
-                  Elige un conector del catálogo para cargar su tarifa configurada.
-                </p>
-
-                <div className="mt-4 flex flex-col gap-3">
+            <form
+              onSubmit={handleSaveRates}
+              className="mt-6 max-w-xl rounded-xl border border-border/60 bg-surface/40 p-5"
+            >
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
                   <label className="text-xs font-semibold text-text-muted">
-                    Conector Seleccionado
+                    Carga normal
+                    {networkRates
+                      ? ` (hasta ${String(networkRates.fastChargeThresholdKw)} kW)`
+                      : ''}
+                    , $ por kWh
                   </label>
-                  <select
-                    value={pricingConnectorId}
-                    onChange={(e) => {
-                      const id = Number(e.target.value)
-                      setPricingConnectorId(id)
-                      handleQueryPricingSchemeForId(id)
-                    }}
-                    className="rounded-xl border border-border/80 bg-surface/90 px-3.5 py-2 text-sm text-text focus:border-primary focus:outline-none"
-                  >
-                    {connectors.length === 0 ? (
-                      <option value={1}>Conector 1</option>
-                    ) : (
-                      connectors.map((c) => {
-                        const st = stations.find((s) => s.id === c.stationId)
-                        return (
-                          <option key={c.id} value={c.id}>
-                            Conector {c.id} ({c.connectorType} - {c.maxPowerKw}kW){' '}
-                            {st ? `• ${st.name}` : ''}
-                          </option>
-                        )
-                      })
-                    )}
-                  </select>
-
-                  <button
-                    type="button"
-                    onClick={() => handleQueryPricingSchemeForId(pricingConnectorId)}
-                    disabled={loadingPricing}
-                    className="mt-2 rounded-xl border border-primary/40 bg-primary/10 py-2.5 text-xs font-bold text-primary transition-all hover:bg-primary hover:text-on-primary disabled:opacity-50"
-                  >
-                    {loadingPricing ? 'Consultando...' : 'Consultar Tarifa Vigente'}
-                  </button>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={ratesForm.normal}
+                    onChange={(e) => setRatesForm({ ...ratesForm, normal: e.target.value })}
+                    className="mt-1.5 w-full rounded-xl border border-border/80 bg-surface/90 px-3.5 py-2 text-sm text-text focus:border-primary focus:outline-none"
+                  />
                 </div>
-
-                {pricingScheme && (
-                  <div className="mt-4 rounded-lg border border-border/50 bg-surface/60 p-3 text-xs">
-                    <span className="font-bold text-primary">Esquema Actual Registrado:</span>
-                    <div className="mt-1 text-text">
-                      Estrategia: <strong>{pricingScheme.strategyType}</strong>
-                    </div>
-                    <div className="text-text">
-                      Tarifa Base: <strong>${pricingScheme.kwhRate}/kWh</strong>
-                    </div>
-                    <div className="text-text">
-                      Seña: <strong>${pricingScheme.depositAmount}</strong>
-                    </div>
-                    {pricingScheme.excessPenaltyPerMin ? (
-                      <div className="text-text">
-                        Penalización: <strong>${pricingScheme.excessPenaltyPerMin}/min</strong>
-                      </div>
-                    ) : null}
-                    {pricingScheme.peakKwhRate ? (
-                      <div className="text-text">
-                        Tarifa Pico: <strong>${pricingScheme.peakKwhRate}/kWh</strong>
-                      </div>
-                    ) : null}
-                  </div>
-                )}
+                <div>
+                  <label className="text-xs font-semibold text-text-muted">
+                    Carga rápida
+                    {networkRates
+                      ? ` (más de ${String(networkRates.fastChargeThresholdKw)} kW)`
+                      : ''}
+                    , $ por kWh
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={ratesForm.fast}
+                    onChange={(e) => setRatesForm({ ...ratesForm, fast: e.target.value })}
+                    className="mt-1.5 w-full rounded-xl border border-border/80 bg-surface/90 px-3.5 py-2 text-sm text-text focus:border-primary focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-text-muted">
+                    Multa por minuto de exceso, $
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={ratesForm.penalty}
+                    onChange={(e) => setRatesForm({ ...ratesForm, penalty: e.target.value })}
+                    className="mt-1.5 w-full rounded-xl border border-border/80 bg-surface/90 px-3.5 py-2 text-sm text-text focus:border-primary focus:outline-none"
+                  />
+                </div>
               </div>
 
-              {/* Formulario de Configuración */}
-              <form
-                onSubmit={handleSavePricingScheme}
-                className="rounded-xl border border-border/60 bg-surface/40 p-5 lg:col-span-2"
-              >
-                <h3 className="text-sm font-bold text-text">2. Definir / Actualizar Tarifa</h3>
-                <p className="mt-1 text-xs text-text-muted">
-                  Aplica la regla de cálculo para el conector {pricingConnectorId}.
-                </p>
+              {/* Las reglas, con los valores configurados en el backend: no se editan desde acá. */}
+              {networkRates && (
+                <ul className="mt-5 list-disc space-y-1 pl-5 text-xs text-text-muted">
+                  <li>
+                    Hora pico ({describePeak(networkRates)}): se aplica a las cargas que empiezan en
+                    esa franja, en las estaciones que la tengan activada. Decide la hora de inicio.
+                  </li>
+                  <li>
+                    Pasados {String(networkRates.penaltyEscalationAfterMinutes)} minutos de exceso,
+                    la multa sube ×
+                    {String(networkRates.penaltyEscalationMultiplier).replace('.', ',')}.
+                  </li>
+                </ul>
+              )}
 
-                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="text-xs font-semibold text-text-muted">
-                      Estrategia de Tarificación
-                    </label>
-                    <select
-                      value={strategyType}
-                      onChange={(e) => setStrategyType(e.target.value as PricingStrategyType)}
-                      className="mt-1.5 w-full rounded-xl border border-border/80 bg-surface/90 px-3.5 py-2 text-sm text-text focus:border-primary focus:outline-none"
-                    >
-                      <option value="FLAT_RATE">FLAT_RATE (Tarifa Plana)</option>
-                      <option value="PEAK_OFF_PEAK">PEAK_OFF_PEAK (Horario Pico / Valle)</option>
-                      <option value="OCCUPANCY_PENALTY">
-                        OCCUPANCY_PENALTY (Recargo por Ocupación)
-                      </option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-semibold text-text-muted">
-                      Tarifa Base ($ / kWh)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={kwhRate}
-                      onChange={(e) => setKwhRate(Number(e.target.value))}
-                      required
-                      className="mt-1.5 w-full rounded-xl border border-border/80 bg-surface/90 px-3.5 py-2 text-sm text-text focus:border-primary focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-semibold text-text-muted">Monto Seña ($)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={depositAmount}
-                      onChange={(e) => setDepositAmount(Number(e.target.value))}
-                      required
-                      className="mt-1.5 w-full rounded-xl border border-border/80 bg-surface/90 px-3.5 py-2 text-sm text-text focus:border-primary focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-semibold text-text-muted">
-                      Penalización Exceso ($/min)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={excessPenaltyPerMin}
-                      onChange={(e) => setExcessPenaltyPerMin(Number(e.target.value))}
-                      className="mt-1.5 w-full rounded-xl border border-border/80 bg-surface/90 px-3.5 py-2 text-sm text-text focus:border-primary focus:outline-none"
-                    />
-                  </div>
-
-                  {strategyType === 'PEAK_OFF_PEAK' && (
-                    <div className="sm:col-span-2">
-                      <label className="text-xs font-semibold text-text-muted">
-                        Tarifa en Horario Pico ($ / kWh)
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={peakKwhRate}
-                        onChange={(e) => setPeakKwhRate(Number(e.target.value))}
-                        required
-                        className="mt-1.5 w-full rounded-xl border border-border/80 bg-surface/90 px-3.5 py-2 text-sm text-text focus:border-primary focus:outline-none"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-6 flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={loadingPricing}
-                    className="rounded-xl brand-fill px-6 py-2.5 text-xs font-bold text-on-primary shadow-lg shadow-primary/20 transition-all hover:opacity-90 disabled:opacity-50"
-                  >
-                    {loadingPricing ? 'Guardando...' : 'Guardar Esquema Tarifario'}
-                  </button>
-                </div>
-              </form>
-            </div>
+              <div className="mt-6 flex justify-end">
+                <button
+                  type="submit"
+                  disabled={loadingPricing}
+                  className="rounded-xl brand-fill px-6 py-2.5 text-xs font-bold text-on-primary shadow-lg shadow-primary/20 transition-all hover:opacity-90 disabled:opacity-50"
+                >
+                  {loadingPricing ? 'Guardando...' : 'Guardar precios'}
+                </button>
+              </div>
+            </form>
           </div>
         )}
 
@@ -1310,6 +1224,41 @@ export default function AdminPage() {
                       'Lo indica la distribuidora en el contrato de conexión. Sin nodo, la estación no puede ofrecer carga rápida.'}
                   </p>
                 </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-text-muted">
+                    Seña para reservar ($)
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    disabled={!stationPricingLoaded}
+                    placeholder={stationPricingLoaded ? '0' : 'Cargando…'}
+                    value={stationPricingLoaded ? stationPricingForm.deposit : ''}
+                    onChange={(e) =>
+                      setStationPricingForm({ ...stationPricingForm, deposit: e.target.value })
+                    }
+                    className="mt-1 w-full rounded-xl border border-border/80 bg-surface/90 px-3.5 py-2 text-sm text-text focus:border-primary focus:outline-none disabled:opacity-50"
+                  />
+                  <p
+                    className={`mt-1 text-[11px] ${stationDepositError ? 'text-rose-400' : 'text-text-muted'}`}
+                  >
+                    {stationDepositError ?? 'Con 0, la estación no pide seña.'}
+                  </p>
+                </div>
+
+                <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-text-muted">
+                  <input
+                    type="checkbox"
+                    disabled={!stationPricingLoaded}
+                    checked={stationPricingForm.peak}
+                    onChange={(e) =>
+                      setStationPricingForm({ ...stationPricingForm, peak: e.target.checked })
+                    }
+                    className="accent-primary h-4 w-4"
+                  />
+                  Cobrar tarifa de hora pico
+                </label>
 
                 <div className="mt-4 flex justify-end gap-2">
                   <button

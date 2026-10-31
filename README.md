@@ -470,11 +470,10 @@ Dos cosas más: **escucha solo en `127.0.0.1`** y **pide una clave en cada llama
 
 ### La seña de la reserva
 
-Confirmar una reserva **cobra la seña de verdad**, contra la pasarela de arriba. El monto lo fija
-Tarificación por conector: **un conector sin esquema tarifario no pide seña**, y como core no
-siembra tarifas, en una base nueva todas las reservas salen sin seña hasta que el `ADMIN` cargue
-una en `/admin` → Tarifas. Para ver el cobro, cargá una tarifa con seña en el conector que vas a
-reservar.
+Confirmar una reserva **cobra la seña de verdad**, contra la pasarela de arriba. La seña es de cada
+estación y la fija su operador (en `/stations`, o el `ADMIN` en `/admin`). Las 15 estaciones del
+seed ya traen una: **$ 5.000 si tienen algún conector rápido y $ 3.000 si no**. Una estación nueva
+no pide seña hasta que su operador la cargue.
 
 | Caso | Qué pasa |
 |------|----------|
@@ -505,6 +504,31 @@ Los plazos son configurables en `charging`, y para una demo conviene achicarlos:
 
 Si se cambia la tolerancia, hay que cambiar también los textos que dicen "15 minutos" (el aviso de
 `async` y la pantalla de reservar).
+
+### Los precios de la carga
+
+Los fija el `ADMIN` en `/admin` → Tarifas, y valen para todas las estaciones. Vienen sembrados, en
+pesos:
+
+| Qué | Precio sembrado |
+|---|---|
+| Carga normal (hasta 22 kW) | $ 350 por kWh |
+| Carga rápida (más de 22 kW) | $ 550 por kWh |
+| Multa por minuto de exceso | $ 200 |
+
+- **Normal o rápida** se decide por la potencia que se entregó de verdad: una rápida que la
+  distribuidora bajó a 22 kW se cobra como normal.
+- **Hora pico:** si la carga **empieza** entre las 18:00 y las 21:59 (hora argentina) y la estación
+  la tiene activada, el kWh vale ×1,2. Decide la hora de inicio: empezar 21:30 es pico aunque termine
+  después de las 22.
+- **Multa:** pasados 15 minutos de exceso, todos los minutos se cobran ×1,5. Se suma con la hora pico.
+
+La franja, los factores, el corte de 22 kW y la zona horaria están en `ecopedia.pricing` del
+`application.yml` de core. **El corte de 22 kW tiene que coincidir** con el de `charging`
+(`ecopedia.charging.fast-charge-threshold-kw`).
+
+`GET /api/pricing/estimate?connectorId=&estimatedKwh=&start=` dice cuánto saldría una carga y con qué
+precio; sirve para probar la hora pico con `curl` sin esperar a las 18.
 
 ### La distribuidora eléctrica simulada
 

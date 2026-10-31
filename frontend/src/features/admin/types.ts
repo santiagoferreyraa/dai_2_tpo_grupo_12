@@ -52,24 +52,3 @@ export interface StationFormData {
   longitude: number
   nodeId: string | null
 }
-
-export type PricingStrategyType = 'FLAT_RATE' | 'PEAK_OFF_PEAK' | 'OCCUPANCY_PENALTY'
-
-export interface PricingSchemeResponse {
-  id?: number
-  connectorId: number
-  strategyType: PricingStrategyType
-  kwhRate: number
-  depositAmount: number
-  excessPenaltyPerMin: number
-  peakKwhRate?: number | null
-}
-
-export interface DefinePricingSchemeRequest {
-  connectorId: number
-  strategyType: PricingStrategyType
-  kwhRate: number
-  depositAmount: number
-  excessPenaltyPerMin?: number
-  peakKwhRate?: number | null
-}

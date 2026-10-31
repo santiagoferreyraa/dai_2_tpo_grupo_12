@@ -1312,7 +1312,7 @@
       "name": "05 · Core · Tarifas",
       "item": [
         {
-          "name": "Definir tarifa del conector propio → 201",
+          "name": "Precios de la red → 200",
           "event": [
             {
               "listen": "test",
@@ -1321,13 +1321,42 @@
                 "exec": [
                   "let json = {};",
                   "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
-                  "pm.test('responde 201', () => pm.response.to.have.status(201));"
+                  "pm.test('responde 200', () => pm.response.to.have.status(200));",
+                  "pm.test(\"pm.expect(Number(json.normalKwhRate)).to.be.above(0)\", () => { pm.expect(Number(json.normalKwhRate)).to.be.above(0); });",
+                  "pm.test(\"pm.expect(Number(json.fastKwhRate)).to.be.above(0)\", () => { pm.expect(Number(json.fastKwhRate)).to.be.above(0); });"
                 ]
               }
             }
           ],
           "request": {
-            "method": "POST",
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{coreUrl}}/api/pricing/rates"
+          }
+        },
+        {
+          "name": "Cambiar los precios con token de CPO (SEC-05) → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 404', () => pm.response.to.have.status(404));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
             "header": [
               {
                 "key": "Accept",
@@ -1342,15 +1371,54 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{coreUrl}}/api/pricing",
+            "url": "{{coreUrl}}/api/pricing/rates",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"connectorId\": {{newConnectorId}},\n  \"strategyType\": \"FLAT_RATE\",\n  \"kwhRate\": 350,\n  \"depositAmount\": 1200,\n  \"excessPenaltyPerMin\": 50\n}"
+              "raw": "{\n  \"normalKwhRate\": 1,\n  \"fastKwhRate\": 1,\n  \"excessPenaltyPerMin\": 0\n}"
             }
           }
         },
         {
-          "name": "Definir tarifa negativa → 400",
+          "name": "Cambiar los precios de la red → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 200', () => pm.response.to.have.status(200));",
+                  "pm.test(\"pm.expect(Number(json.fastKwhRate)).to.eql(550)\", () => { pm.expect(Number(json.fastKwhRate)).to.eql(550); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{coreUrl}}/api/pricing/rates",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"normalKwhRate\": 350,\n  \"fastKwhRate\": 550,\n  \"excessPenaltyPerMin\": 200\n}"
+            }
+          }
+        },
+        {
+          "name": "Cambiar los precios a un valor negativo → 400",
           "event": [
             {
               "listen": "test",
@@ -1366,7 +1434,46 @@
             }
           ],
           "request": {
-            "method": "POST",
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{coreUrl}}/api/pricing/rates",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"normalKwhRate\": -1,\n  \"fastKwhRate\": 550,\n  \"excessPenaltyPerMin\": 200\n}"
+            }
+          }
+        },
+        {
+          "name": "Seña y hora pico de la estación propia → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 200', () => pm.response.to.have.status(200));",
+                  "pm.test(\"pm.expect(Number(json.depositAmount)).to.eql(1200)\", () => { pm.expect(Number(json.depositAmount)).to.eql(1200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
             "header": [
               {
                 "key": "Accept",
@@ -1381,15 +1488,54 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{coreUrl}}/api/pricing",
+            "url": "{{coreUrl}}/api/pricing/stations/{{newStationId}}",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"connectorId\": {{newConnectorId}},\n  \"kwhRate\": -1,\n  \"depositAmount\": 0\n}"
+              "raw": "{\n  \"depositAmount\": 1200,\n  \"peakPricingEnabled\": true\n}"
             }
           }
         },
         {
-          "name": "Consultar tarifa → 200",
+          "name": "Seña negativa → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 400', () => pm.response.to.have.status(400));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cpoToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{coreUrl}}/api/pricing/stations/{{newStationId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"depositAmount\": -1,\n  \"peakPricingEnabled\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Consultar la seña y la hora pico de la estación → 200",
           "event": [
             {
               "listen": "test",
@@ -1399,7 +1545,7 @@
                   "let json = {};",
                   "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
                   "pm.test('responde 200', () => pm.response.to.have.status(200));",
-                  "pm.test(\"pm.expect(Number(json.kwhRate)).to.eql(350)\", () => { pm.expect(Number(json.kwhRate)).to.eql(350); });"
+                  "pm.test(\"pm.expect(json.peakPricingEnabled).to.be.true\", () => { pm.expect(json.peakPricingEnabled).to.be.true; });"
                 ]
               }
             }
@@ -1412,11 +1558,11 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{coreUrl}}/api/pricing/connector/{{newConnectorId}}"
+            "url": "{{coreUrl}}/api/pricing/stations/{{newStationId}}"
           }
         },
         {
-          "name": "Consultar tarifa de un conector inexistente → 400",
+          "name": "Consultar una estación inexistente → 400",
           "event": [
             {
               "listen": "test",
@@ -1440,9 +1586,36 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{coreUrl}}/api/pricing/connector/999999"
+            "url": "{{coreUrl}}/api/pricing/stations/999999"
           },
           "description": "DEF-07: un recurso inexistente responde 400 y no 404"
+        },
+        {
+          "name": "Seña de un conector → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 200', () => pm.response.to.have.status(200));",
+                  "pm.test(\"pm.expect(Number(json.depositAmount)).to.eql(1200)\", () => { pm.expect(Number(json.depositAmount)).to.eql(1200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{coreUrl}}/api/pricing/deposit?connectorId={{newConnectorId}}"
+          }
         },
         {
           "name": "Estimar costo → 200",
