@@ -1,25 +1,28 @@
-# Los mismos ocho procesos que `pnpm dev`, pero con la base EN MEMORIA. Los levanta
+# Los mismos procesos que `pnpm dev`, pero con la base EN MEMORIA. Los levanta
 # `pnpm dev:mem`.
 #
 # Cuándo sirve: cuando querés empezar de cero sin borrar nada, o cuando estás tocando una
 # migración ya aplicada y no querés pelearte con el checksum de Flyway. Todo lo que cargues
 # se va cuando bajás los procesos.
 #
-# Es el perfil `dev`, el mismo que usan los tests. Ver mprocs.yaml para lo demás.
+# Es el perfil `dev`, el mismo que usan los tests. Ver mprocs.yaml para los nombres, el orden y
+# por qué está `docker`.
 procs:
-  back:
-    shell: pnpm dev:mem:back
-  charging:
-    shell: pnpm dev:mem:charging
-  pay:
-    shell: pnpm dev:mem:pay
-  async:
-    shell: pnpm dev:mem:async
-  gateway:
-    shell: pnpm dev:mem:gateway
-  grid:
-    shell: pnpm dev:mem:grid
-  charger:
-    shell: pnpm dev:mem:charger
-  front:
+  5173 front:
     shell: pnpm dev:front
+  8081 core:
+    shell: pnpm dev:mem:back
+  8082 charging:
+    shell: pnpm dev:mem:charging
+  8083 integration:
+    shell: pnpm dev:mem:pay
+  8084 async:
+    shell: pnpm dev:mem:async
+  8086 payment-gateway:
+    shell: pnpm dev:mem:gateway
+  8087 power-grid:
+    shell: pnpm dev:mem:grid
+  8088 charger:
+    shell: pnpm dev:mem:charger
+  docker:
+    shell: docker compose up -d activemq
