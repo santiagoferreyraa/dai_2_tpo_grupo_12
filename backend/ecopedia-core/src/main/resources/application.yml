@@ -78,6 +78,25 @@ ecopedia:
     connect-timeout: 2s
     read-timeout: 5s
 
+  # Las reglas de Tarificación que no son precios (decididas por Manuel el 31/10). Los precios —carga
+  # normal, carga rápida y multa por minuto— los fija el ADMIN desde /admin y viven en la base; la seña
+  # y el check de hora pico, por estación. Ver PricingRules.
+  pricing:
+    # La hora pico se mide en la hora del conductor, no en la del servidor: en AWS el servidor está en
+    # UTC, y sin esto las 18 a 22 caerían de 15 a 19.
+    zone: ${ECOPEDIA_PRICING_ZONE:America/Argentina/Buenos_Aires}
+    # Hasta cuántos kW una carga es normal; por encima, rápida. TIENE QUE COINCIDIR con
+    # ecopedia.charging.fast-charge-threshold-kw de ecopedia-charging (ECO-52): es el mismo corte.
+    fast-charge-threshold-kw: 22
+    # La franja pico, [desde, hasta): decide la hora de INICIO de la carga. Empezar 21:59 es pico
+    # aunque termine a las 23; empezar 17:59 no lo es aunque siga a las 19.
+    peak-start-hour: 18
+    peak-end-hour: 22
+    peak-multiplier: 1.2
+    # Pasados estos minutos de exceso, la multa de todos los minutos sube por este factor.
+    penalty-escalation-after-minutes: 15
+    penalty-escalation-multiplier: 1.5
+
 ---
 # Perfil de desarrollo: base en memoria, para levantar el módulo sin PostgreSQL instalado.
 # Las demos de las entregas corren sobre PostgreSQL, no sobre H2.

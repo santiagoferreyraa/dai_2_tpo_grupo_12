@@ -1,12 +1,11 @@
 package com.ecopedia.core.pricing;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.ecopedia.core.pricing.data.JpaPricingSchemeRepository;
-import com.ecopedia.core.security.JwtTokenProvider;
+import com.ecopedia.core.pricing.data.JpaStationPricingRepository;
+import com.ecopedia.core.pricing.domain.PricingService;
 import com.ecopedia.core.terminal.data.JpaConnectorRepository;
 import com.ecopedia.core.terminal.data.JpaStationRepository;
 import com.ecopedia.core.terminal.domain.Connector;
@@ -27,17 +26,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * La seña de un conector, por la ruta que consultan el checkout y la pantalla de reservar (ECO-53).
- *
- * <p>Existe por un defecto encontrado al probar en vivo: las dos la sacaban de {@code /estimate} con
- * un consumo de 10 kWh, y la estimación rechaza con 400 un consumo que no supera la seña. Con una seña
- * de $ 8.000 y una tarifa de $ 350 el kWh, la seña "no existía" y la reserva salía gratis.
+ * La seña de un conector, por la ruta que consultan el checkout y la pantalla de reservar (ECO-53): es la
+ * de su estación desde el 31/10.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -48,16 +42,16 @@ class PricingDepositApiTest {
     private MockMvc mockMvc;
 
     @Autowired
-    private JwtTokenProvider tokenProvider;
-
-    @Autowired
     private TerminalService terminalService;
 
     @Autowired
     private UserService userService;
 
     @Autowired
-    private JpaPricingSchemeRepository pricingSchemeRepository;
+    private PricingService pricingService;
+
+    @Autowired
+    private JpaStationPricingRepository stationPricingRepository;
 
     @Autowired
     private JpaConnectorRepository connectorRepository;
@@ -70,55 +64,71 @@ class PricingDepositApiTest {
 
     @AfterEach
     void cleanUp() {
-        pricingSchemeRepository.deleteAll();
+        stationPricingRepository.deleteAll();
         connectorRepository.deleteAll();
         stationRepository.deleteAll();
         userRepository.deleteAll();
     }
 
-    private Connector givenPricedConnector() throws Exception {
-        User admin = userService.register(
-                new RegistrationData("admin.sena@ecopedia.test", "unaClave123", "Admin", Role.ADMIN));
+    private Connector givenConnector(String power) {
+        User owner = userService.register(
+                new RegistrationData("cpo.sena@ecopedia.test", "unaClave123", "Operador", Role.CPO));
         Station station = terminalService.createStation(
-                admin.getId(),
+                owner.getId(),
                 new StationData("Estación con seña", "Av. San Juan 2901", -34.6037, -58.3816, List.of(), null));
-        Connector connector = terminalService.addConnector(station.getId(), ConnectorType.CCS2, new BigDecimal("50"));
-
-        mockMvc.perform(post("/api/pricing")
-                        .header(
-                                HttpHeaders.AUTHORIZATION,
-                                "Bearer "
-                                        + tokenProvider.generateToken(admin.getId(), admin.getEmail(), admin.getRole()))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(
-                                """
-                                {"connectorId":%d,"strategyType":"FLAT_RATE","kwhRate":350,"depositAmount":8000}
-                                """
-                                        .formatted(connector.getId())))
-                .andExpect(status().isCreated());
-        return connector;
+        return terminalService.addConnector(station.getId(), ConnectorType.CCS2, new BigDecimal(power));
     }
 
     @Test
-    @DisplayName("Devuelve la seña del conector, también una mayor que 10 kWh de tarifa, sin sesión")
-    void returnsTheDepositEvenWhenItExceedsTheEstimate() throws Exception {
-        Connector connector = givenPricedConnector();
+    @DisplayName("Devuelve la seña de la estación del conector, sin sesión")
+    void returnsTheStationsDeposit() throws Exception {
+        Connector connector = givenConnector("150");
+        pricingService.updateStationPricing(connector.getStation().getId(), new BigDecimal("8000"), true);
 
         mockMvc.perform(get("/api/pricing/deposit").param("connectorId", String.valueOf(connector.getId())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.connectorId").value(connector.getId()))
                 .andExpect(jsonPath("$.depositAmount").value(8000.00));
-
-        // El defecto: la estimación con 10 kWh rechaza esta misma tarifa.
-        mockMvc.perform(get("/api/pricing/estimate")
-                        .param("connectorId", String.valueOf(connector.getId()))
-                        .param("estimatedKwh", "10"))
-                .andExpect(status().isBadRequest());
     }
 
     @Test
-    @DisplayName("Un conector sin esquema tarifario contesta 400: quien llama lo lee como sin seña")
-    void connectorWithoutSchemeIsBadRequest() throws Exception {
+    @DisplayName("Una estación que nadie configuró no pide seña")
+    void unconfiguredStationHasNoDeposit() throws Exception {
+        Connector connector = givenConnector("22");
+
+        mockMvc.perform(get("/api/pricing/deposit").param("connectorId", String.valueOf(connector.getId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.depositAmount").value(0));
+    }
+
+    @Test
+    @DisplayName("La estimación dice el precio del kWh que se aplicaría y si es hora pico")
+    void estimateTellsTheAppliedRate() throws Exception {
+        Connector connector = givenConnector("150");
+
+        // 12:00 en Buenos Aires: carga rápida a precio de red, $ 550 el kWh sembrado.
+        mockMvc.perform(get("/api/pricing/estimate")
+                        .param("connectorId", String.valueOf(connector.getId()))
+                        .param("estimatedKwh", "10")
+                        .param("start", "2026-11-02T15:00:00Z"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.speed").value("FAST"))
+                .andExpect(jsonPath("$.peak").value(false))
+                .andExpect(jsonPath("$.kwhRate").value(550.00))
+                .andExpect(jsonPath("$.estimatedCost").value(5500.00));
+
+        // 19:00 en Buenos Aires: pico, $ 660 el kWh.
+        mockMvc.perform(get("/api/pricing/estimate")
+                        .param("connectorId", String.valueOf(connector.getId()))
+                        .param("estimatedKwh", "10")
+                        .param("start", "2026-11-02T22:00:00Z"))
+                .andExpect(jsonPath("$.peak").value(true))
+                .andExpect(jsonPath("$.kwhRate").value(660.00));
+    }
+
+    @Test
+    @DisplayName("Un conector inexistente contesta 400: quien llama lo lee como sin seña")
+    void unknownConnectorIsBadRequest() throws Exception {
         mockMvc.perform(get("/api/pricing/deposit").param("connectorId", "999999"))
                 .andExpect(status().isBadRequest());
     }

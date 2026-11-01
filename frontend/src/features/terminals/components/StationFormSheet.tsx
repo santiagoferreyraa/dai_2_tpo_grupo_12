@@ -1,5 +1,8 @@
 import { useState, type FormEvent } from 'react'
 
+import { describePeak, useNetworkRates, useStationPricing } from '@/features/pricing/usePricing'
+import type { StationPricingInput } from '@/features/pricing/types'
+
 import { formatCoordinate, parseDecimal } from '../format'
 import { normalizeGridNode, toGridNodeId, validateGridNode } from '../gridNode'
 import type { ConnectorDraft, StationDetail, StationInput } from '../types'
@@ -17,8 +20,15 @@ import ImagePicker from './ImagePicker'
 interface StationFormSheetProps {
   /** `null` es un alta. */
   station: StationDetail | null
-  onSubmit: (input: StationInput) => Promise<void>
+  /**
+   * Recibe la estación y su cobro: la seña y la hora pico, que se guardan aparte, en Tarificación.
+   * El cobro llega `null` si no se pudo leer el de la estación y el operador no lo tocó: mandar los
+   * valores por omisión pisaría los que la estación tenía.
+   */
+  onSubmit: (input: StationInput, pricing: StationPricingInput | null) => Promise<void>
   onDelete?: () => void
+  /** Un problema que trae el formulario desde antes de montarse; ver `StationsPage`. */
+  initialFailure?: string | null
 }
 
 interface FormErrors {
@@ -27,13 +37,19 @@ interface FormErrors {
   latitude?: string
   longitude?: string
   nodeId?: string
+  deposit?: string
   connectors?: string
 }
 
 const FIELD_CLASS =
   'bg-st-surface-raised text-st-text placeholder:text-st-muted focus:outline-st-accent mt-2 w-full rounded-full px-4 py-2.5 text-sm focus:outline-2'
 
-export default function StationFormSheet({ station, onSubmit, onDelete }: StationFormSheetProps) {
+export default function StationFormSheet({
+  station,
+  onSubmit,
+  onDelete,
+  initialFailure = null,
+}: StationFormSheetProps) {
   const [name, setName] = useState(station?.name ?? '')
   const [address, setAddress] = useState(station?.address ?? '')
   const [latitude, setLatitude] = useState(station ? formatCoordinate(station.latitude) : '')
@@ -44,9 +60,27 @@ export default function StationFormSheet({ station, onSubmit, onDelete }: Statio
     station?.connectors.map((connector) => ({ ...connector })) ?? [],
   )
 
+  /*
+   * La seña y la hora pico (Manuel, 31/10: las fija el CPO, por estación). Mientras el operador no las
+   * toca valen `null` y se muestra lo que tiene la estación; una estación nueva arranca sin seña y con
+   * hora pico, que es lo mismo que el backend le asigna a una estación sin configurar.
+   */
+  const stationPricing = useStationPricing(station?.id ?? null)
+  const rates = useNetworkRates()
+  const [depositText, setDepositText] = useState<string | null>(null)
+  const [peakChoice, setPeakChoice] = useState<boolean | null>(null)
+  const loadedPricing =
+    stationPricing === null
+      ? { depositAmount: 0, peakPricingEnabled: true }
+      : stationPricing.status === 'ready'
+        ? stationPricing.value
+        : null
+  const deposit = depositText ?? (loadedPricing ? String(loadedPricing.depositAmount) : '')
+  const peak = peakChoice ?? loadedPricing?.peakPricingEnabled ?? true
+
   const [errors, setErrors] = useState<FormErrors>({})
   const [saving, setSaving] = useState(false)
-  const [failure, setFailure] = useState<string | null>(null)
+  const [failure, setFailure] = useState<string | null>(initialFailure)
 
   const validate = (): StationInput | null => {
     const found: FormErrors = {}
@@ -68,6 +102,11 @@ export default function StationFormSheet({ station, onSubmit, onDelete }: Statio
 
     const nodeError = validateGridNode(nodeId)
     if (nodeError) found.nodeId = nodeError
+
+    const depositValue = deposit.trim() === '' ? 0 : parseDecimal(deposit)
+    if (depositValue === null || depositValue < 0) {
+      found.deposit = 'La seña tiene que ser un monto en pesos, de 0 en adelante'
+    }
 
     /*
      * Un conector sin potencia no es un conector a medio cargar: es uno que la búsqueda por
@@ -94,6 +133,15 @@ export default function StationFormSheet({ station, onSubmit, onDelete }: Statio
     }
   }
 
+  /** El cobro a guardar, o `null` si no se pudo leer el de la estación y el operador no lo tocó. */
+  const pricingToSave = (): StationPricingInput | null => {
+    if (loadedPricing === null && depositText === null && peakChoice === null) return null
+    return {
+      depositAmount: deposit.trim() === '' ? 0 : (parseDecimal(deposit) ?? 0),
+      peakPricingEnabled: peak,
+    }
+  }
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     const input = validate()
@@ -102,7 +150,7 @@ export default function StationFormSheet({ station, onSubmit, onDelete }: Statio
     setSaving(true)
     setFailure(null)
     try {
-      await onSubmit(input)
+      await onSubmit(input, pricingToSave())
     } catch (error) {
       setFailure(error instanceof Error ? error.message : 'No se pudo guardar la estación')
     } finally {
@@ -190,6 +238,43 @@ export default function StationFormSheet({ station, onSubmit, onDelete }: Statio
           puede ofrecer carga rápida.
         </span>
       )}
+
+      {/* El cobro de la estación: la seña para reservar y la hora pico. Los precios del kWh son del ADMIN. */}
+      <label className="mt-5 block">
+        <span className="text-st-muted text-lg font-bold">DEPOSIT</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={deposit}
+          onChange={(event) => setDepositText(event.target.value)}
+          placeholder={loadedPricing === null ? 'Cargando…' : '0'}
+          className={FIELD_CLASS}
+        />
+      </label>
+      {errors.deposit ? (
+        errorText(errors.deposit)
+      ) : (
+        <span className="text-st-muted mt-1 block px-4 text-xs">
+          Seña para reservar, en pesos. Con 0, la estación no pide seña.
+        </span>
+      )}
+
+      <label className="mt-5 flex cursor-pointer items-start gap-3 px-1">
+        <input
+          type="checkbox"
+          checked={peak}
+          onChange={(event) => setPeakChoice(event.target.checked)}
+          className="accent-st-accent mt-1 h-4 w-4 shrink-0 cursor-pointer"
+        />
+        <span>
+          <span className="text-st-muted block text-lg font-bold">PEAK PRICING</span>
+          <span className="text-st-muted block text-xs">
+            Cobrar tarifa de hora pico
+            {rates.status === 'ready' ? ` (${describePeak(rates.value)})` : ''} a las cargas que
+            empiezan en esa franja.
+          </span>
+        </span>
+      </label>
 
       <ConnectorEditor value={connectors} onChange={setConnectors} />
       {errorText(errors.connectors)}

@@ -3,6 +3,8 @@ import { useSearchParams } from 'react-router'
 
 import BottomSheet from '@/components/BottomSheet'
 import { getSession } from '@/features/auth/session'
+import { saveStationPricing } from '@/features/pricing/data/pricingRepository'
+import type { StationPricingInput } from '@/features/pricing/types'
 import NetworkSummary from './components/NetworkSummary'
 import StationCard from './components/StationCard'
 import StationFormSheet from './components/StationFormSheet'
@@ -151,10 +153,27 @@ export default function StationsPage() {
 
   const closeSheet = useCallback(() => setSheet({ kind: 'none' }), [])
 
-  const handleSubmit = async (input: StationInput) => {
+  /*
+   * El cobro (seña y hora pico) se guarda aparte, en Tarificación, después de la estación. Si eso falla
+   * con una estación recién creada, el formulario pasa a ser el de edición de esa estación y el aviso
+   * viaja con él: reintentar desde el de alta crearía la estación dos veces.
+   */
+  const [pricingFailure, setPricingFailure] = useState<string | null>(null)
+  const PRICING_FAILED =
+    'La estación se guardó, pero no pudimos guardar la seña ni la hora pico. Revisalas y guardá de nuevo.'
+
+  const handleSubmit = async (input: StationInput, pricing: StationPricingInput | null) => {
+    setPricingFailure(null)
     if (sheet.kind === 'edit') {
       const updated = await updateStation(sheet.stationId, input)
       setStations((rows) => rows.map((row) => (row.id === updated.id ? updated : row)))
+      if (pricing !== null) {
+        try {
+          await saveStationPricing(updated.id, pricing)
+        } catch {
+          throw new Error(PRICING_FAILED)
+        }
+      }
       /*
        * En pantalla ancha la columna no se vacía después de guardar: queda mostrando el
        * detalle de lo que se acaba de editar, que es lo que el operador va a querer revisar.
@@ -164,6 +183,15 @@ export default function StationsPage() {
     } else {
       const created = await createStation(input)
       setStations((rows) => [created, ...rows])
+      if (pricing !== null) {
+        try {
+          await saveStationPricing(created.id, pricing)
+        } catch {
+          setPricingFailure(PRICING_FAILED)
+          setSheet({ kind: 'edit', stationId: created.id })
+          return
+        }
+      }
       setSheet(wide ? { kind: 'info', stationId: created.id } : { kind: 'none' })
     }
   }
@@ -199,6 +227,7 @@ export default function StationsPage() {
       key={sheet.kind === 'edit' ? `edit-${sheet.stationId}` : 'add'}
       station={sheet.kind === 'edit' ? openStation : null}
       onSubmit={handleSubmit}
+      initialFailure={sheet.kind === 'edit' ? pricingFailure : null}
       onDelete={openStation ? () => handleDeactivate(openStation.id) : undefined}
     />
   )

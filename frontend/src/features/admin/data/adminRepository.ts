@@ -4,15 +4,16 @@ import { api } from '@/lib/api'
 import type {
   AdminDashboardMetrics,
   ConnectorItem,
-  DefinePricingSchemeRequest,
-  PricingSchemeResponse,
   StationFormData,
   StationItem,
   UserItem,
 } from '../types'
 
 /**
- * Repositorio de llamadas a la API del Backoffice Administrador (ECO-25, ECO-27, ECO-29).
+ * Repositorio de llamadas a la API del Backoffice Administrador (ECO-25, ECO-27).
+ *
+ * Las tarifas ya no están acá: desde el 31/10 son de la red y de cada estación, y las llamadas viven en
+ * `features/pricing`, que comparten /admin y /stations.
  */
 
 export async function fetchAdminDashboard(): Promise<AdminDashboardMetrics> {
@@ -167,14 +168,4 @@ export function changeConnectorStatus(
 
 export function deleteConnector(connectorId: number): Promise<void> {
   return api.delete<void>(`/connectors/${connectorId}`)
-}
-
-export function fetchPricingScheme(connectorId: number): Promise<PricingSchemeResponse> {
-  return api.get<PricingSchemeResponse>(`/pricing/connector/${connectorId}`)
-}
-
-export function savePricingScheme(
-  request: DefinePricingSchemeRequest,
-): Promise<PricingSchemeResponse> {
-  return api.post<PricingSchemeResponse>('/pricing', request)
 }
