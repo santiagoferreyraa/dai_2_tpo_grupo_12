@@ -3,37 +3,36 @@
 # Es el ambiente sobre el que se defienden las entregas, y el único de los tres que puede
 # ser COMPARTIDO: una sola base que ven todos los que apunten a esa máquina.
 #
-# ANTES de levantar esto tiene que estar el .env y arriba la infraestructura:
+# ANTES de levantar esto tiene que estar el .env (una sola vez: `pnpm env:init`, que genera los
+# secretos). Sin .env, los backends no arrancan: sin perfil no hay secreto del JWT por defecto.
 #
-#   pnpm env:init                            (una sola vez: genera los secretos)
-#   docker compose up -d postgres activemq   (solo la infraestructura: sin nombrar los servicios,
-#                                             compose levanta también los módulos en contenedores)
-#
-# Si no, el backend no arranca y falla con "Connection refused". La alternativa sin Docker
-# es un PostgreSQL instalado en la máquina, escuchando en el 5432 con la base y el usuario que
-# declara docker-compose.yml y la contraseña del .env. Ver el README.
-#
-# Sin .env, los backends no arrancan: sin perfil no hay secreto del JWT por defecto.
+# La infraestructura la levanta el proceso `docker` (`docker compose up -d postgres activemq`),
+# NOMBRANDO los dos servicios: sin nombrarlos, compose levanta también los módulos en contenedores
+# y chocan con estos. Corre en paralelo con los demás, así que en el primer arranque, con
+# PostgreSQL todavía bajando su imagen, los backends pueden morir con "Connection refused":
+# reiniciarlos desde el panel cuando `docker` termine. La alternativa sin Docker es un PostgreSQL
+# instalado en la máquina, escuchando en el 5432 con la base y el usuario que declara
+# docker-compose.yml y la contraseña del .env. Ver el README.
 #
 # No lleva perfil: el perfil por defecto de los módulos ya apunta a PostgreSQL.
 #
-# Son ocho, los mismos que `pnpm dev`. `async` es Notificaciones (8084) y acá el broker no es
-# opcional: este ambiente ya exige Docker por PostgreSQL, así que el `docker compose up` de
-# arriba levanta las dos cosas y los avisos funcionan de punta a punta sin hacer nada más.
+# Ver mprocs.yaml para los nombres y el orden.
 procs:
-  back:
-    shell: pnpm demo:back
-  charging:
-    shell: pnpm demo:charging
-  pay:
-    shell: pnpm demo:pay
-  async:
-    shell: pnpm demo:async
-  gateway:
-    shell: pnpm demo:gateway
-  grid:
-    shell: pnpm demo:grid
-  charger:
-    shell: pnpm demo:charger
-  front:
+  5173 front:
     shell: pnpm dev:front
+  8081 core:
+    shell: pnpm demo:back
+  8082 charging:
+    shell: pnpm demo:charging
+  8083 integration:
+    shell: pnpm demo:pay
+  8084 async:
+    shell: pnpm demo:async
+  8086 payment-gateway:
+    shell: pnpm demo:gateway
+  8087 power-grid:
+    shell: pnpm demo:grid
+  8088 charger:
+    shell: pnpm demo:charger
+  docker:
+    shell: docker compose up -d postgres activemq

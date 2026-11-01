@@ -53,6 +53,11 @@ su propio scroll. Se cambia de uno a otro con las flechas, y las teclas están s
 vista en el recuadro de ayuda. Es [mprocs](https://www.npmjs.com/package/mprocs), y se
 configura en `mprocs.yaml`.
 
+**Cada proceso aparece con su puerto y el mismo nombre que tiene en `docker-compose.yml`**
+(`8081 core`, `8082 charging`, `8086 payment-gateway`…), así la lista sale ordenada y se llama
+igual acá y en el servidor. El último, `docker`, levanta el broker (`docker compose up -d activemq`)
+y termina: queda en DOWN y es lo esperado. Si Docker no está abierto, el error queda en ese panel.
+
 Lo que más se usa: **reiniciar un solo proceso sin bajar el otro**. Tocaste una clase del
 backend y querés relevantarlo sin perder el estado del navegador — lo reiniciás desde el
 panel y Vite ni se entera.
@@ -68,9 +73,9 @@ proxy de Vite manda `/api/bookings` al 8082, `/api/payment-methods` al 8083,
 sola API.
 
 **Del sexto al octavo proceso no son Ecopedia:** son los sistemas externos simulados. La pasarela
-de pagos, en el 8086 (`gateway` en el panel), a la que Pagos le habla por REST; la distribuidora
-eléctrica, en el 8087 (`grid`), a la que RedEléctrica le pregunta por SOAP antes de una carga
-rápida; y los cargadores, en el 8088 (`charger`), que Terminales enciende y apaga por REST y que
+de pagos, en el 8086 (`8086 payment-gateway` en el panel), a la que Pagos le habla por REST; la
+distribuidora eléctrica, en el 8087 (`8087 power-grid`), a la que RedEléctrica le pregunta por SOAP
+antes de una carga rápida; y los cargadores, en el 8088 (`8088 charger`), que Terminales enciende y apaga por REST y que
 publican la telemetría en el broker. El navegador nunca les habla directo. Ver "La pasarela de pagos
 simulada", "La distribuidora eléctrica simulada" y "Los cargadores simulados", más abajo.
 
@@ -256,7 +261,7 @@ lo que se documenta y se defiende. Primero, una sola vez, el `.env` (ver abajo):
 pnpm env:init
 ```
 
-Después la infraestructura:
+Después la infraestructura. **`pnpm demo` la levanta sola** con su proceso `docker`; a mano es:
 
 ```bash
 docker compose up -d postgres activemq
@@ -268,7 +273,7 @@ módulo contra la misma base y el mismo broker.
 
 Deja arriba PostgreSQL (`localhost:5432`) y ActiveMQ Artemis (`localhost:61616`, consola web en
 http://localhost:8161/console). **Los dos escuchan solo en `127.0.0.1`**: desde otra máquina de la
-red no se llega, y está bien, porque los usan los backends de esta misma. Y después los seis
+red no se llega, y está bien, porque los usan los backends de esta misma. Y después los
 procesos:
 
 ```bash
@@ -283,7 +288,7 @@ apunta a PostgreSQL. Si preferís uno solo, `pnpm demo:back`, `pnpm demo:chargin
 casi siempre falta el `docker compose up -d postgres activemq`. Se ve en dos lugares distintos y conviene reconocer
 los dos:
 
-- **En el panel `back`**, al final de la traza: `java.net.ConnectException: Connection refused`,
+- **En el panel `8081 core`**, al final de la traza: `java.net.ConnectException: Connection refused`,
   y el proceso termina con `BUILD FAILURE`.
 - **En el navegador**, algo menos obvio: **el front levanta igual y cada llamada a `/api`
   devuelve 502.** El proxy de Vite sigue en pie, pero no tiene a quién reenviarle. Un 502 acá no
@@ -397,31 +402,30 @@ Al confirmar o cancelar una reserva, Reservas deja un mensaje en la cola
 `notifications.dispatch` de Artemis, y `ecopedia-async` (8084) lo consume, arma el aviso, lo
 guarda y manda el mail. **El mail es simulado:** se escribe en el log.
 
-`pnpm dev` ya levanta `async`, así que lo único que hay que agregar es el broker, que es el de
-`docker-compose.yml`. Para probarlo sin tocar PostgreSQL alcanza con levantar el broker solo, con
-el ambiente propio. El broker también necesita el `.env` (`pnpm env:init`, una vez):
+`pnpm dev` ya levanta `async` y también el broker, que es el de `docker-compose.yml`: lo arranca el
+proceso `docker` de la lista, sin tocar PostgreSQL. Lo único que hace falta es Docker abierto y el
+`.env`, que el broker también necesita (`pnpm env:init`, una vez). A mano, sin mprocs:
 
 ```bash
 docker compose up -d activemq
-pnpm dev          # core, Reservas, Pagos, Notificaciones y front
 ```
 
 **Sin el broker el proceso arranca igual** y la campanita y la sección del perfil contestan —el
-historial es HTTP y no pasa por la cola—, pero no llega ningún aviso nuevo y el panel `async` se
+historial es HTTP y no pasa por la cola—, pero no llega ningún aviso nuevo y el panel `8084 async` se
 llena de reintentos de conexión. Si al confirmar una reserva no aparece nada, ese panel y el
-`WARN` de `charging` ("No se pudo publicar el aviso en la cola…") son los dos lugares donde
-mirar primero.
+`WARN` de `8082 charging` ("No se pudo publicar el aviso en la cola…") son los dos lugares donde
+mirar primero. Y el panel `docker`, que dice si el broker pudo arrancar.
 
-Con `pnpm demo` no hace falta nada aparte: `docker compose up -d postgres activemq` ya trae el
-broker junto con PostgreSQL.
+Con `pnpm demo` tampoco hace falta nada aparte: su proceso `docker` levanta el broker junto con
+PostgreSQL.
 
 Dónde se ve cada paso, después de confirmar una reserva:
 
 | Qué | Dónde |
 |-----|-------|
-| Reservas publicó | Panel `charging`: `Aviso booking-N-BOOKING_CONFIRMED publicado en la cola notifications.dispatch` |
+| Reservas publicó | Panel `8082 charging`: `Aviso booking-N-BOOKING_CONFIRMED publicado en la cola notifications.dispatch` |
 | El mensaje pasó por el broker | http://localhost:8161/console (usuario `ecopedia`, contraseña la de `ECOPEDIA_BROKER_PASSWORD` en el `.env`) → *Queues* → `notifications.dispatch`: los contadores de agregados y consumidos |
-| Notificaciones lo recibió y mandó el mail | Panel `async`: `Recibido de la cola...` y la línea `[MAIL SIMULADO]` |
+| Notificaciones lo recibió y mandó el mail | Panel `8084 async`: `Recibido de la cola...` y la línea `[MAIL SIMULADO]` |
 | Quedó guardado | `GET http://localhost:8084/api/notifications` con el token del conductor, o la consola de H2 en http://localhost:8084/h2-console (tabla `async.notifications`) |
 
 **Para ver el desacople**, que es lo que muestra la mensajería: bajá `async`, confirmá una
@@ -655,8 +659,7 @@ Lo que conviene saber:
 - **El tiempo va acelerado:** cada 2 segundos reales carga 1 minuto, así una carga de 40 minutos dura
   80 segundos. Se cambia con `ECOPEDIA_CHARGER_READING_INTERVAL` y `ECOPEDIA_CHARGER_MINUTES_PER_READING`.
 - **Sin broker no enciende:** contesta 503 `telemetry_unavailable`, porque una carga sin lecturas no se
-  puede cortar ni cobrar. Con `pnpm dev` hace falta `docker compose up -d activemq`, igual que para los
-  avisos.
+  puede cortar ni cobrar. Con `pnpm dev` lo levanta el proceso `docker`, igual que para los avisos.
 - **Cualquier id positivo es un conector:** el simulador no conoce la base de Ecopedia.
 - Escucha solo en `127.0.0.1` y pide la clave de `ECOPEDIA_CHARGER_ACCESS_TOKEN` en cada llamada
   (`Authorization: Bearer`); con `pnpm dev`, una de desarrollo.
