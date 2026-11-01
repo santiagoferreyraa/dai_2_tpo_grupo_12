@@ -9,6 +9,7 @@ import {
 } from '@/features/pricing/data/pricingRepository'
 import type { NetworkRates } from '@/features/pricing/types'
 import { describePeak } from '@/features/pricing/usePricing'
+import { CONNECTOR_TYPE_LABEL, CONNECTOR_TYPES } from '@/features/terminals/format'
 import { normalizeGridNode, toGridNodeId, validateGridNode } from '@/features/terminals/gridNode'
 import SortableHeader from './components/SortableHeader'
 import {
@@ -34,9 +35,8 @@ import {
   updateStation,
   updateUserRole,
 } from './data/adminRepository'
+import { adminErrorMessage } from './errorMessage'
 import type { AdminDashboardMetrics, ConnectorItem, StationItem, UserItem } from './types'
-
-const CONNECTOR_TYPES = ['TYPE_1', 'TYPE_2', 'CCS2', 'CHADEMO', 'TESLA_SUPERCHARGER']
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<
@@ -128,7 +128,7 @@ export default function AdminPage() {
       const data = await fetchUsers(roleQuery)
       setUsers(data)
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Error al cargar usuarios')
+      setActionError(adminErrorMessage(err, 'No pudimos traer los usuarios.'))
     } finally {
       setLoadingUsers(false)
     }
@@ -140,7 +140,7 @@ export default function AdminPage() {
       const data = await fetchStations()
       setStations(data)
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Error al cargar estaciones')
+      setActionError(adminErrorMessage(err, 'No pudimos traer las estaciones.'))
     } finally {
       setLoadingStations(false)
     }
@@ -153,7 +153,7 @@ export default function AdminPage() {
       const data = await fetchConnectors(stationId)
       setConnectors(data)
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Error al cargar conectores')
+      setActionError(adminErrorMessage(err, 'No pudimos traer los conectores.'))
     } finally {
       setLoadingConnectors(false)
     }
@@ -202,7 +202,7 @@ export default function AdminPage() {
       await loadUsers()
       await loadMetrics()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'No se pudo actualizar el rol.')
+      setActionError(adminErrorMessage(err, 'No se pudo actualizar el rol.'))
     } finally {
       setUpdatingUserRoleId(null)
     }
@@ -220,7 +220,7 @@ export default function AdminPage() {
       await loadUsers()
       await loadMetrics()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'No se pudo dar de baja al usuario.')
+      setActionError(adminErrorMessage(err, 'No se pudo dar de baja al usuario.'))
     } finally {
       setDeactivatingUserId(null)
     }
@@ -237,7 +237,7 @@ export default function AdminPage() {
       await loadUsers()
       await loadMetrics()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'No se pudo reactivar al usuario.')
+      setActionError(adminErrorMessage(err, 'No se pudo reactivar al usuario.'))
     } finally {
       setDeactivatingUserId(null)
     }
@@ -255,7 +255,7 @@ export default function AdminPage() {
       await loadStations()
       await loadMetrics()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'No se pudo dar de baja la estación.')
+      setActionError(adminErrorMessage(err, 'No se pudo dar de baja la estación.'))
     } finally {
       setDeactivatingStationId(null)
     }
@@ -330,7 +330,7 @@ export default function AdminPage() {
       await loadStations()
       await loadMetrics()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Error al procesar la estación.')
+      setActionError(adminErrorMessage(err, 'No se pudo guardar la estación.'))
     } finally {
       setSubmittingStation(false)
     }
@@ -370,7 +370,7 @@ export default function AdminPage() {
       await loadConnectors()
       await loadMetrics()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Error al guardar el conector.')
+      setActionError(adminErrorMessage(err, 'No se pudo guardar el conector.'))
     } finally {
       setSubmittingConnector(false)
     }
@@ -387,9 +387,7 @@ export default function AdminPage() {
       await loadConnectors()
       await loadStations()
     } catch (err) {
-      setActionError(
-        err instanceof Error ? err.message : 'No se pudo cambiar el estado del conector.',
-      )
+      setActionError(adminErrorMessage(err, 'No se pudo cambiar el estado del conector.'))
     } finally {
       setUpdatingConnectorStatusId(null)
     }
@@ -407,7 +405,7 @@ export default function AdminPage() {
       await loadStations()
       await loadMetrics()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'No se pudo eliminar el conector.')
+      setActionError(adminErrorMessage(err, 'No se pudo eliminar el conector.'))
     }
   }
 
@@ -1328,7 +1326,7 @@ export default function AdminPage() {
                   >
                     {CONNECTOR_TYPES.map((t) => (
                       <option key={t} value={t}>
-                        {t}
+                        {CONNECTOR_TYPE_LABEL[t]}
                       </option>
                     ))}
                   </select>
