@@ -207,7 +207,7 @@ una migración, `pnpm dev:mem` te evita el borrado en cada vuelta.
 
 #### Promover un usuario a `CPO`
 
-Registrarse deja el rol `CONDUCTOR`, así que `/stations` rebota a `/forbidden`. El ABM pide `CPO`,
+Registrarse deja el rol `CONDUCTOR`, así que `/stations` muestra "Página no encontrada". El ABM pide `CPO`,
 y el rol se cambia a mano. La consulta es la misma en los tres; cambia por dónde entrás:
 
 ```sql

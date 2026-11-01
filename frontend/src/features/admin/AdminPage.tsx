@@ -10,6 +10,14 @@ import {
 import type { NetworkRates } from '@/features/pricing/types'
 import { describePeak } from '@/features/pricing/usePricing'
 import { normalizeGridNode, toGridNodeId, validateGridNode } from '@/features/terminals/gridNode'
+import SortableHeader from './components/SortableHeader'
+import {
+  type ConnectorSort,
+  type ConnectorSortKey,
+  DEFAULT_CONNECTOR_SORT,
+  nextConnectorSort,
+  sortConnectors,
+} from './connectorSort'
 import {
   activateUser,
   addConnector,
@@ -82,6 +90,7 @@ export default function AdminPage() {
   const [loadingConnectors, setLoadingConnectors] = useState(false)
   const [searchConnector, setSearchConnector] = useState('')
   const [connectorStationFilter, setConnectorStationFilter] = useState<number | 'ALL'>('ALL')
+  const [connectorSort, setConnectorSort] = useState<ConnectorSort>(DEFAULT_CONNECTOR_SORT)
   const [updatingConnectorStatusId, setUpdatingConnectorStatusId] = useState<number | null>(null)
 
   // Precios de la red (Manuel, 31/10: los fija solo el ADMIN, para todas las estaciones)
@@ -444,16 +453,29 @@ export default function AdminPage() {
     return s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q)
   })
 
-  const filteredConnectors = connectors.filter((c) => {
-    if (!searchConnector.trim()) return true
-    const q = searchConnector.toLowerCase()
-    return (
-      c.id.toString().includes(q) ||
-      c.connectorType.toLowerCase().includes(q) ||
-      c.operationalStatus.toLowerCase().includes(q) ||
-      (c.stationId && c.stationId.toString().includes(q))
-    )
-  })
+  // El orden se aplica sobre lo que deja el buscador.
+  const filteredConnectors = sortConnectors(
+    connectors.filter((c) => {
+      if (!searchConnector.trim()) return true
+      const q = searchConnector.toLowerCase()
+      return (
+        c.id.toString().includes(q) ||
+        c.connectorType.toLowerCase().includes(q) ||
+        c.operationalStatus.toLowerCase().includes(q) ||
+        (c.stationId && c.stationId.toString().includes(q))
+      )
+    }),
+    connectorSort,
+  )
+
+  const connectorHeader = (key: ConnectorSortKey, label: string) => (
+    <SortableHeader
+      direction={connectorSort.key === key ? connectorSort.direction : null}
+      onSort={() => setConnectorSort((current) => nextConnectorSort(current, key))}
+    >
+      {label}
+    </SortableHeader>
+  )
 
   return (
     /*
@@ -956,11 +978,11 @@ export default function AdminPage() {
                 <table className="w-full text-left text-sm text-text">
                   <thead className="border-b border-border/60 text-xs text-text-muted uppercase">
                     <tr>
-                      <th className="py-3 px-4">ID Conector</th>
-                      <th className="py-3 px-4">Estación</th>
-                      <th className="py-3 px-4">Tipo Conector</th>
-                      <th className="py-3 px-4">Potencia Máx.</th>
-                      <th className="py-3 px-4">Estado Operativo</th>
+                      {connectorHeader('id', 'ID Conector')}
+                      {connectorHeader('station', 'Estación')}
+                      {connectorHeader('type', 'Tipo Conector')}
+                      {connectorHeader('power', 'Potencia Máx.')}
+                      {connectorHeader('status', 'Estado Operativo')}
                       <th className="py-3 px-4 text-right">Acciones</th>
                     </tr>
                   </thead>
