@@ -136,5 +136,14 @@ class IntegrationDepositGatewayTest {
         integration.reset();
         integration.expect(requestTo(refund)).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
         assertThatThrownBy(() -> gateway.refund(9L)).isInstanceOf(DepositPaymentUnavailableException.class);
+
+        integration.reset();
+        integration
+                .expect(requestTo(refund))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"amount\":4800}"))
+                .andRespond(withSuccess("{\"chargeId\":9,\"status\":\"REFUNDED\"}", MediaType.APPLICATION_JSON));
+        gateway.refund(9L, new BigDecimal("4800"));
+        integration.verify();
     }
 }

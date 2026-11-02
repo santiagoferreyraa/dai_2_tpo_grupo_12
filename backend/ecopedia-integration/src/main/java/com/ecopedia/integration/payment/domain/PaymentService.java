@@ -1,5 +1,6 @@
 package com.ecopedia.integration.payment.domain;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -65,5 +66,20 @@ public interface PaymentService {
      * @throws DepositNotRefundableException si el cobro fue rechazado
      * @throws PaymentGatewayUnavailableException si la pasarela no contestó; quien llama reintenta
      */
-    DepositCharge refundDeposit(Long chargeId);
+    default DepositCharge refundDeposit(Long chargeId) {
+        return refundDeposit(chargeId, null);
+    }
+
+    /**
+     * Devuelve total o parcialmente la seña de un cobro aprobado (RF13, RF14, ECO-59).
+     *
+     * <p>Si {@code amount} es {@code null}, devuelve la seña entera (cancelación en ventana o falla
+     * en la habilitación). Si es un monto positivo menor o igual a la seña, devuelve esa diferencia
+     * (liquidación por falla con la carga en curso, sin aplicar el piso de la seña).
+     *
+     * @throws DepositChargeNotFoundException si el cobro no existe
+     * @throws DepositNotRefundableException si el cobro fue rechazado o el monto pedido es inválido
+     * @throws PaymentGatewayUnavailableException si la pasarela no contestó; quien llama reintenta
+     */
+    DepositCharge refundDeposit(Long chargeId, BigDecimal amount);
 }

@@ -293,4 +293,47 @@ class InternalDepositApiTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("DEPOSIT_CHARGE_NOT_FOUND"));
     }
+
+    @Test
+    @DisplayName(
+            "RF13 / ECO-59: devolver parcialmente la diferencia contra la seña manda el importe a la pasarela, es idempotente y rechaza importes mayores a la seña")
+    void partialRefundForMidSessionFault() throws Exception {
+        PaymentMethod card = cardOf(313L, "4242");
+        String key = newKey();
+        when(gateway.charge(anyString(), any(), any(), any(), eq(key)))
+                .thenReturn(new GatewayCharge("pay_7", true, "accredited"));
+        when(gateway.refund(eq("pay_7"), eq(new BigDecimal("4800.00")), eq("refund-" + key)))
+                .thenReturn(new GatewayRefund("ref_2", "pay_7", new BigDecimal("4800.00")));
+        JsonNode charged = objectMapper.readTree(charge(SERVICE_TOKEN, 313L, card.getId(), key)
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
+        long chargeId = charged.get("chargeId").asLong();
+
+        mockMvc.perform(post("/internal/payments/deposits/{id}/refund", chargeId)
+                        .header(HttpHeaders.AUTHORIZATION, SERVICE_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":9500}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DEPOSIT_NOT_REFUNDABLE"));
+
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mockMvc.perform(post("/internal/payments/deposits/{id}/refund", chargeId)
+                            .header(HttpHeaders.AUTHORIZATION, SERVICE_TOKEN)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"amount\":4800}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("REFUNDED"));
+        }
+
+        verify(gateway, times(1)).refund(eq("pay_7"), eq(new BigDecimal("4800.00")), eq("refund-" + key));
+        assertThat(charges.findById(chargeId).orElseThrow().getRefundedAmount()).isEqualByComparingTo("4800.00");
+
+        mockMvc.perform(post("/internal/payments/deposits/{id}/refund", chargeId)
+                        .header(HttpHeaders.AUTHORIZATION, SERVICE_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":8000}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DEPOSIT_NOT_REFUNDABLE"));
+    }
 }

@@ -1,5 +1,6 @@
 package com.ecopedia.charging.booking.domain;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -124,6 +125,29 @@ public interface BookingService {
 
     /** Anota que Pagos devolvió la seña de la reserva. */
     void markDepositRefunded(Long bookingId);
+
+    /**
+     * Libera una reserva sin penalización y encola el reintegro total de la seña cuando la carga no
+     * pudo iniciarse por causas ajenas al conductor —conector fuera de servicio, cargador que no
+     * responde o rechazo de la distribuidora (RF13, ECO-59)—.
+     *
+     * <p>A diferencia de {@link #cancelBooking}, el reintegro de la seña no depende del plazo de
+     * preaviso: el conductor se presentó en tiempo y forma y la falla es del operador o de la red.
+     *
+     * @throws BookingNotFoundException si la reserva no existe
+     * @throws InvalidBookingRequestException si la reserva ya se cerró sin reintegro
+     */
+    Booking releaseForActivationFailure(Long bookingId);
+
+    /**
+     * Liquida una reserva cuya carga en curso se interrumpió por una falla ajena al conductor
+     * (RF13, ECO-59): libera el resto de la ventana y, si el consumo real fue menor que la seña,
+     * encola el reintegro de la diferencia sin aplicar el piso de la seña.
+     *
+     * @throws BookingNotFoundException si la reserva no existe
+     * @throws InvalidBookingRequestException si la reserva no está confirmada o el costo es negativo
+     */
+    Booking settleFaultedBooking(Long bookingId, BigDecimal realCost);
 
     /**
      * Cancela una reserva del propio conductor y libera su ventana (ECO-32).

@@ -44,7 +44,8 @@ public class InternalDepositController {
     }
 
     @PostMapping("/{chargeId}/refund")
-    public DepositChargeResponse refund(@PathVariable Long chargeId) {
-        return DepositChargeResponse.from(paymentService.refundDeposit(chargeId));
+    public DepositChargeResponse refund(
+            @PathVariable Long chargeId, @Valid @RequestBody(required = false) DepositRefundBody body) {
+        return DepositChargeResponse.from(paymentService.refundDeposit(chargeId, body == null ? null : body.amount()));
     }
 }
