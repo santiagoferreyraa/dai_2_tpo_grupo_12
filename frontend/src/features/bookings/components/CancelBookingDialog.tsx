@@ -66,9 +66,11 @@ export default function CancelBookingDialog({ booking, onClose }: CancelBookingD
       (reason: unknown) => {
         setBusy(false)
         /*
-          Un 400 es que la ventana terminó mientras se decidía, o que pasó la tolerancia y el
-          backend la cerró por incomparecencia (ECO-57); un 409, que esto último pasó justo en el
-          mismo instante. En los tres la lista se refresca para que la reserva pase al historial.
+          Un 409 `BOOKING_STATE_CONFLICT` es que la ventana terminó mientras se decidía, o que pasó
+          la tolerancia y el backend la cerró por incomparecencia (ECO-57); un 409 `BOOKING_CHANGED`,
+          que esto último pasó justo en el mismo instante. Hasta QA-26 (02/11) los dos primeros
+          llegaban como 400, y el 400 se sigue aceptando para no depender del orden de los
+          despliegues. En todos la lista se refresca para que la reserva pase al historial.
           Un 404, que ya no existe.
         */
         if (reason instanceof ApiError && (reason.status === 400 || reason.status === 409)) {

@@ -166,9 +166,17 @@ public class Booking {
      * {@link DepositStatus#REFUND_PENDING} y la pide quien habla con Pagos.
      *
      * <p>Es un método con nombre y no un {@code setStatus} abierto porque no todo cambio de
-     * estado es válido desde cualquier otro.
+     * estado es válido desde cualquier otro: solo se cancela una reserva confirmada cuya ventana
+     * todavía no terminó. Una que terminó no tiene nada que liberar, y dejar reescribirla sería
+     * borrar el historial de una reserva que el conductor usó o a la que no se presentó (RF09, que
+     * tiene su propio estado). Lo demás es {@link BookingStateConflictException} (QA-26). Cancelar
+     * una ya cancelada no llega acá: el servicio lo resuelve antes, porque es idempotente.
      */
     public void cancel(Instant now) {
+        requireConfirmed("la cancelación");
+        if (!windowEnd.isAfter(now)) {
+            throw new BookingStateConflictException(id, "terminada", "la cancelación");
+        }
         this.status = BookingStatus.CANCELLED;
         if (depositStatus == DepositStatus.CHARGED) {
             if (now.isAfter(depositRefundableUntil)) {
@@ -183,9 +191,11 @@ public class Booking {
     /**
      * La carga no pudo iniciarse por causas ajenas al conductor —conector fuera de servicio,
      * cargador que no responde o rechazo de la distribuidora (RF13, ECO-59)—: la reserva se libera
-     * sin penalización y la seña se reintegra entera, sin importar el plazo de preaviso.
+     * sin penalización y la seña se reintegra entera, sin importar el plazo de preaviso. Solo sobre
+     * una reserva confirmada.
      */
     public void failActivation() {
+        requireConfirmed("la liberación por falla de habilitación");
         this.status = BookingStatus.CANCELLED;
         if (depositStatus == DepositStatus.CHARGED) {
             this.depositStatus = DepositStatus.REFUND_PENDING;
@@ -196,9 +206,10 @@ public class Booking {
     /**
      * La carga en curso se interrumpió por una falla ajena al conductor (RF13, ECO-59): se liquida
      * el consumo real sin aplicar el piso de la seña y, si el consumo real fue menor que la seña,
-     * se reintegra la diferencia.
+     * se reintegra la diferencia. Solo sobre una reserva confirmada.
      */
     public void settleFaultedCharge(BigDecimal realCost, Instant now) {
+        requireConfirmed("la liquidación por falla");
         if (realCost == null || realCost.signum() < 0) {
             throw new InvalidBookingRequestException("El consumo real no puede ser negativo");
         }
@@ -222,12 +233,24 @@ public class Booking {
 
     /**
      * El conductor no se presentó (RF09, ECO-57): la reserva deja de bloquear el conector y al
-     * conductor, y la seña queda para el operador. Es para lo que existe la seña.
+     * conductor, y la seña queda para el operador. Es para lo que existe la seña. Solo sobre una
+     * reserva confirmada: el barrido ya las filtra así, y esto lo asegura para cualquier otro.
      */
     public void markNoShow() {
+        requireConfirmed("la incomparecencia");
         this.status = BookingStatus.NO_SHOW;
         if (depositStatus == DepositStatus.CHARGED) {
             this.depositStatus = DepositStatus.FORFEITED;
+        }
+    }
+
+    /**
+     * Todos los cambios de estado parten de {@code CONFIRMED}: {@code CANCELLED} y {@code NO_SHOW}
+     * son finales (QA-26).
+     */
+    private void requireConfirmed(String transition) {
+        if (status != BookingStatus.CONFIRMED) {
+            throw new BookingStateConflictException(id, "en " + status, transition);
         }
     }
 

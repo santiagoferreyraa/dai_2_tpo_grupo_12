@@ -11,8 +11,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ecopedia.charging.booking.domain.Booking;
+import com.ecopedia.charging.booking.domain.BookingRepository;
 import com.ecopedia.charging.booking.domain.ConnectorCatalog;
 import com.ecopedia.charging.booking.domain.ConnectorSnapshot;
+import com.ecopedia.charging.booking.domain.TimeWindow;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
 import com.ecopedia.charging.checkout.domain.TariffDirectory;
 import com.ecopedia.charging.web.ApiProblems;
@@ -28,6 +31,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -71,6 +76,9 @@ class BookingApiTest {
 
     @MockitoBean
     private ConnectorCatalog connectorCatalog;
+
+    @Autowired
+    private BookingRepository bookingRepository;
 
     /*
      * Confirmar pasa por el checkout, que le pregunta a Pagos por las tarjetas y a core por la seña. Los dos
@@ -338,6 +346,43 @@ class BookingApiTest {
             mockMvc.perform(delete("/api/bookings/{id}", bookingId).header(HttpHeaders.AUTHORIZATION, driver(DRIVER)))
                     .andExpect(status().isNoContent());
         }
+    }
+
+    /**
+     * QA-26: cancelar una reserva que ya no lo admite es un conflicto con el estado, no un pedido mal
+     * armado. 409 con {@code code} y un texto fijo, sin el id ni el motivo; esos van al log.
+     *
+     * <p>Las reservas se guardan directo en el repositorio: por la API, llegar a una incomparecencia o
+     * a una ventana terminada pide esperar a que pase el tiempo.
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"NO_SHOW", "terminada"})
+    @DisplayName("Cancelar una reserva cerrada da 409 BOOKING_STATE_CONFLICT, sin pistas, y no la cambia")
+    void cancellingAClosedBookingIsAConflict(String state, CapturedOutput output) throws Exception {
+        Booking booking = bookingRepository.save(closedBooking(state));
+
+        mockMvc.perform(delete("/api/bookings/{id}", booking.getId()).header(HttpHeaders.AUTHORIZATION, driver(DRIVER)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("BOOKING_STATE_CONFLICT"))
+                .andExpect(jsonPath("$.detail").value("La reserva no admite ese cambio en su estado actual."));
+
+        assertThat(output).contains("Transición de reserva rechazada (409): La reserva " + booking.getId());
+        mockMvc.perform(get("/api/bookings/mine").header(HttpHeaders.AUTHORIZATION, driver(DRIVER)))
+                .andExpect(jsonPath("$[?(@.id == " + booking.getId() + ")].status")
+                        .value(state.equals("NO_SHOW") ? "NO_SHOW" : "CONFIRMED"));
+    }
+
+    /** Una reserva del conductor ya cerrada: con incomparecencia, o confirmada con la ventana en el pasado. */
+    private static Booking closedBooking(String state) {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+        if (state.equals("NO_SHOW")) {
+            Instant start = nextWindowStart();
+            Booking booking = new Booking(40L, DRIVER, new TimeWindow(start, start.plus(Duration.ofHours(1))), now);
+            booking.markNoShow();
+            return booking;
+        }
+        return new Booking(
+                41L, DRIVER, new TimeWindow(now.minus(Duration.ofHours(3)), now.minus(Duration.ofHours(2))), now);
     }
 
     /** Consulta la disponibilidad del conector con token de conductor. */
