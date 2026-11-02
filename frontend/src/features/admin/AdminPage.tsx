@@ -851,21 +851,8 @@ export default function AdminPage() {
                           )}
                         </td>
                         <td className="py-3.5 px-4 text-right">
-                          {user.active && user.role === 'ADMIN' ? (
-                            <>
-                              <button
-                                type="button"
-                                disabled
-                                className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-400 disabled:opacity-50"
-                              >
-                                Dar de Baja
-                              </button>
-                              <p className="mt-1.5 ml-auto max-w-56 text-[11px] leading-snug text-text-muted">
-                                Los administradores se dan de baja o cambian de rol desde la base de
-                                datos.
-                              </p>
-                            </>
-                          ) : user.active ? (
+                          {/* Un ADMIN activo no tiene acciones: se da de baja por la base (02/11). */}
+                          {user.active && user.role === 'ADMIN' ? null : user.active ? (
                             <button
                               type="button"
                               onClick={() => handleDeactivateUser(user)}
