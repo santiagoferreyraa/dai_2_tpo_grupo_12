@@ -122,11 +122,37 @@ Desktop, o Docker Engine con `docker compose`). Es lo que corre el servidor de l
 ```bash
 git clone https://github.com/santiagoferreyraa/dai_2_tpo_grupo_12.git
 cd dai_2_tpo_grupo_12
-node scripts/env-init.mjs     # = pnpm env:init. Sin Node: ver abajo
+cp .env.example .env          # y completar las variables vacías (ver abajo)
 docker compose up -d --build
 ```
 
-Y se entra por **http://localhost**. La primera vez compila todo adentro de Docker: en una PC
+**Qué completar en el `.env`.** Todas las variables que en `.env.example` están vacías:
+
+| Variable | Qué poner |
+|---|---|
+| `ECOPEDIA_ADMIN_PASSWORD` | La contraseña de la cuenta `ADMIN` inicial, de 6 caracteres o más |
+| `ECOPEDIA_CPO_PASSWORD` | La de la cuenta `CPO` inicial, igual |
+| `ECOPEDIA_JWT_SECRET` | Cualquier texto al azar de **64 caracteres o más** (firma los tokens) |
+| Las otras seis (`ECOPEDIA_DB_PASSWORD`, `ECOPEDIA_BROKER_PASSWORD`, `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN`, `ECOPEDIA_POWER_GRID_PASSWORD`, `ECOPEDIA_CHARGER_ACCESS_TOKEN`, `ECOPEDIA_INTERNAL_TOKEN`) | Cualquier texto al azar, solo letras y números. Nadie los escribe después: los usan los procesos entre sí |
+
+Con alguna vacía, `docker compose up` no arranca y dice cuál falta. **En vez de completarlas a mano**,
+`node scripts/env-init.mjs` (= `pnpm env:init`; sin Node, ver abajo) arma el `.env` con todas al
+azar, también las dos contraseñas de las cuentas, que quedan escritas en el `.env`. No imprime
+ninguna.
+
+Y se entra por **http://localhost**, con estas dos cuentas:
+
+| Rol | Mail | Contraseña |
+|---|---|---|
+| `ADMIN` | `matiasruizadmin@gmail.com` | la de `ECOPEDIA_ADMIN_PASSWORD` en el `.env` |
+| `CPO` | `matiasruizcpo@gmail.com` | la de `ECOPEDIA_CPO_PASSWORD` en el `.env` |
+
+Los mails salen de `ECOPEDIA_ADMIN_EMAIL` y `ECOPEDIA_CPO_EMAIL`, y se pueden cambiar en el `.env` antes
+del primer arranque. Core crea las dos cuentas al arrancar si no existen, y **no las vuelve a tocar**:
+la contraseña se cambia desde el perfil, y un arranque nuevo no la pisa. **Los conductores se
+registran desde la web**, y desde la cuenta `ADMIN`, en `/admin` → Usuarios, se le cambia el rol a
+cualquiera. La cuenta `CPO` es dueña de las 15 estaciones de ejemplo (si en esa base ya había otros
+`CPO`, la primera vez se reparten entre todos, por partes iguales; no se repite). La primera vez compila todo adentro de Docker: en una PC
 de desarrollo, unos 4 minutos entre construir y arrancar (más si tiene que bajar las imágenes
 base, o en una máquina chica). Las siguientes, con la caché, alrededor de un minuto. Los primeros minutos el navegador puede
 ver **502**: la página ya está, pero los módulos todavía arrancan.
@@ -151,9 +177,6 @@ es el mismo ambiente que `pnpm demo`, **con los mismos volúmenes**, así que co
 | `docker compose logs -f core` | El log de uno (`charging`, `integration`, `async`, `payment-gateway`, `power-grid`, `charger`, `web`...) |
 | `docker compose down` | Baja todo. Los datos quedan en los volúmenes |
 | `git pull && docker compose up -d --build` | Actualiza a lo último |
-
-**El primer `ADMIN`** se crea igual que en "Promover un usuario a `CPO`": registrarse desde la web y
-cambiar el rol por SQL, con `role = 'ADMIN'`, por el `docker exec ... psql` del ambiente compartido.
 
 **No mezclarlo con `pnpm demo`.** Para `pnpm demo`, la infraestructura se levanta nombrando los dos
 servicios (`docker compose up -d postgres activemq`, ver "Con PostgreSQL"). Con las dos cosas arriba
@@ -301,8 +324,8 @@ que puedan migrar por separado sin pisarse.
 #### El `.env`
 
 Los secretos viven en un `.env` en la raíz, **que no se versiona**. `pnpm env:init` lo genera a
-partir de `.env.example` con valores al azar, y no pisa uno que ya exista. Tiene siete secretos y
-dos ajustes:
+partir de `.env.example` con valores al azar, y no pisa uno que ya exista. Tiene siete secretos,
+las dos cuentas iniciales y dos ajustes:
 
 | Variable | Qué es |
 |---|---|
@@ -313,11 +336,16 @@ dos ajustes:
 | `ECOPEDIA_POWER_GRID_PASSWORD` | La contraseña del UsernameToken con que RedEléctrica se presenta ante la distribuidora simulada. La leen los dos |
 | `ECOPEDIA_CHARGER_ACCESS_TOKEN` | La clave con la que Terminales (en core) se presenta ante los cargadores simulados. La leen los dos |
 | `ECOPEDIA_INTERNAL_TOKEN` | La clave de servicio entre artefactos de Ecopedia, para las rutas `/internal/**` (hoy, `charging` llamando a RedEléctrica y al cobro de la seña en `integration`). La leen los dos |
+| `ECOPEDIA_ADMIN_EMAIL`, `ECOPEDIA_ADMIN_PASSWORD`, `ECOPEDIA_CPO_EMAIL`, `ECOPEDIA_CPO_PASSWORD` | Las cuentas con las que se entra la primera vez (ver "Todo con Docker"). `docker compose up` las exige; `pnpm dev` y `pnpm demo` las crean solo si están |
 | `ECOPEDIA_LOGIN_MAX_FAILURES` | Cuántos logins fallidos seguidos bloquean una cuenta. Sin valor, 5 |
 | `ECOPEDIA_LOGIN_LOCK_MINUTES` | Cuántos minutos dura ese bloqueo. Sin valor, 15; para la demo conviene 1 |
 
 Un `.env` generado antes de que existieran los dos ajustes no los tiene, y no hace falta
 regenerarlo: core usa los valores por defecto. Para cambiarlos, se agregan a mano.
+
+**Un `.env` anterior a las cuentas iniciales no las tiene**, y con él `docker compose up` no arranca
+(dice cuál falta). Se agregan a mano las cuatro líneas de `.env.example`, con las contraseñas
+completas. Las cuentas se crean en el arranque siguiente, sin tocar los datos que ya había.
 
 **La clave de la pasarela, la contraseña de la distribuidora, la clave de los cargadores y la de servicio,
 en cambio, son secretos:** un `.env` anterior no las tiene, y sin ellas `pnpm demo` no levanta los procesos que

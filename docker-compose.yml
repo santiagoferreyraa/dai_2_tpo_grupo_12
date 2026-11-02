@@ -156,6 +156,12 @@ services:
       ECOPEDIA_CHARGER_ACCESS_TOKEN: ${ECOPEDIA_CHARGER_ACCESS_TOKEN:?Falta ECOPEDIA_CHARGER_ACCESS_TOKEN en el .env. Correr pnpm env:init}
       ECOPEDIA_LOGIN_MAX_FAILURES: ${ECOPEDIA_LOGIN_MAX_FAILURES:-5}
       ECOPEDIA_LOGIN_LOCK_MINUTES: ${ECOPEDIA_LOGIN_LOCK_MINUTES:-15}
+      # Las cuentas con las que se entra la primera vez (ver InitialSetup). Obligatorias acá: sin
+      # ellas, quien levanta el sistema no tendría con qué entrar.
+      ECOPEDIA_ADMIN_EMAIL: ${ECOPEDIA_ADMIN_EMAIL:?Falta ECOPEDIA_ADMIN_EMAIL en el .env. Ver .env.example}
+      ECOPEDIA_ADMIN_PASSWORD: ${ECOPEDIA_ADMIN_PASSWORD:?Falta ECOPEDIA_ADMIN_PASSWORD en el .env. Ver .env.example}
+      ECOPEDIA_CPO_EMAIL: ${ECOPEDIA_CPO_EMAIL:?Falta ECOPEDIA_CPO_EMAIL en el .env. Ver .env.example}
+      ECOPEDIA_CPO_PASSWORD: ${ECOPEDIA_CPO_PASSWORD:?Falta ECOPEDIA_CPO_PASSWORD en el .env. Ver .env.example}
     depends_on: *infra
 
   charging:
