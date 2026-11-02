@@ -106,9 +106,16 @@ class UserServiceTest {
 
     @Test
     void testDeactivateUser() {
+        User admin = new User();
+        admin.setId(9L);
+        admin.setEmail("admin@ecopedia.com");
+        admin.setPasswordHash("$2a$10$adminhash");
+        admin.setRole(Role.ADMIN);
         when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+        when(userRepository.findByEmail("admin@ecopedia.com")).thenReturn(Optional.of(admin));
+        when(passwordEncoder.matches("claveDelAdmin", "$2a$10$adminhash")).thenReturn(true);
 
-        userService.deactivateUser(1L);
+        userService.deactivateUser(1L, new AdminConfirmation("admin@ecopedia.com", "claveDelAdmin"));
 
         assertFalse(mockUser.isActive());
         verify(userRepository, times(1)).save(mockUser);

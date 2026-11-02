@@ -4,6 +4,8 @@ import com.ecopedia.core.security.JwtTokenProvider;
 import com.ecopedia.core.user.domain.*;
 import com.ecopedia.core.vehicle.domain.VehicleService;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,6 +13,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional
 public class UserServiceImpl implements UserService {
+
+    private static final Logger log = LoggerFactory.getLogger(UserServiceImpl.class);
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -137,17 +141,65 @@ public class UserServiceImpl implements UserService {
         userRepository.save(user);
     }
 
-    public User updateRole(Long userId, Role newRole) {
+    @Override
+    public User updateRole(Long userId, Role newRole, AdminConfirmation confirmation) {
         User user = getProfile(userId);
+        Long adminId = confirm(user, confirmation, "cambiar el rol");
         user.setRole(newRole);
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+        log.info("El ADMIN {} cambió el rol del usuario {} a {}", adminId, userId, newRole);
+        return saved;
     }
 
     @Override
-    public void deactivateUser(Long userId) {
+    public void deactivateUser(Long userId, AdminConfirmation confirmation) {
         User user = getProfile(userId);
+        Long adminId = confirm(user, confirmation, "dar de baja");
         user.setActive(false);
         userRepository.save(user);
+        log.info("El ADMIN {} dio de baja al usuario {}", adminId, userId);
+    }
+
+    /*
+     * Las dos reglas de las bajas y los cambios de rol (Manuel, 02/11), en este orden:
+     *
+     * 1. Una cuenta ADMIN no se toca desde la aplicación, tampoco la propia: se hace por la base.
+     *    Va primero porque no depende de la contraseña, y así un pedido contra un ADMIN no cuenta
+     *    como intento fallido.
+     * 2. El ADMIN que actúa confirma con SU contraseña. Usa el mismo contador que el login: con
+     *    cinco equivocadas seguidas queda bloqueado, para que un token robado no sirva para probar
+     *    contraseñas acá. El bloqueo frena también su login, a propósito: es la misma contraseña.
+     *
+     * Los rechazos dejan un WARN con ids, nunca con mails (DEF-03).
+     */
+    private Long confirm(User target, AdminConfirmation confirmation, String action) {
+        User admin = getProfileByEmail(confirmation.adminEmail());
+
+        if (target.getRole() == Role.ADMIN) {
+            log.warn(
+                    "Rechazado: el ADMIN {} quiso {} a la cuenta ADMIN {}, que solo se cambia por la base",
+                    admin.getId(),
+                    action,
+                    target.getId());
+            throw new AdminAccountProtectedException();
+        }
+
+        loginAttempts.lockRemaining(admin.getEmail()).ifPresent(remaining -> {
+            throw new TooManyLoginAttemptsException(remaining);
+        });
+
+        String password = confirmation.password();
+        if (password == null || !passwordEncoder.matches(password, admin.getPasswordHash())) {
+            loginAttempts.recordFailure(admin.getEmail());
+            log.warn(
+                    "Rechazado: contraseña equivocada del ADMIN {} al {} al usuario {}",
+                    admin.getId(),
+                    action,
+                    target.getId());
+            throw new AdminPasswordRejectedException();
+        }
+        loginAttempts.recordSuccess(admin.getEmail());
+        return admin.getId();
     }
 
     @Override

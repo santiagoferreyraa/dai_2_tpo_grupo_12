@@ -1,8 +1,10 @@
 package com.ecopedia.core.user.web;
 
+import com.ecopedia.core.user.domain.AdminConfirmation;
 import com.ecopedia.core.user.domain.Role;
 import com.ecopedia.core.user.domain.User;
 import com.ecopedia.core.user.domain.UserService;
+import com.ecopedia.core.user.web.dto.AdminPasswordRequest;
 import com.ecopedia.core.user.web.dto.ChangePasswordRequest;
 import com.ecopedia.core.user.web.dto.UpdateProfileRequest;
 import com.ecopedia.core.user.web.dto.UpdateRoleRequest;
@@ -103,20 +105,41 @@ public class UserController {
                 users.stream().map(UserProfileResponse::fromDomain).toList());
     }
 
-    /** Cambiar rol de usuario (Solo ADMIN - ECO-27). */
+    /**
+     * Cambiar rol de usuario (Solo ADMIN - ECO-27).
+     *
+     * <p>Con la contraseña del {@code ADMIN} en el cuerpo, y nunca sobre una cuenta {@code ADMIN}
+     * (Manuel, 02/11). Las reglas están en {@code UserService}, no acá: ver {@link AdminConfirmation}.
+     */
     @PatchMapping("/{id}/role")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserProfileResponse> updateUserRole(
-            @PathVariable Long id, @Valid @RequestBody UpdateRoleRequest request) {
-        User updated = userService.updateRole(id, request.role());
+            Authentication authentication, @PathVariable Long id, @Valid @RequestBody UpdateRoleRequest request) {
+        User updated = userService.updateRole(
+                id, request.role(), new AdminConfirmation(authentication.getName(), request.password()));
         return ResponseEntity.ok(UserProfileResponse.fromDomain(updated));
     }
 
-    /** Baja lógica de usuario (Solo ADMIN - ECO-25 / ECO-27). */
+    /**
+     * Baja lógica de usuario (Solo ADMIN - ECO-25 / ECO-27), con las mismas reglas que el cambio de
+     * rol.
+     *
+     * <p><b>La contraseña viaja en el cuerpo del DELETE</b>, no en la URL ni en una cabecera: esas dos
+     * terminan escritas en los logs de acceso de los proxies.
+     *
+     * <p><b>El cuerpo es opcional para Spring</b> y lo exige el servicio: sin contraseña la respuesta
+     * es "contraseña incorrecta". Si fuera obligatorio, un pedido sin cuerpo se rechazaría con 400
+     * antes de llegar al {@code @PreAuthorize}, y un conductor sabría que la ruta existe, cuando
+     * tiene que ver el 404 de siempre (SEC-05).
+     */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> deactivateUser(@PathVariable Long id) {
-        userService.deactivateUser(id);
+    public ResponseEntity<Void> deactivateUser(
+            Authentication authentication,
+            @PathVariable Long id,
+            @RequestBody(required = false) AdminPasswordRequest request) {
+        String password = request == null ? null : request.password();
+        userService.deactivateUser(id, new AdminConfirmation(authentication.getName(), password));
         return ResponseEntity.noContent().build();
     }
 

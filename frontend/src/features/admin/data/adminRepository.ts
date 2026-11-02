@@ -95,12 +95,14 @@ export function fetchUsers(role?: Role): Promise<UserItem[]> {
   return api.get<UserItem[]>('/users', { params: { role } })
 }
 
-export function updateUserRole(userId: number, role: Role): Promise<UserItem> {
-  return api.patch<UserItem>(`/users/${userId}/role`, { role })
+/** Con la contraseña del ADMIN que lo pide: el backend la exige (02/11). */
+export function updateUserRole(userId: number, role: Role, password: string): Promise<UserItem> {
+  return api.patch<UserItem>(`/users/${userId}/role`, { role, password })
 }
 
-export function deactivateUser(userId: number): Promise<void> {
-  return api.delete<void>(`/users/${userId}`)
+/** Con la contraseña del ADMIN que lo pide, en el cuerpo: ver `api.delete`. */
+export function deactivateUser(userId: number, password: string): Promise<void> {
+  return api.delete<void>(`/users/${userId}`, { body: { password } })
 }
 
 export function activateUser(userId: number): Promise<void> {

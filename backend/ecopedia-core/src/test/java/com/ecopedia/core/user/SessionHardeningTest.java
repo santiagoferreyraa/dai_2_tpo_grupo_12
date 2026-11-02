@@ -11,6 +11,7 @@ import com.ecopedia.core.user.data.JpaUserRepository;
 import com.ecopedia.core.user.domain.RegistrationData;
 import com.ecopedia.core.user.domain.Role;
 import com.ecopedia.core.user.domain.User;
+import com.ecopedia.core.user.domain.UserRepository;
 import com.ecopedia.core.user.domain.UserService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -55,6 +56,10 @@ class SessionHardeningTest {
     @Autowired
     private JpaUserRepository userRepository;
 
+    /** El puerto del dominio: con el de Spring Data, {@code save} es ambiguo. */
+    @Autowired
+    private UserRepository users;
+
     @AfterEach
     void cleanUp() {
         userRepository.deleteAll();
@@ -86,7 +91,8 @@ class SessionHardeningTest {
         mockMvc.perform(get("/api/users/profile").header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isOk());
 
-        userService.deactivateUser(user.getId());
+        user.setActive(false);
+        users.save(user);
 
         mockMvc.perform(get("/api/users/profile").header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isForbidden());
@@ -101,7 +107,9 @@ class SessionHardeningTest {
         mockMvc.perform(get("/api/users").header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isOk());
 
-        userService.updateRole(user.getId(), Role.CONDUCTOR);
+        // Por la base: desde la aplicación, una cuenta ADMIN ya no cambia de rol (02/11).
+        user.setRole(Role.CONDUCTOR);
+        users.save(user);
 
         mockMvc.perform(get("/api/users").header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isNotFound());
@@ -158,7 +166,8 @@ class SessionHardeningTest {
     @DisplayName("Una cuenta dada de baja recibe el mensaje de siempre, también con la contraseña correcta")
     void doesNotRevealDeactivatedAccounts() throws Exception {
         User user = givenUser("dada-de-baja@ecopedia.test", Role.CONDUCTOR);
-        userService.deactivateUser(user.getId());
+        user.setActive(false);
+        users.save(user);
 
         login("dada-de-baja@ecopedia.test", "otraClave999")
                 .andExpect(status().isBadRequest())
