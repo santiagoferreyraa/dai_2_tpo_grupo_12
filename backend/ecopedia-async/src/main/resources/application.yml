@@ -58,6 +58,11 @@ ecopedia:
     # La cola que escucha este artefacto. Tiene que coincidir con la que publica ecopedia-charging.
     queue: notifications.dispatch
 
+    # Cuántas veces entrega Artemis un mensaje antes de apartarlo en la DLQ. NO lo decide este
+    # valor, lo decide el broker (docker/artemis/broker.properties): acá está para que el log diga
+    # "intento 3 de 5" y avise en el último. Un test compara los dos: si cambia uno, cambia el otro.
+    max-delivery-attempts: 5
+
     # La zona en la que se escriben las horas de los avisos. Las reservas viajan en UTC: sin
     # esto, un turno de 10 a 11 en Buenos Aires se avisaría "de 13:00 a 14:00".
     zone: ${ECOPEDIA_NOTIFICATIONS_ZONE:America/Argentina/Buenos_Aires}

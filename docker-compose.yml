@@ -97,11 +97,16 @@ services:
     environment:
       ARTEMIS_USER: ecopedia
       ARTEMIS_PASSWORD: ${ECOPEDIA_BROKER_PASSWORD:?Falta ECOPEDIA_BROKER_PASSWORD en el .env. Correr pnpm env:init}
+    # Reentregas y cola de mensajes muertos (QA-28): el archivo se aplica en cada arranque, encima
+    # del broker.xml que la imagen genera la primera vez. Por eso va acá y no en `etc-override`,
+    # que la imagen solo copia al crear la instancia: un volumen que ya existía no lo vería.
+    command: ["run", "--properties=/opt/ecopedia/broker.properties"]
     ports:
       - "127.0.0.1:61616:61616"   # protocolo core / JMS
       - "127.0.0.1:8161:8161"     # consola web: http://localhost:8161/console
     volumes:
       - activemq-data:/var/lib/artemis-instance
+      - ./docker/artemis/broker.properties:/opt/ecopedia/broker.properties:ro
 
   # --- Los tres sistemas externos simulados -----------------------------------------------------
   # Fuera de Docker escuchan solo en 127.0.0.1; acá tienen que aceptar conexiones de la red de
