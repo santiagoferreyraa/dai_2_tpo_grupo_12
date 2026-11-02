@@ -67,6 +67,16 @@ ecopedia:
     max-failures: ${ECOPEDIA_LOGIN_MAX_FAILURES:5}
     lock-minutes: ${ECOPEDIA_LOGIN_LOCK_MINUTES:15}
 
+  # Las cuentas con las que se entra a un sistema recién levantado (ver InitialSetup). Vacías, no se
+  # crean: así arrancan `pnpm dev` y los tests. `docker compose up` las exige en el .env.
+  initial-accounts:
+    admin:
+      email: ${ECOPEDIA_ADMIN_EMAIL:}
+      password: ${ECOPEDIA_ADMIN_PASSWORD:}
+    cpo:
+      email: ${ECOPEDIA_CPO_EMAIL:}
+      password: ${ECOPEDIA_CPO_PASSWORD:}
+
   # Los cargadores corren como proceso aparte (simulation/charger, 8088) y Terminales les da las
   # órdenes por REST con ChargerRestClient. Ver ARQUITECTURA §2.3, ficha 2.
   charger:
