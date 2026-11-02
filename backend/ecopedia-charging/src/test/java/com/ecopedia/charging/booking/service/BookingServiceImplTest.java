@@ -996,5 +996,58 @@ class BookingServiceImplTest {
             assertThatThrownBy(() -> service.cancelBooking(booking.getId(), DRIVER))
                     .isInstanceOf(InvalidBookingRequestException.class);
         }
+
+        @Test
+        @DisplayName(
+                "RF13 / ECO-59: falla en la habilitación dentro de la ventana libera la reserva sin penalización y reintegra el 100% de la seña")
+        void activationFailureInsideWindowRefundsFullDepositAndFreesDriverAndConnector() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(1);
+
+            // El conductor llega en horario (ya venció hace rato el plazo de 5 h de preaviso).
+            clock.advance(Duration.ofHours(1).plusMinutes(5));
+
+            Booking released = service.releaseForActivationFailure(booking.getId());
+
+            assertThat(released.getStatus()).isEqualTo(BookingStatus.CANCELLED);
+            assertThat(released.getDepositStatus()).isEqualTo(DepositStatus.REFUND_PENDING);
+            assertThat(released.getDepositRefundAmount()).isEqualByComparingTo("8000");
+            assertThat(released.isPartialDepositRefund()).isFalse();
+            assertThat(service.findPendingDepositRefunds()).containsExactly(released);
+
+            BookingEvent event = events.published().get(events.published().size() - 1);
+            assertThat(event.type()).isEqualTo(BookingEventType.BOOKING_CANCELLED);
+            assertThat(event.depositRefunded()).isTrue();
+
+            // El conductor y el conector quedan libres inmediatamente.
+            assertThatCode(() -> service.startHold(CONNECTOR + 1, windowIn(2), DRIVER))
+                    .doesNotThrowAnyException();
+            // Idempotente si se vuelve a llamar.
+            assertThat(service.releaseForActivationFailure(booking.getId()).getDepositStatus())
+                    .isEqualTo(DepositStatus.REFUND_PENDING);
+        }
+
+        @Test
+        @DisplayName(
+                "RF13 / ECO-59: falla con la carga en curso liquida el consumo real sin piso de la seña, reintegra la diferencia y libera el resto de la ventana")
+        void midSessionFaultSettlesRealConsumptionWithoutDepositFloor() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(1);
+
+            // Carga en curso: pasaron 20 minutos de la ventana y ocurre la falla con $3200 consumidos.
+            clock.advance(Duration.ofHours(1).plusMinutes(20));
+
+            Booking settled = service.settleFaultedBooking(booking.getId(), new BigDecimal("3200"));
+
+            assertThat(settled.getDepositStatus()).isEqualTo(DepositStatus.REFUND_PENDING);
+            assertThat(settled.getDepositRefundAmount()).isEqualByComparingTo("4800");
+            assertThat(settled.isPartialDepositRefund()).isTrue();
+            assertThat(settled.getWindow().end()).isEqualTo(clock.instant());
+            assertThat(service.findPendingDepositRefunds()).containsExactly(settled);
+
+            // El resto de la ventana quedó libre para el conductor y el conector.
+            assertThatCode(() -> service.startHold(CONNECTOR + 1, windowIn(2), DRIVER))
+                    .doesNotThrowAnyException();
+        }
     }
 }

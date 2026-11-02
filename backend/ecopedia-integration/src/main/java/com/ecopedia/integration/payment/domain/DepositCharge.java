@@ -66,6 +66,9 @@ public class DepositCharge {
     @Column(name = "gateway_refund_id", length = 80)
     private String gatewayRefundId;
 
+    @Column(name = "refunded_amount", precision = 10, scale = 2)
+    private BigDecimal refundedAmount;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -107,6 +110,7 @@ public class DepositCharge {
     public void markRefunded(GatewayRefund refund, Instant at) {
         this.status = DepositChargeStatus.REFUNDED;
         this.gatewayRefundId = refund.refundId();
+        this.refundedAmount = refund.amount() != null ? refund.amount().setScale(2, RoundingMode.HALF_UP) : this.amount;
         this.refundedAt = at;
     }
 
@@ -164,5 +168,9 @@ public class DepositCharge {
 
     public Instant getRefundedAt() {
         return refundedAt;
+    }
+
+    public BigDecimal getRefundedAmount() {
+        return refundedAmount;
     }
 }

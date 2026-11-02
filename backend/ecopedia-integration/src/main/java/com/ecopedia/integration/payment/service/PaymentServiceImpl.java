@@ -16,6 +16,8 @@ import com.ecopedia.integration.payment.domain.PaymentMethodNotFoundException;
 import com.ecopedia.integration.payment.domain.PaymentMethodRepository;
 import com.ecopedia.integration.payment.domain.PaymentService;
 import com.ecopedia.integration.payment.domain.TokenizedCard;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.YearMonth;
 import java.util.List;
@@ -194,27 +196,45 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public DepositCharge refundDeposit(Long chargeId) {
+        return refundDeposit(chargeId, null);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public DepositCharge refundDeposit(Long chargeId, BigDecimal amount) {
         DepositCharge charge = depositChargeRepository
                 .findById(chargeId)
                 .orElseThrow(() -> new DepositChargeNotFoundException(chargeId));
+        if (amount != null && (amount.signum() <= 0 || amount.compareTo(charge.getAmount()) > 0)) {
+            throw new DepositNotRefundableException(chargeId);
+        }
         if (charge.isRefunded()) {
+            BigDecimal alreadyRefunded =
+                    charge.getRefundedAmount() != null ? charge.getRefundedAmount() : charge.getAmount();
+            BigDecimal requested = amount != null ? amount : charge.getAmount();
+            if (requested.compareTo(alreadyRefunded) != 0) {
+                throw new DepositNotRefundableException(chargeId);
+            }
             return charge;
         }
         if (!charge.isApproved()) {
             throw new DepositNotRefundableException(chargeId);
         }
 
+        BigDecimal gatewayAmount = amount == null ? null : amount.setScale(2, RoundingMode.HALF_UP);
+
         /*
          * La clave del reintegro sale de la del cobro, que es única para siempre. No del id de la
          * fila: con `pnpm dev:mem` los ids vuelven a empezar en cada arranque y la pasarela, que
          * guarda en archivo, reconocería "refund-deposit-1" como un reintegro viejo de otro cobro.
          */
-        GatewayRefund refund =
-                paymentGateway.refund(charge.getGatewayPaymentId(), null, "refund-" + charge.getIdempotencyKey());
+        GatewayRefund refund = paymentGateway.refund(
+                charge.getGatewayPaymentId(), gatewayAmount, "refund-" + charge.getIdempotencyKey());
         charge.markRefunded(refund, clock.instant());
         log.info(
-                "Seña devuelta: cobro {} de ${} al conductor {}",
+                "Seña devuelta: cobro {} (${} de ${}) al conductor {}",
                 charge.getId(),
+                charge.getRefundedAmount(),
                 charge.getAmount(),
                 charge.getDriverId());
         return depositChargeRepository.save(charge);
