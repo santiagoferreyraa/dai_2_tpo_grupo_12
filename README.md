@@ -144,11 +144,13 @@ Y se entra por **http://localhost**, con estas dos cuentas:
 
 | Rol | Mail | Contraseña |
 |---|---|---|
-| `ADMIN` | `matiasruizadmin@gmail.com` | la de `ECOPEDIA_ADMIN_PASSWORD` en el `.env` |
-| `CPO` | `matiasruizcpo@gmail.com` | la de `ECOPEDIA_CPO_PASSWORD` en el `.env` |
+| `ADMIN` | `admin@pedia.com.ar` | la de `ECOPEDIA_ADMIN_PASSWORD` en el `.env` |
+| `CPO` | `cpo@pedia.com.ar` | la de `ECOPEDIA_CPO_PASSWORD` en el `.env` |
 
 Los mails salen de `ECOPEDIA_ADMIN_EMAIL` y `ECOPEDIA_CPO_EMAIL`, y se pueden cambiar en el `.env` antes
-del primer arranque. Core crea las dos cuentas al arrancar si no existen, y **no las vuelve a tocar**:
+del primer arranque (cambiarlos después crea otra cuenta, no renombra la anterior). **En el servidor de
+la demo las cuentas son otras**: sus mails y contraseñas están solo en el `.env` de allá y se pasan por
+privado. Core crea las dos cuentas al arrancar si no existen, y **no las vuelve a tocar**:
 la contraseña se cambia desde el perfil, y un arranque nuevo no la pisa. **Los conductores se
 registran desde la web**, y desde la cuenta `ADMIN`, en `/admin` → Usuarios, se le cambia el rol a
 cualquiera. La cuenta `CPO` es dueña de las 15 estaciones de ejemplo (si en esa base ya había otros
