@@ -492,21 +492,12 @@ public class BookingServiceImpl implements BookingService {
             // Idempotente: lo que el conductor pidió ya está hecho, así que no es un error.
             return;
         }
-        if (!booking.isConfirmed()) {
-            // Una incomparecencia ya terminó por su cuenta: cancelarla reescribiría por qué terminó.
-            throw new InvalidBookingRequestException(
-                    "La reserva " + bookingId + " ya se cerró porque no te presentaste: no se puede cancelar");
-        }
-        /*
-         * Una ventana que ya terminó no se cancela: no hay nada que liberar, y dejar reescribirla
-         * sería permitir borrar el historial de una reserva que el conductor usó o a la que no se
-         * presentó. Lo segundo es RF09 y tiene su propio estado.
-         */
-        if (!booking.getWindow().end().isAfter(clock.instant())) {
-            throw new InvalidBookingRequestException("La reserva " + bookingId + " ya terminó y no se puede cancelar");
-        }
 
         Instant now = clock.instant();
+        /*
+         * Una incomparecencia o una ventana que ya terminó no se cancelan: lo rechaza la reserva
+         * misma con BookingStateConflictException (409, QA-26). Ver Booking#cancel.
+         */
         booking.cancel(now);
         /*
          * Si el barrido de la incomparecencia la tocó entre la lectura y acá, el save choca con la
@@ -599,11 +590,8 @@ public class BookingServiceImpl implements BookingService {
                 && (booking.isDepositRefunded() || booking.getDepositStatus() == DepositStatus.NONE)) {
             return booking;
         }
-        if (!booking.isConfirmed()) {
-            throw new InvalidBookingRequestException(
-                    "La reserva " + bookingId + " no está confirmada y no se puede liberar por falla de habilitación");
-        }
         Instant now = clock.instant();
+        // Cualquier otro estado que no sea CONFIRMED lo rechaza la reserva (409, QA-26).
         booking.failActivation();
         Booking saved = bookingRepository.save(booking);
         log.info(
@@ -621,11 +609,8 @@ public class BookingServiceImpl implements BookingService {
     public Booking settleFaultedBooking(Long bookingId, BigDecimal realCost) {
         Booking booking =
                 bookingRepository.findById(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
-        if (!booking.isConfirmed()) {
-            throw new InvalidBookingRequestException(
-                    "La reserva " + bookingId + " no está en curso y no se puede liquidar por falla");
-        }
         Instant now = clock.instant();
+        // Una reserva que no está CONFIRMED la rechaza la reserva misma (409, QA-26).
         booking.settleFaultedCharge(realCost, now);
         Booking saved = bookingRepository.save(booking);
         log.info(

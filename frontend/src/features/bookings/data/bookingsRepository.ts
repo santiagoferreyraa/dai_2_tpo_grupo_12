@@ -176,8 +176,9 @@ export async function listMyBookings(signal?: AbortSignal): Promise<Booking[]> {
  * `REFUND_PENDING` y en segundos pasa a `REFUNDED`.
  *
  * Errores que la pantalla tiene que tratar aparte:
- * - **400**: la ventana ya terminó, o la reserva ya se cerró porque el conductor no se presentó.
  * - **404**: la reserva no existe.
+ * - **409 `BOOKING_STATE_CONFLICT`**: la ventana ya terminó, o la reserva ya se cerró porque el
+ *   conductor no se presentó (QA-26; antes del 02/11 era un 400).
  * - **409 `BOOKING_CHANGED`**: la reserva cambió mientras se cancelaba (se cerró por incomparecencia).
  */
 export function cancelBooking(bookingId: number): Promise<void> {

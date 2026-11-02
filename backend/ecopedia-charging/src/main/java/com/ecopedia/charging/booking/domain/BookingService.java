@@ -135,7 +135,7 @@ public interface BookingService {
      * preaviso: el conductor se presentó en tiempo y forma y la falla es del operador o de la red.
      *
      * @throws BookingNotFoundException si la reserva no existe
-     * @throws InvalidBookingRequestException si la reserva ya se cerró sin reintegro
+     * @throws BookingStateConflictException si la reserva ya se cerró sin reintegro (409)
      */
     Booking releaseForActivationFailure(Long bookingId);
 
@@ -145,7 +145,8 @@ public interface BookingService {
      * encola el reintegro de la diferencia sin aplicar el piso de la seña.
      *
      * @throws BookingNotFoundException si la reserva no existe
-     * @throws InvalidBookingRequestException si la reserva no está confirmada o el costo es negativo
+     * @throws BookingStateConflictException si la reserva no está confirmada (409)
+     * @throws InvalidBookingRequestException si el costo es negativo
      */
     Booking settleFaultedBooking(Long bookingId, BigDecimal realCost);
 
@@ -162,7 +163,8 @@ public interface BookingService {
      *
      * @throws BookingNotFoundException si no hay ninguna reserva con ese id, o si es de otro
      *     conductor: desde afuera no se distingue (SEC-06)
-     * @throws InvalidBookingRequestException si la ventana ya terminó: no hay nada que liberar
+     * @throws BookingStateConflictException si la ventana ya terminó o el conductor no se presentó: 409
+     *     (QA-26)
      */
     void cancelBooking(Long bookingId, Long driverId);
 

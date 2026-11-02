@@ -10,6 +10,7 @@ import com.ecopedia.charging.booking.domain.BookingDeposit;
 import com.ecopedia.charging.booking.domain.BookingEvent;
 import com.ecopedia.charging.booking.domain.BookingEventType;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
+import com.ecopedia.charging.booking.domain.BookingStateConflictException;
 import com.ecopedia.charging.booking.domain.BookingStatus;
 import com.ecopedia.charging.booking.domain.ConnectorCatalog;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
@@ -445,7 +446,7 @@ class BookingServiceImplTest {
             clock.advance(Duration.ofHours(4));
 
             assertThatThrownBy(() -> service.cancelBooking(booking.getId(), DRIVER))
-                    .isInstanceOf(InvalidBookingRequestException.class);
+                    .isInstanceOf(BookingStateConflictException.class);
             assertThat(booking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
         }
     }
@@ -994,7 +995,7 @@ class BookingServiceImplTest {
                             CONNECTOR, now, booking.getWindow().end()))
                     .containsExactly(new TimeWindow(now, booking.getWindow().end()));
             assertThatThrownBy(() -> service.cancelBooking(booking.getId(), DRIVER))
-                    .isInstanceOf(InvalidBookingRequestException.class);
+                    .isInstanceOf(BookingStateConflictException.class);
         }
 
         @Test
