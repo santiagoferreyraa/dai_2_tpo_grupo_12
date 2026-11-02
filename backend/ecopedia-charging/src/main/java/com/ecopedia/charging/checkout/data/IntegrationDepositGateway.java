@@ -73,12 +73,17 @@ public class IntegrationDepositGateway implements DepositGateway {
 
     @Override
     public void refund(Long chargeId) {
+        refund(chargeId, null);
+    }
+
+    @Override
+    public void refund(Long chargeId, BigDecimal amount) {
         try {
-            restClient
-                    .post()
-                    .uri("/internal/payments/deposits/{id}/refund", chargeId)
-                    .retrieve()
-                    .toBodilessEntity();
+            var request = restClient.post().uri("/internal/payments/deposits/{id}/refund", chargeId);
+            if (amount != null) {
+                request.contentType(MediaType.APPLICATION_JSON).body(new RefundBody(amount));
+            }
+            request.retrieve().toBodilessEntity();
         } catch (RestClientResponseException response) {
             int status = response.getStatusCode().value();
             if (status == 404 || status == 409) {
@@ -114,6 +119,8 @@ public class IntegrationDepositGateway implements DepositGateway {
             Long driverId, Long paymentMethodId, BigDecimal amount, String reference, String idempotencyKey) {}
 
     record ChargeAnswer(Long chargeId, String cardLastFour) {}
+
+    record RefundBody(BigDecimal amount) {}
 
     record ErrorBody(String code) {}
 }

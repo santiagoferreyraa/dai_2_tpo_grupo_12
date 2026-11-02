@@ -94,4 +94,27 @@ class DepositRefundProcessorTest {
 
         verify(depositGateway, never()).refund(anyLong());
     }
+
+    @Test
+    @DisplayName("RF13 / ECO-59: cuando el reintegro es parcial por falla en curso, manda la diferencia contra la seña")
+    void refundsPartialDifferenceForFaultedCharge() {
+        Instant start = Instant.parse("2026-11-02T18:00:00Z");
+        Booking faulted = new Booking(
+                12L,
+                5L,
+                new TimeWindow(start, start.plusSeconds(3600)),
+                Instant.parse("2026-10-31T12:00:00Z"),
+                new BookingDeposit(new BigDecimal("8000"), 19L, "4242"),
+                start.minusSeconds(5 * 3600),
+                UUID.randomUUID(),
+                "key-87654321");
+        ReflectionTestUtils.setField(faulted, "id", 44L);
+        faulted.settleFaultedCharge(new BigDecimal("3200"), start.plusSeconds(1200));
+        when(bookingService.findPendingDepositRefunds()).thenReturn(List.of(faulted));
+
+        processor.refundPending();
+
+        verify(depositGateway).refund(19L, new BigDecimal("4800"));
+        verify(bookingService).markDepositRefunded(44L);
+    }
 }

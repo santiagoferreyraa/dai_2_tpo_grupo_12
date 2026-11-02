@@ -30,5 +30,16 @@ public interface DepositGateway {
      * @throws DepositRefundRefusedException si Pagos dice que no se puede devolver
      * @throws DepositPaymentUnavailableException si Pagos o la pasarela no contestaron
      */
-    void refund(Long chargeId);
+    default void refund(Long chargeId) {
+        refund(chargeId, null);
+    }
+
+    /**
+     * Devuelve total o parcialmente la seña de ese cobro (RF13, RF14, ECO-59). Idempotente.
+     *
+     * @param amount el importe a devolver, o {@code null} para devolver la seña entera
+     * @throws DepositRefundRefusedException si Pagos dice que no se puede devolver
+     * @throws DepositPaymentUnavailableException si Pagos o la pasarela no contestaron
+     */
+    void refund(Long chargeId, BigDecimal amount);
 }

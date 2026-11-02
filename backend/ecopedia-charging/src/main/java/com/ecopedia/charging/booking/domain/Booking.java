@@ -71,6 +71,9 @@ public class Booking {
     @Column(name = "deposit_refundable_until")
     private Instant depositRefundableUntil;
 
+    @Column(name = "deposit_refund_amount", precision = 10, scale = 2)
+    private BigDecimal depositRefundAmount;
+
     @Column(name = "checkout_key", length = 100, updatable = false)
     private String checkoutKey;
 
@@ -168,8 +171,52 @@ public class Booking {
     public void cancel(Instant now) {
         this.status = BookingStatus.CANCELLED;
         if (depositStatus == DepositStatus.CHARGED) {
-            this.depositStatus =
-                    now.isAfter(depositRefundableUntil) ? DepositStatus.FORFEITED : DepositStatus.REFUND_PENDING;
+            if (now.isAfter(depositRefundableUntil)) {
+                this.depositStatus = DepositStatus.FORFEITED;
+            } else {
+                this.depositStatus = DepositStatus.REFUND_PENDING;
+                this.depositRefundAmount = this.depositAmount;
+            }
+        }
+    }
+
+    /**
+     * La carga no pudo iniciarse por causas ajenas al conductor —conector fuera de servicio,
+     * cargador que no responde o rechazo de la distribuidora (RF13, ECO-59)—: la reserva se libera
+     * sin penalización y la seña se reintegra entera, sin importar el plazo de preaviso.
+     */
+    public void failActivation() {
+        this.status = BookingStatus.CANCELLED;
+        if (depositStatus == DepositStatus.CHARGED) {
+            this.depositStatus = DepositStatus.REFUND_PENDING;
+            this.depositRefundAmount = this.depositAmount;
+        }
+    }
+
+    /**
+     * La carga en curso se interrumpió por una falla ajena al conductor (RF13, ECO-59): se liquida
+     * el consumo real sin aplicar el piso de la seña y, si el consumo real fue menor que la seña,
+     * se reintegra la diferencia.
+     */
+    public void settleFaultedCharge(BigDecimal realCost, Instant now) {
+        if (realCost == null || realCost.signum() < 0) {
+            throw new InvalidBookingRequestException("El consumo real no puede ser negativo");
+        }
+        if (realCost.signum() == 0) {
+            failActivation();
+            return;
+        }
+        Instant instant = now.truncatedTo(ChronoUnit.MICROS);
+        if (instant.isAfter(this.windowStart) && instant.isBefore(this.windowEnd)) {
+            this.windowEnd = instant;
+        }
+        if (depositStatus == DepositStatus.CHARGED) {
+            if (realCost.compareTo(this.depositAmount) < 0) {
+                this.depositStatus = DepositStatus.REFUND_PENDING;
+                this.depositRefundAmount = this.depositAmount.subtract(realCost);
+            } else {
+                this.depositRefundAmount = BigDecimal.ZERO;
+            }
         }
     }
 
@@ -233,6 +280,20 @@ public class Booking {
 
     public Instant getDepositRefundableUntil() {
         return depositRefundableUntil;
+    }
+
+    public BigDecimal getDepositRefundAmount() {
+        if (depositRefundAmount != null) {
+            return depositRefundAmount;
+        }
+        return isDepositRefunded() ? depositAmount : BigDecimal.ZERO;
+    }
+
+    public boolean isPartialDepositRefund() {
+        return depositRefundAmount != null
+                && depositRefundAmount.signum() > 0
+                && depositAmount != null
+                && depositRefundAmount.compareTo(depositAmount) < 0;
     }
 
     public String getCheckoutKey() {

@@ -23,6 +23,7 @@ import com.ecopedia.charging.booking.domain.SlotUnavailableException;
 import com.ecopedia.charging.booking.domain.TimeWindow;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -588,6 +589,56 @@ public class BookingServiceImpl implements BookingService {
                 bookingRepository.findById(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
         booking.markDepositRefunded();
         bookingRepository.save(booking);
+    }
+
+    @Override
+    public Booking releaseForActivationFailure(Long bookingId) {
+        Booking booking =
+                bookingRepository.findById(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
+        if (booking.isCancelled()
+                && (booking.isDepositRefunded() || booking.getDepositStatus() == DepositStatus.NONE)) {
+            return booking;
+        }
+        if (!booking.isConfirmed()) {
+            throw new InvalidBookingRequestException(
+                    "La reserva " + bookingId + " no está confirmada y no se puede liberar por falla de habilitación");
+        }
+        Instant now = clock.instant();
+        booking.failActivation();
+        Booking saved = bookingRepository.save(booking);
+        log.info(
+                "Reserva {} liberada sin penalización por falla en la habilitación (conductor {}, conector {}): seña {} (${})",
+                saved.getId(),
+                saved.getDriverId(),
+                saved.getConnectorId(),
+                saved.getDepositStatus(),
+                saved.getDepositRefundAmount());
+        eventPublisher.publish(BookingEvent.cancelled(saved, now));
+        return saved;
+    }
+
+    @Override
+    public Booking settleFaultedBooking(Long bookingId, BigDecimal realCost) {
+        Booking booking =
+                bookingRepository.findById(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
+        if (!booking.isConfirmed()) {
+            throw new InvalidBookingRequestException(
+                    "La reserva " + bookingId + " no está en curso y no se puede liquidar por falla");
+        }
+        Instant now = clock.instant();
+        booking.settleFaultedCharge(realCost, now);
+        Booking saved = bookingRepository.save(booking);
+        log.info(
+                "Reserva {} liquidada por falla en curso (conductor {}, consumo real ${}): seña {} (reintegro ${})",
+                saved.getId(),
+                saved.getDriverId(),
+                realCost,
+                saved.getDepositStatus(),
+                saved.getDepositRefundAmount());
+        if (saved.isCancelled()) {
+            eventPublisher.publish(BookingEvent.cancelled(saved, now));
+        }
+        return saved;
     }
 
     @Override

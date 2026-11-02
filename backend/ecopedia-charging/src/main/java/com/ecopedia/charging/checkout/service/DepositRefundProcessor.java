@@ -51,7 +51,11 @@ public class DepositRefundProcessor {
     /** Devuelve la seña de una reserva. Visible para los tests, que no esperan al reloj. */
     void refund(Booking booking) {
         try {
-            depositGateway.refund(booking.getDepositChargeId());
+            if (booking.isPartialDepositRefund()) {
+                depositGateway.refund(booking.getDepositChargeId(), booking.getDepositRefundAmount());
+            } else {
+                depositGateway.refund(booking.getDepositChargeId());
+            }
             bookingService.markDepositRefunded(booking.getId());
             log.info(
                     "Seña de la reserva {} devuelta al conductor {} (cobro {})",
