@@ -30,12 +30,10 @@ public class AdminController {
         return ResponseEntity.ok(AdminDashboardResponse.fromDomain(dashboard));
     }
 
-    /** Baja lógica administrativa de un usuario. */
-    @DeleteMapping("/users/{id}")
-    public ResponseEntity<Void> deactivateUser(@PathVariable Long id) {
-        adminService.deactivateUser(id);
-        return ResponseEntity.noContent().build();
-    }
+    /*
+     * La baja de usuarios ya no está acá (02/11): duplicaba DELETE /api/users/{id}, no la llamaba
+     * nadie y, sin la contraseña del ADMIN, era una forma de saltearse esa confirmación.
+     */
 
     /** Alta/Reactivación lógica administrativa de un usuario. */
     @PostMapping("/users/{id}/activate")

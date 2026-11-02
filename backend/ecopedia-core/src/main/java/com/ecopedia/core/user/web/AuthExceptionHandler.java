@@ -1,5 +1,7 @@
 package com.ecopedia.core.user.web;
 
+import com.ecopedia.core.user.domain.AdminAccountProtectedException;
+import com.ecopedia.core.user.domain.AdminPasswordRejectedException;
 import com.ecopedia.core.user.domain.TooManyLoginAttemptsException;
 import com.ecopedia.core.vehicle.domain.VehicleModelNotFoundException;
 import java.util.stream.Collectors;
@@ -55,6 +57,32 @@ public class AuthExceptionHandler {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header(HttpHeaders.RETRY_AFTER, Long.toString(seconds))
                 .body(ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, exception.getMessage()));
+    }
+
+    /**
+     * Baja o cambio de rol sobre una cuenta {@code ADMIN}: 409 con {@code code} {@code ADMIN_PROTECTED}.
+     *
+     * <p>409 porque el pedido está bien formado y quien lo hace tiene permiso; lo que choca es el
+     * estado de la cuenta. Con {@code code}, porque comparte estado con otros rechazos y el front
+     * elige sus palabras (directiva 7).
+     */
+    @ExceptionHandler(AdminAccountProtectedException.class)
+    public ProblemDetail handleProtectedAdmin(AdminAccountProtectedException exception) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+        problem.setProperty("code", AdminAccountProtectedException.CODE);
+        return problem;
+    }
+
+    /**
+     * La contraseña de confirmación no es la del {@code ADMIN}: 400 con {@code code}
+     * {@code PASSWORD_INCORRECT}. No 401 ni 403, por lo mismo que el login fallido: el front cerraría
+     * la sesión de un {@code ADMIN} que sí está logueado.
+     */
+    @ExceptionHandler(AdminPasswordRejectedException.class)
+    public ProblemDetail handleRejectedPassword(AdminPasswordRejectedException exception) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+        problem.setProperty("code", AdminPasswordRejectedException.CODE);
+        return problem;
     }
 
     /**

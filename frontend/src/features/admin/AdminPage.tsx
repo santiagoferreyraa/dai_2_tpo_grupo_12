@@ -11,6 +11,7 @@ import type { NetworkRates } from '@/features/pricing/types'
 import { describePeak } from '@/features/pricing/usePricing'
 import { CONNECTOR_TYPE_LABEL, CONNECTOR_TYPES } from '@/features/terminals/format'
 import { normalizeGridNode, toGridNodeId, validateGridNode } from '@/features/terminals/gridNode'
+import PasswordConfirmDialog from './components/PasswordConfirmDialog'
 import SortableHeader from './components/SortableHeader'
 import {
   type ConnectorSort,
@@ -35,8 +36,12 @@ import {
   updateStation,
   updateUserRole,
 } from './data/adminRepository'
-import { adminErrorMessage } from './errorMessage'
+import { adminErrorMessage, confirmationErrorMessage } from './errorMessage'
 import type { AdminDashboardMetrics, ConnectorItem, StationItem, UserItem } from './types'
+
+/** La baja o el cambio de rol que espera la contraseña del ADMIN en el diálogo. */
+type PendingUserAction =
+  { kind: 'deactivate'; user: UserItem } | { kind: 'role'; user: UserItem; role: Role }
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<
@@ -53,7 +58,9 @@ export default function AdminPage() {
   const [searchUser, setSearchUser] = useState('')
   const [loadingUsers, setLoadingUsers] = useState(false)
   const [deactivatingUserId, setDeactivatingUserId] = useState<number | null>(null)
-  const [updatingUserRoleId, setUpdatingUserRoleId] = useState<number | null>(null)
+  const [pendingUserAction, setPendingUserAction] = useState<PendingUserAction | null>(null)
+  const [confirmingUserAction, setConfirmingUserAction] = useState(false)
+  const [confirmError, setConfirmError] = useState<string | null>(null)
 
   // Stations State
   const [stations, setStations] = useState<StationItem[]>([])
@@ -191,38 +198,63 @@ export default function AdminPage() {
     if (activeTab === 'pricing') loadRates()
   }, [activeTab, selectedRole, connectorStationFilter])
 
-  // Change User Role
-  const handleUpdateRole = async (userId: number, newRole: Role) => {
-    setUpdatingUserRoleId(userId)
-    setActionError(null)
-    setActionSuccess(null)
-    try {
-      await updateUserRole(userId, newRole)
-      setActionSuccess(`El rol del usuario ${userId} fue actualizado a ${newRole}.`)
-      await loadUsers()
-      await loadMetrics()
-    } catch (err) {
-      setActionError(adminErrorMessage(err, 'No se pudo actualizar el rol.'))
-    } finally {
-      setUpdatingUserRoleId(null)
-    }
+  /*
+   * Cambiar el rol y dar de baja abren el diálogo de la contraseña; la llamada sale al confirmar
+   * (Manuel, 02/11). A una cuenta ADMIN no se llega: sus controles están deshabilitados, y si alguien
+   * llama a la API igual, el backend la rechaza con ADMIN_PROTECTED.
+   */
+  const handleUpdateRole = (user: UserItem, role: Role) => {
+    if (role === user.role) return
+    setConfirmError(null)
+    setPendingUserAction({ kind: 'role', user, role })
   }
 
-  // Deactivate User
-  const handleDeactivateUser = async (userId: number) => {
-    if (!confirm(`¿Confirma dar de baja al usuario con ID ${userId}?`)) return
-    setDeactivatingUserId(userId)
+  const handleDeactivateUser = (user: UserItem) => {
+    setConfirmError(null)
+    setPendingUserAction({ kind: 'deactivate', user })
+  }
+
+  const cancelUserAction = () => {
+    setPendingUserAction(null)
+    setConfirmError(null)
+  }
+
+  const confirmUserAction = async (password: string) => {
+    if (pendingUserAction === null) return
+    const action = pendingUserAction
+    setConfirmingUserAction(true)
+    setConfirmError(null)
     setActionError(null)
     setActionSuccess(null)
     try {
-      await deactivateUser(userId)
-      setActionSuccess(`El usuario ${userId} fue dado de baja exitosamente.`)
+      if (action.kind === 'role') {
+        await updateUserRole(action.user.id, action.role, password)
+        setActionSuccess(`${action.user.fullName} ahora tiene el rol ${action.role}.`)
+      } else {
+        await deactivateUser(action.user.id, password)
+        setActionSuccess(`${action.user.fullName} fue dado de baja.`)
+      }
+      setPendingUserAction(null)
       await loadUsers()
       await loadMetrics()
     } catch (err) {
-      setActionError(adminErrorMessage(err, 'No se pudo dar de baja al usuario.'))
+      // La contraseña equivocada o el bloqueo se corrigen ahí mismo: el diálogo sigue abierto.
+      const inline = confirmationErrorMessage(err)
+      if (inline !== null) {
+        setConfirmError(inline)
+        return
+      }
+      setPendingUserAction(null)
+      setActionError(
+        adminErrorMessage(
+          err,
+          action.kind === 'role'
+            ? 'No se pudo actualizar el rol.'
+            : 'No se pudo dar de baja al usuario.',
+        ),
+      )
     } finally {
-      setDeactivatingUserId(null)
+      setConfirmingUserAction(false)
     }
   }
 
@@ -485,6 +517,33 @@ export default function AdminPage() {
       puede desvanecer. Ver `TopFade`.
     */
     <div className="flex-1 overflow-y-auto">
+      {pendingUserAction !== null && (
+        <PasswordConfirmDialog
+          open
+          title={pendingUserAction?.kind === 'role' ? 'Cambiar el rol' : 'Dar de baja'}
+          subject={
+            pendingUserAction === null
+              ? ''
+              : `${pendingUserAction.user.fullName} · ${pendingUserAction.user.email} · ${pendingUserAction.user.role}`
+          }
+          consequence={
+            pendingUserAction === null
+              ? ''
+              : pendingUserAction.kind === 'deactivate'
+                ? 'No va a poder entrar hasta que un administrador lo reactive.'
+                : pendingUserAction.role === 'ADMIN'
+                  ? 'Pasa a ser administrador. Después no se le va a poder sacar el rol ni dar de baja desde acá.'
+                  : `Pasa de ${pendingUserAction.user.role} a ${pendingUserAction.role}.`
+          }
+          confirmLabel={pendingUserAction?.kind === 'role' ? 'Cambiar el rol' : 'Dar de baja'}
+          busyLabel={pendingUserAction?.kind === 'role' ? 'Cambiando…' : 'Dando de baja…'}
+          busy={confirmingUserAction}
+          error={confirmError}
+          onConfirm={confirmUserAction}
+          onCancel={cancelUserAction}
+        />
+      )}
+
       {/* `pb-36` en el celular es el lugar de la barra flotante de navegación. */}
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 pb-36 md:px-8 md:pb-6">
         {/* Banner / Header */}
@@ -764,8 +823,13 @@ export default function AdminPage() {
                         <td className="py-3.5 px-4">
                           <select
                             value={user.role}
-                            disabled={updatingUserRoleId === user.id || !user.active}
-                            onChange={(e) => handleUpdateRole(user.id, e.target.value as Role)}
+                            disabled={user.role === 'ADMIN' || !user.active}
+                            title={
+                              user.role === 'ADMIN'
+                                ? 'Un administrador cambia de rol desde la base de datos.'
+                                : undefined
+                            }
+                            onChange={(e) => handleUpdateRole(user, e.target.value as Role)}
                             className="rounded-lg border border-border/80 bg-surface/90 px-2.5 py-1 text-xs font-semibold text-text focus:border-primary focus:outline-none disabled:opacity-50"
                           >
                             <option value="CONDUCTOR">CONDUCTOR</option>
@@ -787,14 +851,27 @@ export default function AdminPage() {
                           )}
                         </td>
                         <td className="py-3.5 px-4 text-right">
-                          {user.active ? (
+                          {user.active && user.role === 'ADMIN' ? (
+                            <>
+                              <button
+                                type="button"
+                                disabled
+                                className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-400 disabled:opacity-50"
+                              >
+                                Dar de Baja
+                              </button>
+                              <p className="mt-1.5 ml-auto max-w-56 text-[11px] leading-snug text-text-muted">
+                                Los administradores se dan de baja o cambian de rol desde la base de
+                                datos.
+                              </p>
+                            </>
+                          ) : user.active ? (
                             <button
                               type="button"
-                              disabled={deactivatingUserId === user.id}
-                              onClick={() => handleDeactivateUser(user.id)}
+                              onClick={() => handleDeactivateUser(user)}
                               className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-400 transition-all hover:bg-rose-500 hover:text-white disabled:opacity-50"
                             >
-                              {deactivatingUserId === user.id ? 'Dando de baja...' : 'Dar de Baja'}
+                              Dar de Baja
                             </button>
                           ) : (
                             <button

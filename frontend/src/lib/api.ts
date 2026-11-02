@@ -171,6 +171,10 @@ export const api = {
   patch: <T>(path: string, body?: unknown, options?: RequestOptions) =>
     request<T>('PATCH', path, body, options),
 
-  delete: <T = void>(path: string, options?: RequestOptions) =>
-    request<T>('DELETE', path, undefined, options),
+  /*
+   * El cuerpo es opcional y casi nunca hace falta. La excepción es la baja de un usuario en `/admin`,
+   * que manda la contraseña del ADMIN: en la URL o en una cabecera quedaría en los logs de acceso.
+   */
+  delete: <T = void>(path: string, options?: RequestOptions & { body?: unknown }) =>
+    request<T>('DELETE', path, options?.body, options),
 }

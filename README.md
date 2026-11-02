@@ -253,8 +253,26 @@ justo el momento en que algo sale mal delante del docente, así que la demo no s
 
 **Un `CPO` ve y toca solo sus estaciones**: las que dio de alta él. El backend le responde 403
 ante cualquier cambio sobre una ajena, y `/stations` le muestra únicamente las propias. Las 15
-del seed son del usuario con id 1 —el primero que se registró en esa base—; el `ADMIN` las
+del seed son del usuario con id 1 —el primero que se registró en esa base—, salvo que core haya creado la
+cuenta `CPO` inicial del `.env` (ver "Todo con Docker"), que las reparte entre los `CPO`. El `ADMIN` las
 administra todas desde `/admin`.
+
+#### Sacarle el rol o dar de baja a un `ADMIN`
+
+**Desde la aplicación no se puede**, a propósito: en `/admin` los controles de una cuenta `ADMIN` están
+deshabilitados y el backend rechaza el pedido con 409 `ADMIN_PROTECTED`, también sobre la propia cuenta.
+Así nadie deja la plataforma sin administradores ni le saca el acceso a otro con un clic. A las demás
+cuentas sí se las da de baja o se les cambia el rol desde `/admin`, escribiendo la contraseña del `ADMIN`.
+
+Para un `ADMIN`, por la base, con la misma entrada que arriba:
+
+```sql
+update core.users set role = 'CONDUCTOR' where email = 'el-admin@ejemplo.com';  -- sacarle el rol
+update core.users set active = false where email = 'el-admin@ejemplo.com';      -- darlo de baja
+```
+
+Core lee el rol y el estado de la base en cada pedido, así que en `/admin` el cambio vale en el acto; los
+otros módulos solo miran el token, que vence a las 2 horas. **Antes de tocar uno, comprobar que quede otro `ADMIN` activo.**
 
 ### Si el puerto quedó tomado
 

@@ -1863,6 +1863,46 @@
           "description": "DEF-07: un recurso inexistente responde 400 y no 404"
         },
         {
+          "name": "Cambio de rol con la contraseña equivocada → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 400', () => pm.response.to.have.status(400));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));",
+                  "pm.test(\"pm.expect(json.code).to.eql('PASSWORD_INCORRECT')\", () => { pm.expect(json.code).to.eql('PASSWORD_INCORRECT'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{coreUrl}}/api/users/{{otherId}}/role",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"CPO\",\n  \"password\": \"noEsLaClave\"\n}"
+            }
+          }
+        },
+        {
           "name": "Cambio de rol → 200",
           "event": [
             {
@@ -1897,7 +1937,47 @@
             "url": "{{coreUrl}}/api/users/{{otherId}}/role",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"role\": \"CPO\"\n}"
+              "raw": "{\n  \"role\": \"CPO\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Cambio de rol de un ADMIN → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 409', () => pm.response.to.have.status(409));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));",
+                  "pm.test(\"pm.expect(json.code).to.eql('ADMIN_PROTECTED')\", () => { pm.expect(json.code).to.eql('ADMIN_PROTECTED'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{coreUrl}}/api/users/{{adminId}}/role",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"CONDUCTOR\",\n  \"password\": \"{{adminPassword}}\"\n}"
             }
           }
         },
@@ -1941,6 +2021,46 @@
           }
         },
         {
+          "name": "Baja de un ADMIN → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 409', () => pm.response.to.have.status(409));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));",
+                  "pm.test(\"pm.expect(json.code).to.eql('ADMIN_PROTECTED')\", () => { pm.expect(json.code).to.eql('ADMIN_PROTECTED'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{coreUrl}}/api/users/{{adminId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"{{adminPassword}}\"\n}"
+            }
+          }
+        },
+        {
           "name": "Baja de usuario → 204",
           "event": [
             {
@@ -1965,9 +2085,17 @@
               {
                 "key": "Authorization",
                 "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
               }
             ],
-            "url": "{{coreUrl}}/api/users/{{otherId}}"
+            "url": "{{coreUrl}}/api/users/{{otherId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"{{adminPassword}}\"\n}"
+            }
           }
         },
         {
@@ -2063,37 +2191,7 @@
           }
         },
         {
-          "name": "Backoffice: baja de usuario → 204",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "let json = {};",
-                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
-                  "pm.test('responde 204', () => pm.response.to.have.status(204));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
-              }
-            ],
-            "url": "{{coreUrl}}/api/admin/users/{{otherId}}"
-          }
-        },
-        {
-          "name": "Backoffice: baja de usuario con token de conductor → 404",
+          "name": "Backoffice: la baja sin contraseña ya no existe → 404",
           "event": [
             {
               "listen": "test",
@@ -2117,7 +2215,7 @@
               },
               {
                 "key": "Authorization",
-                "value": "Bearer {{driverToken}}"
+                "value": "Bearer {{adminToken}}"
               }
             ],
             "url": "{{coreUrl}}/api/admin/users/{{otherId}}"
