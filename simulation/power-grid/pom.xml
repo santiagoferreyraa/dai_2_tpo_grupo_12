@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.ecopedia</groupId>
+        <artifactId>ecopedia-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>power-grid-simulator</artifactId>
+    <name>Simulación — Distribuidora eléctrica</name>
+    <description>
+        La distribuidora eléctrica provincial simulada: el sistema legado que pide la consigna, como
+        proceso aparte que publica un servicio SOAP con su WSDL (RNF04). No es parte de Ecopedia:
+        RedEléctrica le pregunta por SOAP si un nodo aguanta una carga rápida (RF15). Ver
+        ARQUITECTURA §3.1.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- Spring-WS: el MessageDispatcherServlet en /ws y el WSDL generado desde el XSD. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web-services</artifactId>
+        </dependency>
+
+        <!-- Las clases del contrato las genera JAXB desde el XSD; esto las lee y las escribe. -->
+        <dependency>
+            <groupId>org.glassfish.jaxb</groupId>
+            <artifactId>jaxb-runtime</artifactId>
+        </dependency>
+
+        <!-- WS-Security: el UsernameToken que se exige en cada pedido, con WSS4J. -->
+        <dependency>
+            <groupId>org.springframework.ws</groupId>
+            <artifactId>spring-ws-security</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+
+            <!--
+                Contract-first: el XSD es la fuente de los tipos, y de él salen las clases Java. El
+                WSDL, que lo importa, está escrito a mano en src/main/resources/wsdl/. Las clases
+                generadas quedan en target/, no se versionan.
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>jaxb2-maven-plugin</artifactId>
+                <version>3.2.0</version>
+                <executions>
+                    <execution>
+                        <id>xjc</id>
+                        <goals>
+                            <goal>xjc</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <sources>
+                        <source>src/main/resources/xsd/power-grid.xsd</source>
+                    </sources>
+                    <packageName>com.ecopedia.simulation.powergrid.contract</packageName>
+                    <noGeneratedHeaderComments>true</noGeneratedHeaderComments>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

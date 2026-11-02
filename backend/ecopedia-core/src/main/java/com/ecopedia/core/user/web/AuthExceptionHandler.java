@@ -1,8 +1,19 @@
 package com.ecopedia.core.user.web;
 
+import com.ecopedia.core.shared.ResourceNotFoundException;
+import com.ecopedia.core.user.domain.AdminAccountProtectedException;
+import com.ecopedia.core.user.domain.AdminPasswordRejectedException;
+import com.ecopedia.core.user.domain.TooManyLoginAttemptsException;
+import com.ecopedia.core.vehicle.domain.VehicleModelNotFoundException;
+import com.ecopedia.core.web.ApiProblems;
 import java.util.stream.Collectors;
+import org.springframework.beans.TypeMismatchException;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -28,13 +39,91 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  *
  * <p>La respuesta es un {@link ProblemDetail} (RFC 7807) porque es el formato que el cliente
  * del frontend lee primero, por su campo {@code detail}.
+ *
+ * <p><b>Va antes que {@code ApiExceptionHandler}</b> ({@code HIGHEST_PRECEDENCE}): los dos saben
+ * manejar {@code IllegalArgumentException} y los errores de validación, y Spring usa el primero
+ * que encuentra. Lo que este no atiende cae en aquel.
  */
 @RestControllerAdvice(basePackageClasses = AuthExceptionHandler.class)
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class AuthExceptionHandler {
 
-    /** Credenciales inválidas, usuario dado de baja, email ya registrado, id inexistente. */
+    /**
+     * Usuario inexistente: el mismo 404 que una ruta que no existe (DEF-07). El id va al log, no a
+     * la respuesta.
+     */
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ProblemDetail handleNotFound(ResourceNotFoundException exception) {
+        return ApiProblems.notFound();
+    }
+
+    /**
+     * Un parámetro con formato inválido, como un id que no es número (DEF-12). Tiene que estar acá:
+     * Spring busca también en la causa, que es una {@code NumberFormatException}, y sin esto la
+     * atraparía el manejador de {@code IllegalArgumentException} de abajo, con el mensaje de Java.
+     */
+    @ExceptionHandler(TypeMismatchException.class)
+    public ProblemDetail handleTypeMismatch(TypeMismatchException exception) {
+        return ApiProblems.invalidRequest();
+    }
+
+    /** Credenciales inválidas (también la cuenta dada de baja) o email ya registrado. */
     @ExceptionHandler(IllegalArgumentException.class)
     public ProblemDetail handleInvalidRequest(IllegalArgumentException exception) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+    }
+
+    /**
+     * Cuenta bloqueada por intentos fallidos: 429, con {@code Retry-After} en segundos.
+     *
+     * <p>429 y no 400 porque no es que el pedido esté mal —con la contraseña correcta tampoco
+     * entraría ahora—, sino que llegaron demasiados. Tampoco es 401 ni 403, por lo mismo que el
+     * login fallido: el frontend cerraría una sesión que no existe.
+     */
+    @ExceptionHandler(TooManyLoginAttemptsException.class)
+    public ResponseEntity<ProblemDetail> handleTooManyAttempts(TooManyLoginAttemptsException exception) {
+        long seconds = Math.max(1, exception.getRetryAfter().toSeconds());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(seconds))
+                .body(ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, exception.getMessage()));
+    }
+
+    /**
+     * Baja o cambio de rol sobre una cuenta {@code ADMIN}: 409 con {@code code} {@code ADMIN_PROTECTED}.
+     *
+     * <p>409 porque el pedido está bien formado y quien lo hace tiene permiso; lo que choca es el
+     * estado de la cuenta. Con {@code code}, porque comparte estado con otros rechazos y el front
+     * elige sus palabras (directiva 7).
+     */
+    @ExceptionHandler(AdminAccountProtectedException.class)
+    public ProblemDetail handleProtectedAdmin(AdminAccountProtectedException exception) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+        problem.setProperty("code", AdminAccountProtectedException.CODE);
+        return problem;
+    }
+
+    /**
+     * La contraseña de confirmación no es la del {@code ADMIN}: 400 con {@code code}
+     * {@code PASSWORD_INCORRECT}. No 401 ni 403, por lo mismo que el login fallido: el front cerraría
+     * la sesión de un {@code ADMIN} que sí está logueado.
+     */
+    @ExceptionHandler(AdminPasswordRejectedException.class)
+    public ProblemDetail handleRejectedPassword(AdminPasswordRejectedException exception) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+        problem.setProperty("code", AdminPasswordRejectedException.CODE);
+        return problem;
+    }
+
+    /**
+     * El auto elegido no está en el catálogo.
+     *
+     * <p><b>400 y no 404, aunque la excepción diga "not found".</b> Lo que no se encontró no es
+     * el recurso que se pidió —el perfil existe y es el de quien está logueado—, sino un valor
+     * de adentro del cuerpo. Un 404 acá le diría a la pantalla que se equivocó de dirección,
+     * cuando lo que pasó es que mandó un modelo que no se ofrece.
+     */
+    @ExceptionHandler(VehicleModelNotFoundException.class)
+    public ProblemDetail handleUnknownVehicleModel(VehicleModelNotFoundException exception) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
     }
 

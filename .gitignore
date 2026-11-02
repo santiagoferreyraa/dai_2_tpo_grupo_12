@@ -33,6 +33,7 @@ build/
 # dejaría fuera del control de versiones código de la aplicación, en silencio.
 /data/
 /backend/*/data/
+/simulation/*/data/
 
 # --- IDE ---
 .idea/

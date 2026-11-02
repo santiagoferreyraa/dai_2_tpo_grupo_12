@@ -93,7 +93,12 @@ export default function BookingDialog({ station, connector, onClose }: BookingDi
         aria-labelledby={titleId}
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
-        className="glass-panel glass-modal relative max-h-full w-full max-w-lg overflow-y-auto rounded-3xl p-6 outline-none"
+        /*
+          Más ancha cuando la revisión muestra las tarjetas: van en una columna propia, a la
+          derecha. La revisión lo avisa con `data-booking-wide`, así el diálogo no tiene que saber
+          qué tarjetas hay. Ver `ReviewStep`.
+        */
+        className="glass-panel glass-modal relative max-h-full w-full max-w-lg overflow-y-auto rounded-3xl p-6 outline-none has-[[data-booking-wide]]:max-w-4xl"
       >
         <button
           type="button"

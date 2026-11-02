@@ -3,9 +3,16 @@
 /*
  * Genera el .env de la raíz a partir de .env.example, con secretos aleatorios.
  *
- * Cada línea de .env.example cuyo valor sea `generar` recibe un valor al azar, sacado del
- * generador criptográfico de Node. El resto se copia tal cual. Así la plantilla es la única
- * lista de variables, y agregar una nueva es agregarla ahí.
+ * Cada línea de .env.example sin valor (`NOMBRE=`) recibe un valor al azar, sacado del generador
+ * criptográfico de Node. El resto se copia tal cual. Así la plantilla es la única lista de
+ * variables, y agregar una nueva es agregarla ahí.
+ *
+ * Van vacías en la plantilla, y no con un marcador, para que un `cp .env.example .env` sin
+ * completar no arranque: docker compose corta con `${VAR:?...}` ante una variable vacía, y un
+ * marcador como `generar` pasaba como si fuera una contraseña (aclaración del docente sobre G1).
+ *
+ * Nunca imprime los valores (eje D): quien los necesite, como la contraseña de las cuentas
+ * iniciales, los lee en el .env.
  *
  * Los valores van en hexadecimal a propósito: no tienen caracteres que el shell, docker compose o
  * la línea de comandos de Artemis interpreten. Un valor que arranque con `-`, por ejemplo, lo
@@ -36,7 +43,7 @@ const DEFAULT_SIZE = 24
 const lines = readFileSync(TEMPLATE, 'utf8')
   .split(/\r?\n/)
   .map((line) => {
-    const match = /^([A-Z0-9_]+)=generar$/.exec(line)
+    const match = /^([A-Z0-9_]+)=$/.exec(line)
     if (!match) return line
     const name = match[1]
     return `${name}=${randomBytes(SIZES[name] ?? DEFAULT_SIZE).toString('hex')}`

@@ -1,5 +1,6 @@
 package com.ecopedia.core.terminal.service;
 
+import com.ecopedia.core.shared.ResourceNotFoundException;
 import com.ecopedia.core.terminal.domain.*;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -29,6 +30,7 @@ public class TerminalServiceImpl implements TerminalService {
         station.setLatitude(data.latitude());
         station.setLongitude(data.longitude());
         station.setPhotoUrls(data.photoUrls() != null ? data.photoUrls() : new ArrayList<>());
+        station.setNodeId(data.nodeId());
         station.setOwnerId(ownerId);
         station.setActive(true);
         Station saved = stationRepository.save(station);
@@ -62,7 +64,7 @@ public class TerminalServiceImpl implements TerminalService {
     public Station updateStation(Long stationId, StationData data) {
         Station station = stationRepository
                 .findById(stationId)
-                .orElseThrow(() -> new IllegalArgumentException("Estación no encontrada con ID: " + stationId));
+                .orElseThrow(() -> new ResourceNotFoundException("Estación no encontrada con ID: " + stationId));
 
         station.setName(data.name());
         station.setAddress(data.address());
@@ -71,6 +73,9 @@ public class TerminalServiceImpl implements TerminalService {
         if (data.photoUrls() != null) {
             station.setPhotoUrls(data.photoUrls());
         }
+        // Reemplaza, como el resto de los campos y a diferencia de las fotos: sin nodo, la
+        // estación queda sin nodo. Los dos formularios mandan siempre el que muestran.
+        station.setNodeId(data.nodeId());
         Station saved = stationRepository.save(station);
         Hibernate.initialize(saved.getPhotoUrls());
         return saved;
@@ -80,7 +85,7 @@ public class TerminalServiceImpl implements TerminalService {
     public void deactivateStation(Long stationId) {
         Station station = stationRepository
                 .findById(stationId)
-                .orElseThrow(() -> new IllegalArgumentException("Estación no encontrada con ID: " + stationId));
+                .orElseThrow(() -> new ResourceNotFoundException("Estación no encontrada con ID: " + stationId));
         station.setActive(false);
         stationRepository.save(station);
     }
@@ -89,7 +94,7 @@ public class TerminalServiceImpl implements TerminalService {
     public Connector addConnector(Long stationId, ConnectorType connectorType, BigDecimal maxPowerKw) {
         Station station = stationRepository
                 .findById(stationId)
-                .orElseThrow(() -> new IllegalArgumentException("Estación no encontrada con ID: " + stationId));
+                .orElseThrow(() -> new ResourceNotFoundException("Estación no encontrada con ID: " + stationId));
 
         Connector connector = new Connector();
         connector.setStation(station);
@@ -104,7 +109,7 @@ public class TerminalServiceImpl implements TerminalService {
     public Connector configureConnector(Long connectorId, ConnectorType connectorType, BigDecimal maxPowerKw) {
         Connector connector = connectorRepository
                 .findById(connectorId)
-                .orElseThrow(() -> new IllegalArgumentException("Conector no encontrado con ID: " + connectorId));
+                .orElseThrow(() -> new ResourceNotFoundException("Conector no encontrado con ID: " + connectorId));
 
         connector.setConnectorType(connectorType);
         connector.setMaxPowerKw(maxPowerKw);
@@ -115,7 +120,7 @@ public class TerminalServiceImpl implements TerminalService {
     public void changeOperationalStatus(Long connectorId, OperationalStatus operationalStatus) {
         Connector connector = connectorRepository
                 .findById(connectorId)
-                .orElseThrow(() -> new IllegalArgumentException("Conector no encontrado con ID: " + connectorId));
+                .orElseThrow(() -> new ResourceNotFoundException("Conector no encontrado con ID: " + connectorId));
 
         connector.setOperationalStatus(operationalStatus);
         connectorRepository.save(connector);
@@ -193,7 +198,7 @@ public class TerminalServiceImpl implements TerminalService {
     public Connector getConnector(Long connectorId) {
         return connectorRepository
                 .findById(connectorId)
-                .orElseThrow(() -> new IllegalArgumentException("Conector no encontrado con ID: " + connectorId));
+                .orElseThrow(() -> new ResourceNotFoundException("Conector no encontrado con ID: " + connectorId));
     }
 
     @Override
@@ -222,7 +227,7 @@ public class TerminalServiceImpl implements TerminalService {
     public Station getStation(Long stationId) {
         Station station = stationRepository
                 .findById(stationId)
-                .orElseThrow(() -> new IllegalArgumentException("Estación no encontrada con ID: " + stationId));
+                .orElseThrow(() -> new ResourceNotFoundException("Estación no encontrada con ID: " + stationId));
 
         Hibernate.initialize(station.getPhotoUrls());
         return station;
@@ -240,7 +245,7 @@ public class TerminalServiceImpl implements TerminalService {
     public void removeConnector(Long connectorId) {
         Connector connector = connectorRepository
                 .findById(connectorId)
-                .orElseThrow(() -> new IllegalArgumentException("Conector no encontrado con ID: " + connectorId));
+                .orElseThrow(() -> new ResourceNotFoundException("Conector no encontrado con ID: " + connectorId));
         connectorRepository.delete(connector);
     }
 

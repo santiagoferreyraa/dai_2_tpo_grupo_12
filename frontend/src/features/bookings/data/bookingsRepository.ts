@@ -29,8 +29,8 @@ import type {
  *   busca en la red que ya carga el buscador (`fetchAllStations`), que la pide una sola vez y la
  *   recuerda: resolver la ubicación no agrega ninguna llamada al backend.
  *
- * **Todas piden rol CONDUCTOR.** Con otro rol el backend contesta 403. No cierra la sesión —el
- * cliente solo la cierra si el token venció—, pero no tiene sentido pedirlas: quien las use tiene
+ * **Todas piden rol CONDUCTOR.** Con otro rol el backend contesta 404, como si la ruta no
+ * existiera (SEC-05). No cierra la sesión, pero no tiene sentido pedirlas: quien las use tiene
  * que mirar el rol antes.
  *
  * Los errores salen como `ApiError` con el mensaje del backend, que ya viene en castellano y
@@ -88,18 +88,67 @@ export async function getAvailability(
 }
 
 /**
- * RF08: convierte la retención en una reserva guardada. Desde acá el conector queda bloqueado
- * para el resto durante esa ventana.
+ * ECO-35: Procesa el checkout de una reserva a través del Facade en /api/checkout/booking.
+ * Orquesta la verificación de tolerancia de gracia (RF09), vigencia del slot (RF08),
+ * cálculo de seña (RF06) y verificación de medios de pago (RF02).
+ *
+ * Es la única forma de confirmar: la ruta vieja, `POST /api/bookings`, se borró porque confirmaba
+ * sin preguntar por la tarjeta. Desde acá el conector queda bloqueado para el resto durante esa
+ * ventana.
+ *
+ * **Cobra la seña** (ECO-53) con la tarjeta elegida, antes de confirmar. Por eso viaja la
+ * `Idempotency-Key` (QA-29): la misma en cada reintento del mismo intento, para que un doble clic o
+ * una respuesta perdida devuelvan la reserva ya hecha en vez de cobrar dos veces. Quién la genera y
+ * cuándo la renueva lo decide `useBookingFlow`.
  *
  * Errores que la pantalla tiene que tratar aparte:
- * - **410**: la retención venció antes de confirmar. Hay que volver a elegir el horario.
- * - **404**: la retención no existe; típicamente porque el proceso de Reservas se reinició y las
- *   retenciones viven en memoria.
+ * - **404 / 410**: la retención venció o no existe (las retenciones viven en memoria, y un
+ *   reinicio de Reservas las borra). Hay que volver a elegir el horario.
  * - **409**: mientras tanto se guardó otra reserva que se cruza.
+ * - **400 con `code`**: `PAYMENT_METHOD_REQUIRED` (no hay tarjeta) o `GRACE_PERIOD_NOT_ACCEPTED`.
+ * - **402 `CARD_DECLINED`**: la pasarela rechazó la tarjeta. La retención sigue: se prueba con otra.
+ * - **422 `PAYMENT_METHOD_INVALID`**: la tarjeta elegida ya no sirve (dada de baja, vencida).
+ * - **503 con `code`**: `PAYMENT_CHECK_UNAVAILABLE` o `PAYMENT_UNAVAILABLE` (Pagos no contestó) y
+ *   `PRICING_UNAVAILABLE` (Tarificación no contestó). La retención sigue en pie.
  */
-export async function confirmBooking(holdId: string): Promise<Booking> {
-  const response = await api.post<BookingResponse>('/bookings', { holdId })
-  const [booking] = await withLocations([response])
+export async function checkoutBooking(
+  holdId: string,
+  paymentMethodId: number | null,
+  acceptGracePeriod: boolean,
+  idempotencyKey: string,
+): Promise<Booking> {
+  const response = await api.post<{
+    bookingId: number
+    connectorId: number
+    start: string
+    end: string
+    status: BookingResponse['status']
+    depositAmount: number
+    depositStatus: BookingResponse['depositStatus']
+    cardLastFour: string | null
+    depositRefundableUntil: string | null
+    paymentSummary: string
+    checkedOutAt: string
+  }>(
+    '/checkout/booking',
+    { holdId, paymentMethodId, acceptGracePeriod },
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  )
+
+  const [booking] = await withLocations([
+    {
+      id: response.bookingId,
+      connectorId: response.connectorId,
+      start: response.start,
+      end: response.end,
+      status: response.status,
+      createdAt: response.checkedOutAt,
+      depositAmount: response.depositAmount,
+      depositStatus: response.depositStatus,
+      depositRefundableUntil: response.depositRefundableUntil,
+      cardLastFour: response.cardLastFour,
+    },
+  ])
   return booking
 }
 
@@ -122,9 +171,15 @@ export async function listMyBookings(signal?: AbortSignal): Promise<Booking[]> {
  * Es idempotente en el backend: cancelar una reserva ya cancelada no es un error. Si el pedido se
  * cortó, se puede mandar de nuevo sin preguntar antes cómo quedó.
  *
+ * Con seña, cancelar hasta `depositRefundableUntil` la devuelve y después no (decidido por Manuel
+ * el 31/10). La devolución la hace el backend por su cuenta: la reserva vuelve con
+ * `REFUND_PENDING` y en segundos pasa a `REFUNDED`.
+ *
  * Errores que la pantalla tiene que tratar aparte:
- * - **400**: la ventana ya terminó y no hay nada que liberar.
  * - **404**: la reserva no existe.
+ * - **409 `BOOKING_STATE_CONFLICT`**: la ventana ya terminó, o la reserva ya se cerró porque el
+ *   conductor no se presentó (QA-26; antes del 02/11 era un 400).
+ * - **409 `BOOKING_CHANGED`**: la reserva cambió mientras se cancelaba (se cerró por incomparecencia).
  */
 export function cancelBooking(bookingId: number): Promise<void> {
   return api.delete(`/bookings/${String(bookingId)}`)
@@ -143,6 +198,7 @@ function toHold(response: HoldResponse): Hold {
     start: new Date(response.start),
     end: new Date(response.end),
     expiresAt: new Date(response.expiresAt),
+    depositRefundableUntil: new Date(response.depositRefundableUntil),
   }
 }
 
@@ -171,6 +227,12 @@ async function withLocations(responses: BookingResponse[]): Promise<Booking[]> {
     status: response.status,
     createdAt: new Date(response.createdAt),
     location: locations.get(response.connectorId) ?? null,
+    depositAmount: response.depositAmount,
+    depositStatus: response.depositStatus,
+    depositRefundableUntil:
+      response.depositRefundableUntil === null ? null : new Date(response.depositRefundableUntil),
+    cardLastFour: response.cardLastFour,
+    chargingCost: null,
   }))
 }
 

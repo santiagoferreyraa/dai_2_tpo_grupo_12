@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 
 import com.ecopedia.core.security.JwtTokenProvider;
 import com.ecopedia.core.user.domain.*;
+import com.ecopedia.core.user.service.LoginAttempts;
 import com.ecopedia.core.user.service.UserServiceImpl;
 import java.util.List;
 import java.util.Optional;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -28,6 +30,9 @@ class UserServiceTest {
 
     @Mock
     private JwtTokenProvider tokenProvider;
+
+    @Spy
+    private LoginAttempts loginAttempts = new LoginAttempts();
 
     @InjectMocks
     private UserServiceImpl userService;
@@ -101,9 +106,16 @@ class UserServiceTest {
 
     @Test
     void testDeactivateUser() {
+        User admin = new User();
+        admin.setId(9L);
+        admin.setEmail("admin@ecopedia.com");
+        admin.setPasswordHash("$2a$10$adminhash");
+        admin.setRole(Role.ADMIN);
         when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+        when(userRepository.findByEmail("admin@ecopedia.com")).thenReturn(Optional.of(admin));
+        when(passwordEncoder.matches("claveDelAdmin", "$2a$10$adminhash")).thenReturn(true);
 
-        userService.deactivateUser(1L);
+        userService.deactivateUser(1L, new AdminConfirmation("admin@ecopedia.com", "claveDelAdmin"));
 
         assertFalse(mockUser.isActive());
         verify(userRepository, times(1)).save(mockUser);

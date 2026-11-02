@@ -19,6 +19,8 @@ export interface StationData {
   latitude: number
   longitude: number
   photoUrls: string[]
+  /** Nodo de la distribuidora (RF15); `null` si no tiene. */
+  nodeId: string | null
 }
 
 /** Una estación como la devuelve el backend. Equivale a la entidad Station. */

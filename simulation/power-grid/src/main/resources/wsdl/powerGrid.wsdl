@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    El WSDL de la distribuidora, escrito a mano a partir del XSD, que importa.
+
+    Contract-first: los tipos tienen una sola fuente, power-grid.xsd, y este archivo solo dice qué
+    operación hay, con qué mensajes y qué Faults. No se genera con DefaultWsdl11Definition porque
+    ese generador cuelga los Faults de operaciones por el nombre: con UnknownNodeFault inventaba
+    una operación "UnknownNode" que solo devuelve un Fault, en vez de declararlo como Fault de
+    CheckNodeFeasibility. Un cliente generado de ese WSDL tendría dos operaciones que no existen.
+
+    Se publica en /ws/powerGrid.wsdl, y el XSD que importa en /ws/power-grid.xsd.
+-->
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+                  xmlns:tns="http://ecopedia.com/simulation/power-grid/v1"
+                  targetNamespace="http://ecopedia.com/simulation/power-grid/v1"
+                  name="PowerGridService">
+
+    <wsdl:types>
+        <xs:schema>
+            <xs:import namespace="http://ecopedia.com/simulation/power-grid/v1"
+                       schemaLocation="power-grid.xsd"/>
+        </xs:schema>
+    </wsdl:types>
+
+    <wsdl:message name="CheckNodeFeasibilityRequest">
+        <wsdl:part name="parameters" element="tns:CheckNodeFeasibilityRequest"/>
+    </wsdl:message>
+    <wsdl:message name="CheckNodeFeasibilityResponse">
+        <wsdl:part name="parameters" element="tns:CheckNodeFeasibilityResponse"/>
+    </wsdl:message>
+    <wsdl:message name="UnknownNodeFault">
+        <wsdl:part name="fault" element="tns:UnknownNodeFault"/>
+    </wsdl:message>
+    <wsdl:message name="InvalidDemandFault">
+        <wsdl:part name="fault" element="tns:InvalidDemandFault"/>
+    </wsdl:message>
+
+    <wsdl:portType name="NodeFeasibilityPort">
+        <!--
+            ¿El nodo aguanta la potencia pedida? Un "no" de la red es una respuesta, con
+            feasible = false y el motivo. Los Faults son para los pedidos que no se pueden procesar.
+        -->
+        <wsdl:operation name="CheckNodeFeasibility">
+            <wsdl:input message="tns:CheckNodeFeasibilityRequest"/>
+            <wsdl:output message="tns:CheckNodeFeasibilityResponse"/>
+            <wsdl:fault name="UnknownNodeFault" message="tns:UnknownNodeFault"/>
+            <wsdl:fault name="InvalidDemandFault" message="tns:InvalidDemandFault"/>
+        </wsdl:operation>
+    </wsdl:portType>
+
+    <!--
+        SOAP 1.1, document/literal. Cada pedido tiene que traer la cabecera WS-Security con un
+        UsernameToken (usuario y contraseña en texto); sin ella vuelve un Fault de seguridad.
+    -->
+    <wsdl:binding name="NodeFeasibilityPortSoap11" type="tns:NodeFeasibilityPort">
+        <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+        <wsdl:operation name="CheckNodeFeasibility">
+            <soap:operation soapAction=""/>
+            <wsdl:input>
+                <soap:body use="literal"/>
+            </wsdl:input>
+            <wsdl:output>
+                <soap:body use="literal"/>
+            </wsdl:output>
+            <wsdl:fault name="UnknownNodeFault">
+                <soap:fault name="UnknownNodeFault" use="literal"/>
+            </wsdl:fault>
+            <wsdl:fault name="InvalidDemandFault">
+                <soap:fault name="InvalidDemandFault" use="literal"/>
+            </wsdl:fault>
+        </wsdl:operation>
+    </wsdl:binding>
+
+    <wsdl:service name="PowerGridService">
+        <wsdl:port name="NodeFeasibilityPortSoap11" binding="tns:NodeFeasibilityPortSoap11">
+            <soap:address location="http://localhost:8087/ws"/>
+        </wsdl:port>
+    </wsdl:service>
+
+</wsdl:definitions>

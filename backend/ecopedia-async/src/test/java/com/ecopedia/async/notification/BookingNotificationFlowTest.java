@@ -104,10 +104,10 @@ class BookingNotificationFlowTest {
     /** El listener consume en otro hilo: se espera a que aparezcan los avisos, con un tope. */
     private List<Notification> awaitHistory(long driver, int expected) throws InterruptedException {
         long deadline = System.currentTimeMillis() + 10_000;
-        List<Notification> history = repository.findByRecipientIdOrderByCreatedAtDesc(driver);
+        List<Notification> history = repository.findByRecipientIdAndDeletedAtIsNullOrderByCreatedAtDesc(driver);
         while (history.size() < expected && System.currentTimeMillis() < deadline) {
             Thread.sleep(50);
-            history = repository.findByRecipientIdOrderByCreatedAtDesc(driver);
+            history = repository.findByRecipientIdAndDeletedAtIsNullOrderByCreatedAtDesc(driver);
         }
         return history;
     }

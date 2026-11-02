@@ -40,11 +40,22 @@ public interface UserService {
      */
     void changePassword(Long userId, String currentPassword, String newPassword);
 
-    /** Cambio de rol de un usuario (solo ADMIN). */
-    User updateRole(Long userId, Role newRole);
+    /**
+     * Cambio de rol de un usuario que no es {@code ADMIN}, confirmado con la contraseña del
+     * {@code ADMIN} que lo pide (Manuel, 02/11). Promover a {@code ADMIN} está permitido; después,
+     * esa cuenta ya no se toca desde la aplicación.
+     *
+     * @throws AdminAccountProtectedException si el usuario es {@code ADMIN}, también el propio.
+     * @throws AdminPasswordRejectedException si la contraseña no es la del {@code ADMIN}.
+     * @throws TooManyLoginAttemptsException si el {@code ADMIN} está bloqueado por intentos fallidos.
+     */
+    User updateRole(Long userId, Role newRole, AdminConfirmation confirmation);
 
-    /** Baja lógica de un usuario (solo ADMIN). */
-    void deactivateUser(Long userId);
+    /**
+     * Baja lógica de un usuario que no es {@code ADMIN}, con la misma confirmación y las mismas
+     * reglas que {@link #updateRole}.
+     */
+    void deactivateUser(Long userId, AdminConfirmation confirmation);
 
     /** Alta/Reactivación lógica de un usuario (solo ADMIN). */
     void activateUser(Long userId);

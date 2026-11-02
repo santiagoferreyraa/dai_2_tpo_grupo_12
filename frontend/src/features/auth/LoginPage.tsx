@@ -123,8 +123,9 @@ export default function LoginPage() {
  * coincide, y está bien que no distinga: decir cuál de las dos falló le confirma a un
  * desconocido qué direcciones están registradas. Acá se reemplaza por la frase que usa
  * cualquier login, porque "Credenciales inválidas" es vocabulario del sistema y no del que
- * está intentando entrar. Cualquier otro motivo —una cuenta dada de baja, por ejemplo— se
- * muestra tal cual viene: es información que el usuario necesita y que no tiene cómo deducir.
+ * está intentando entrar. Una cuenta dada de baja también recibe ese mensaje, por lo mismo.
+ * Cualquier otro motivo —el bloqueo por intentos fallidos, por ejemplo— se muestra tal cual
+ * viene: es información que el usuario necesita y que no tiene cómo deducir.
  */
 function readLoginError(cause: unknown): string {
   if (!(cause instanceof ApiError)) return 'No se pudo iniciar sesión'

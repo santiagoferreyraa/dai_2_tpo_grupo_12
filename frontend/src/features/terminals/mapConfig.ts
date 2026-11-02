@@ -126,11 +126,9 @@ export const DEFAULT_ZOOM = 12
 /** Alejarse más que esto saca al país entero de escala y no muestra nada útil. */
 export const MIN_ZOOM = 4
 
-/**
- * Zoom al que se acerca el mapa cuando se elige una estación.
- *
- * Atado a MAX_ZOOM a propósito: elegir una estación tiene que dejar el mapa tan cerca como el
- * usuario podría ponerlo a mano, ni más ni menos. Con los dos valores sueltos, mover uno solo
- * dejaba el vuelo y el zoom manual desalineados.
+/*
+ * Acá vivía FOCUS_ZOOM, el zoom al que el mapa se acercaba solo al elegir una estación. Se sacó
+ * junto con el zoom automático: el nivel de acercamiento es del usuario, y elegir una estación
+ * solo desplaza el mapa (ver `PanToStation` en StationMap). MAX_ZOOM sigue siendo el techo de lo
+ * que el usuario puede acercar a mano.
  */
-export const FOCUS_ZOOM = MAX_ZOOM

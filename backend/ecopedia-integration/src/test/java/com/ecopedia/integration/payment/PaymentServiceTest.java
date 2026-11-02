@@ -13,6 +13,7 @@ import com.ecopedia.integration.payment.domain.CardBrand;
 import com.ecopedia.integration.payment.domain.CardData;
 import com.ecopedia.integration.payment.domain.PaymentGatewayPort;
 import com.ecopedia.integration.payment.domain.PaymentMethod;
+import com.ecopedia.integration.payment.domain.PaymentMethodNotFoundException;
 import com.ecopedia.integration.payment.domain.PaymentMethodRepository;
 import com.ecopedia.integration.payment.domain.TokenizedCard;
 import com.ecopedia.integration.payment.service.PaymentServiceImpl;
@@ -190,7 +191,7 @@ class PaymentServiceTest {
         when(paymentMethodRepository.findById(1L))
                 .thenReturn(Optional.of(existing(ANOTHER_DRIVER, CardBrand.VISA, "1111", 9, 2029)));
 
-        var rejected = assertThrows(IllegalArgumentException.class, () -> paymentService.removeCard(DRIVER, 1L));
+        var rejected = assertThrows(PaymentMethodNotFoundException.class, () -> paymentService.removeCard(DRIVER, 1L));
 
         /*
          * Contesta "no se encontró" y no "no es tuya": un mensaje distinto confirmaría que ese id
@@ -207,7 +208,7 @@ class PaymentServiceTest {
         alreadyRemoved.setActive(false);
         when(paymentMethodRepository.findById(1L)).thenReturn(Optional.of(alreadyRemoved));
 
-        assertThrows(IllegalArgumentException.class, () -> paymentService.removeCard(DRIVER, 1L));
+        assertThrows(PaymentMethodNotFoundException.class, () -> paymentService.removeCard(DRIVER, 1L));
     }
 
     @Test

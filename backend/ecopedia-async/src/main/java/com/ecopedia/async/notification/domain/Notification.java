@@ -64,6 +64,17 @@ public class Notification {
     @Column(name = "read_at")
     private Instant readAt;
 
+    /**
+     * Cuándo lo borró el conductor. Nulo mientras siga en su buzón.
+     *
+     * <p>La fila se marca y no se borra. Por qué, está en la migración {@code
+     * add_notifications_deleted_at}: es la fila la que prueba que el mensaje de la cola ya se
+     * procesó, así que borrarla de verdad haría que una reentrega reviviera el aviso y repitiera el
+     * mail.
+     */
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
     /** Para JPA. */
     protected Notification() {}
 
@@ -92,6 +103,23 @@ public class Notification {
 
     public boolean isRead() {
         return readAt != null;
+    }
+
+    /**
+     * Saca el aviso del buzón del conductor. Si ya estaba borrado, conserva el primer borrado.
+     *
+     * <p>Idempotente a propósito, como {@link #markReadAt(Instant)}: borrar dos veces lo mismo es el
+     * mismo pedido repetido, no un error.
+     */
+    public void markDeletedAt(Instant when) {
+        if (deletedAt == null) {
+            deletedAt = when;
+        }
+    }
+
+    /** Si el conductor lo borró. Un aviso borrado no se lista, no se cuenta y no se marca. */
+    public boolean isDeleted() {
+        return deletedAt != null;
     }
 
     public boolean belongsTo(Long userId) {
@@ -152,5 +180,9 @@ public class Notification {
 
     public Instant getReadAt() {
         return readAt;
+    }
+
+    public Instant getDeletedAt() {
+        return deletedAt;
     }
 }

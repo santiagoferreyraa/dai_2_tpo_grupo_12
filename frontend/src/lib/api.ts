@@ -65,6 +65,11 @@ export interface RequestOptions {
   params?: Record<string, ParamValue | undefined>
   /** Para cancelar la petición si la pantalla se desmonta antes de que responda. */
   signal?: AbortSignal
+  /**
+   * Cabeceras propias de esa llamada, como la `Idempotency-Key` del checkout. Las de siempre
+   * —`Accept`, `Content-Type` y la sesión— las pone el cliente y no se pisan desde acá.
+   */
+  headers?: Record<string, string>
 }
 
 function buildUrl(path: string, params: RequestOptions['params']): string {
@@ -121,7 +126,7 @@ async function request<T>(
   body?: unknown,
   options?: RequestOptions,
 ): Promise<T> {
-  const headers: Record<string, string> = { Accept: 'application/json' }
+  const headers: Record<string, string> = { ...options?.headers, Accept: 'application/json' }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   if (sessionToken !== null) headers['Authorization'] = `Bearer ${sessionToken}`
 
@@ -138,7 +143,7 @@ async function request<T>(
   }
 
   /*
-   * Un 401 o un 403 pueden significar que el token venció. Se avisa antes de tirar el error
+   * Un 401 (o un 403, que el backend ya no manda desde QA-33) pueden significar que el token venció. Se avisa antes de tirar el error
    * para que la sesión se cierre sola en vez de dejar al usuario en una pantalla que falla
    * sin decir por qué. Quién decide si de verdad hay que cerrarla no es asunto de este
    * archivo: acá solo se reporta el rechazo.
@@ -166,6 +171,10 @@ export const api = {
   patch: <T>(path: string, body?: unknown, options?: RequestOptions) =>
     request<T>('PATCH', path, body, options),
 
-  delete: <T = void>(path: string, options?: RequestOptions) =>
-    request<T>('DELETE', path, undefined, options),
+  /*
+   * El cuerpo es opcional y casi nunca hace falta. La excepción es la baja de un usuario en `/admin`,
+   * que manda la contraseña del ADMIN: en la URL o en una cabecera quedaría en los logs de acceso.
+   */
+  delete: <T = void>(path: string, options?: RequestOptions & { body?: unknown }) =>
+    request<T>('DELETE', path, options?.body, options),
 }

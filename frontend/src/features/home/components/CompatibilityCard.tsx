@@ -15,6 +15,11 @@
  * la red, la otra si se puede salir a cargar en este momento. Por eso `homeStations` las cuenta
  * por separado.
  *
+ * **Sin auto elegido no se dibuja ningún número, y el recuadro pide el dato.** "0 de 15" sería
+ * falso: lo que pasa no es que ninguna estación sirva, sino que todavía no se sabe con qué auto
+ * comparar. Por eso los conteos llegan en `null` y no en cero —ver `homeStations`—, que es lo que
+ * obliga a distinguir los dos casos en vez de pintar un cero desalentador.
+ *
  * El escudo se queda: no está diciendo "CCS2", está diciendo "esto te sirve", que es justamente
  * lo que el número de al lado cuantifica.
  *
@@ -29,21 +34,13 @@
  */
 
 import { ShieldCheckIcon } from '@/features/navigation/icons'
-
-import { DRIVER_VEHICLE } from '../vehicle'
-
-/** Cómo se lee cada tipo de conector. El enum viaja en inglés técnico. */
-const CONNECTOR_NAME: Record<string, string> = {
-  CCS2: 'CCS2',
-  CHADEMO: 'CHAdeMO',
-  TYPE_2: 'Tipo 2',
-}
+import { connectorLabelOf, useDriverVehicle } from '@/features/vehicles/vehicle'
 
 interface CompatibilityCardProps {
-  /** Cuántas estaciones tienen al menos un conector del tipo que usa el auto. */
-  compatibleCount: number
-  /** Cuántas de esas tienen uno libre ahora mismo. */
-  usableCount: number
+  /** Cuántas estaciones tienen un conector del tipo que usa el auto, o `null` sin auto elegido. */
+  compatibleCount: number | null
+  /** Cuántas de esas tienen uno libre ahora mismo, o `null` sin auto elegido. */
+  usableCount: number | null
   /** Cuántas estaciones hay en total. */
   totalCount: number
   className?: string
@@ -54,7 +51,7 @@ export function CompatibilityBody({
   usableCount,
   totalCount,
 }: CompatibilityCardProps) {
-  const connector = CONNECTOR_NAME[DRIVER_VEHICLE.connectorType] ?? DRIVER_VEHICLE.connectorType
+  const vehicle = useDriverVehicle()
 
   return (
     /*
@@ -75,13 +72,22 @@ export function CompatibilityBody({
       <ShieldCheckIcon className="text-primary h-16 w-16 shrink-0" />
 
       <div className="min-w-0">
-        {totalCount === 0 ? (
+        {vehicle === null || compatibleCount === null || usableCount === null ? (
+          /*
+            Sin auto no hay con qué comparar. Se comprueban los tres aunque los conteos vengan en
+            `null` exactamente cuando el vehículo también: TypeScript no deduce esa relación entre
+            un prop y un hook, y afirmársela sería pedirle que confíe en algo que no puede ver.
+          */
+          <p className="text-text text-lg leading-snug font-bold text-balance">
+            Elegí tu auto para ver qué estaciones te sirven
+          </p>
+        ) : totalCount === 0 ? (
           /*
             Mientras no hay estaciones cargadas no se dibuja ningún número. "0 de 0" diría algo
             falso —que ninguna te sirve— justo cuando la verdad es que todavía no se sabe.
           */
           <p className="text-text text-lg leading-snug font-bold text-balance">
-            Tu auto usa <span className="text-primary">{connector}</span>
+            Tu auto usa <span className="text-primary">{connectorLabelOf(vehicle)}</span>
           </p>
         ) : (
           <>
@@ -90,7 +96,7 @@ export function CompatibilityBody({
             </p>
 
             <p className="text-text mt-1 text-sm leading-snug font-semibold text-pretty">
-              estaciones cargan tu <span className="text-primary">{connector}</span>
+              estaciones cargan tu <span className="text-primary">{connectorLabelOf(vehicle)}</span>
             </p>
 
             {/*

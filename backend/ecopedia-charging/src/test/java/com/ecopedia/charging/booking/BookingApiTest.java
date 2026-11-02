@@ -2,6 +2,7 @@ package com.ecopedia.charging.booking;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -10,10 +11,17 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ecopedia.charging.booking.domain.Booking;
+import com.ecopedia.charging.booking.domain.BookingRepository;
 import com.ecopedia.charging.booking.domain.ConnectorCatalog;
 import com.ecopedia.charging.booking.domain.ConnectorSnapshot;
+import com.ecopedia.charging.booking.domain.TimeWindow;
+import com.ecopedia.charging.checkout.domain.PaymentDirectory;
+import com.ecopedia.charging.checkout.domain.TariffDirectory;
+import com.ecopedia.charging.web.ApiProblems;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -22,10 +30,15 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
@@ -46,6 +59,7 @@ import org.springframework.test.web.servlet.ResultActions;
  * <p>Terminales se reemplaza con un mock de {@link ConnectorCatalog}: la prueba es de este
  * artefacto, y no tiene por qué necesitar a core corriendo.
  */
+@ExtendWith(OutputCaptureExtension.class)
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("dev")
@@ -62,6 +76,19 @@ class BookingApiTest {
 
     @MockitoBean
     private ConnectorCatalog connectorCatalog;
+
+    @Autowired
+    private BookingRepository bookingRepository;
+
+    /*
+     * Confirmar pasa por el checkout, que le pregunta a Pagos por las tarjetas y a core por la seña. Los dos
+     * son otros artefactos: se reemplazan, igual que Terminales.
+     */
+    @MockitoBean
+    private PaymentDirectory paymentDirectory;
+
+    @MockitoBean
+    private TariffDirectory tariffDirectory;
 
     @Value("${ecopedia.jwt.secret}")
     private String secret;
@@ -80,6 +107,8 @@ class BookingApiTest {
     void connectorExists() {
         when(connectorCatalog.findConnector(anyLong()))
                 .thenAnswer(call -> Optional.of(new ConnectorSnapshot(call.getArgument(0), 1L, "AVAILABLE")));
+        when(paymentDirectory.hasUsablePaymentMethod(anyLong(), any())).thenReturn(true);
+        when(tariffDirectory.calculateDeposit(anyLong())).thenReturn(BigDecimal.ZERO);
     }
 
     private String driver(long userId) {
@@ -134,13 +163,14 @@ class BookingApiTest {
 
     private String confirmBody(String holdId) {
         return """
-                {"holdId":"%s"}
+                {"holdId":"%s","acceptGracePeriod":true}
                 """.formatted(holdId);
     }
 
     /** Confirma la retención y devuelve la reserva creada. */
     private JsonNode confirm(String holdId, long userId) throws Exception {
-        String response = mockMvc.perform(post("/api/bookings")
+        String response = mockMvc.perform(post("/api/checkout/booking")
+                        .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
                         .header(HttpHeaders.AUTHORIZATION, driver(userId))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(confirmBody(holdId)))
@@ -175,12 +205,43 @@ class BookingApiTest {
                 .isEqualTo(201);
     }
 
+    /*
+     * La otra mitad del bloqueo, contra la base de verdad: la reserva ocupa al CONDUCTOR, no solo
+     * al conector. Acá importa que la consulta por conductor en JPQL diga lo mismo que el doble en
+     * memoria; si no, aquellas pruebas pasarían sobre una base que igual deja reservar dos veces.
+     */
+    @Test
+    @DisplayName("El mismo conductor no puede reservar la misma hora en dos conectores")
+    void driverCannotBookTwoConnectorsForTheSameHours() throws Exception {
+        Instant start = nextWindowStart();
+        confirm(holdSlot(20L, start, DRIVER), DRIVER);
+
+        String otherConnector = """
+                {"connectorId":21,"start":"%s","end":"%s"}
+                """
+                .formatted(start, start.plus(Duration.ofHours(1)));
+
+        /* 409 con código: es un conflicto del conductor y no del slot, y el front los dice distinto. */
+        mockMvc.perform(post("/api/bookings/holds")
+                        .header(HttpHeaders.AUTHORIZATION, driver(DRIVER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(otherConnector))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DRIVER_WINDOW_TAKEN"));
+
+        // El conector 21 estaba libre: lo que estaba tomado era el conductor.
+        assertThat(holdAttempt(21L, start, OTHER_DRIVER)).isEqualTo(201);
+
+        // Y una hora en la que no tiene nada sigue siendo suya.
+        assertThat(holdAttempt(21L, start.plus(Duration.ofHours(1)), DRIVER)).isEqualTo(201);
+    }
+
     @Test
     @DisplayName("Cancelada la reserva, la ventana vuelve a estar disponible")
     void cancellingFreesTheWindow() throws Exception {
         Instant start = nextWindowStart();
         JsonNode booking = confirm(holdSlot(11L, start, DRIVER), DRIVER);
-        long bookingId = booking.get("id").asLong();
+        long bookingId = booking.get("bookingId").asLong();
 
         mockMvc.perform(delete("/api/bookings/{id}", bookingId).header(HttpHeaders.AUTHORIZATION, driver(DRIVER)))
                 .andExpect(status().isNoContent());
@@ -192,7 +253,8 @@ class BookingApiTest {
     @DisplayName("El conductor ve su reserva en el listado, con su ventana y su estado")
     void listsTheDriverBookings() throws Exception {
         Instant start = nextWindowStart();
-        long bookingId = confirm(holdSlot(12L, start, DRIVER), DRIVER).get("id").asLong();
+        long bookingId =
+                confirm(holdSlot(12L, start, DRIVER), DRIVER).get("bookingId").asLong();
 
         mockMvc.perform(get("/api/bookings/mine").header(HttpHeaders.AUTHORIZATION, driver(DRIVER)))
                 .andExpect(status().isOk())
@@ -213,7 +275,8 @@ class BookingApiTest {
         String holdId = holdSlot(13L, nextWindowStart(), DRIVER);
         confirm(holdId, DRIVER);
 
-        mockMvc.perform(post("/api/bookings")
+        mockMvc.perform(post("/api/checkout/booking")
+                        .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
                         .header(HttpHeaders.AUTHORIZATION, driver(DRIVER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(confirmBody(holdId)))
@@ -223,7 +286,8 @@ class BookingApiTest {
     @Test
     @DisplayName("Confirmar una retención inventada recibe 404")
     void rejectsUnknownHold() throws Exception {
-        mockMvc.perform(post("/api/bookings")
+        mockMvc.perform(post("/api/checkout/booking")
+                        .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
                         .header(HttpHeaders.AUTHORIZATION, driver(DRIVER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(confirmBody(UUID.randomUUID().toString())))
@@ -231,25 +295,34 @@ class BookingApiTest {
     }
 
     @Test
-    @DisplayName("Confirmar la retención de otro conductor recibe 403")
-    void rejectsConfirmingSomeoneElsesHold() throws Exception {
+    @DisplayName("Confirmar la retención de otro conductor recibe lo mismo que una inexistente, y queda en el log")
+    void rejectsConfirmingSomeoneElsesHold(CapturedOutput output) throws Exception {
         String holdId = holdSlot(14L, nextWindowStart(), DRIVER);
 
-        mockMvc.perform(post("/api/bookings")
+        mockMvc.perform(post("/api/checkout/booking")
+                        .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
                         .header(HttpHeaders.AUTHORIZATION, driver(OTHER_DRIVER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(confirmBody(holdId)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value(ApiProblems.NOT_FOUND_DETAIL));
+
+        assertThat(output)
+                .contains("Acceso denegado: el conductor " + OTHER_DRIVER + " quiso confirmar la retención " + holdId);
     }
 
     @Test
-    @DisplayName("Cancelar la reserva de otro conductor recibe 403 y no la cancela")
-    void rejectsCancellingSomeoneElsesBooking() throws Exception {
+    @DisplayName("Cancelar la reserva de otro conductor recibe lo mismo que una inexistente, y no la cancela")
+    void rejectsCancellingSomeoneElsesBooking(CapturedOutput output) throws Exception {
         Instant start = nextWindowStart();
-        long bookingId = confirm(holdSlot(15L, start, DRIVER), DRIVER).get("id").asLong();
+        long bookingId =
+                confirm(holdSlot(15L, start, DRIVER), DRIVER).get("bookingId").asLong();
 
         mockMvc.perform(delete("/api/bookings/{id}", bookingId).header(HttpHeaders.AUTHORIZATION, driver(OTHER_DRIVER)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value(ApiProblems.NOT_FOUND_DETAIL));
+        assertThat(output)
+                .contains("Acceso denegado: el conductor " + OTHER_DRIVER + " quiso cancelar la reserva " + bookingId);
 
         // Y sigue bloqueando el slot, que es lo que probaría que de verdad no se canceló.
         assertThat(holdAttempt(15L, start, OTHER_DRIVER)).isEqualTo(409);
@@ -266,13 +339,50 @@ class BookingApiTest {
     @DisplayName("Cancelar dos veces la misma reserva recibe 204 las dos veces")
     void cancellingTwiceIsIdempotent() throws Exception {
         long bookingId = confirm(holdSlot(16L, nextWindowStart(), DRIVER), DRIVER)
-                .get("id")
+                .get("bookingId")
                 .asLong();
 
         for (int attempt = 0; attempt < 2; attempt++) {
             mockMvc.perform(delete("/api/bookings/{id}", bookingId).header(HttpHeaders.AUTHORIZATION, driver(DRIVER)))
                     .andExpect(status().isNoContent());
         }
+    }
+
+    /**
+     * QA-26: cancelar una reserva que ya no lo admite es un conflicto con el estado, no un pedido mal
+     * armado. 409 con {@code code} y un texto fijo, sin el id ni el motivo; esos van al log.
+     *
+     * <p>Las reservas se guardan directo en el repositorio: por la API, llegar a una incomparecencia o
+     * a una ventana terminada pide esperar a que pase el tiempo.
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"NO_SHOW", "terminada"})
+    @DisplayName("Cancelar una reserva cerrada da 409 BOOKING_STATE_CONFLICT, sin pistas, y no la cambia")
+    void cancellingAClosedBookingIsAConflict(String state, CapturedOutput output) throws Exception {
+        Booking booking = bookingRepository.save(closedBooking(state));
+
+        mockMvc.perform(delete("/api/bookings/{id}", booking.getId()).header(HttpHeaders.AUTHORIZATION, driver(DRIVER)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("BOOKING_STATE_CONFLICT"))
+                .andExpect(jsonPath("$.detail").value("La reserva no admite ese cambio en su estado actual."));
+
+        assertThat(output).contains("Transición de reserva rechazada (409): La reserva " + booking.getId());
+        mockMvc.perform(get("/api/bookings/mine").header(HttpHeaders.AUTHORIZATION, driver(DRIVER)))
+                .andExpect(jsonPath("$[?(@.id == " + booking.getId() + ")].status")
+                        .value(state.equals("NO_SHOW") ? "NO_SHOW" : "CONFIRMED"));
+    }
+
+    /** Una reserva del conductor ya cerrada: con incomparecencia, o confirmada con la ventana en el pasado. */
+    private static Booking closedBooking(String state) {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+        if (state.equals("NO_SHOW")) {
+            Instant start = nextWindowStart();
+            Booking booking = new Booking(40L, DRIVER, new TimeWindow(start, start.plus(Duration.ofHours(1))), now);
+            booking.markNoShow();
+            return booking;
+        }
+        return new Booking(
+                41L, DRIVER, new TimeWindow(now.minus(Duration.ofHours(3)), now.minus(Duration.ofHours(2))), now);
     }
 
     /** Consulta la disponibilidad del conector con token de conductor. */

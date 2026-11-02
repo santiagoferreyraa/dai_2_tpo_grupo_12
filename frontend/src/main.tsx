@@ -16,9 +16,8 @@ restoreSession()
 
 /*
  * Y se le enseña al cliente HTTP qué hacer cuando el backend rechaza una llamada. Cierra la
- * sesión solo si el token venció: un 403 no distingue "token vencido" de "rol equivocado",
- * así que cerrarla ante cualquiera dejaría afuera a un conductor por tocar una pantalla que
- * no le corresponde. El porqué completo está en features/auth/session.ts.
+ * sesión solo si el token venció: mirar el vencimiento no depende del código que elija cada
+ * módulo para rechazar. El porqué completo está en features/auth/session.ts.
  */
 onAuthRejected(clearSessionIfExpired)
 

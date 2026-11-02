@@ -1,0 +1,25 @@
+Summary,Issue Type,Priority,Labels,Labels,Description
+"DEF-01 · Sin broker, el aviso de una reserva confirmada se pierde",Error,High,defecto,severidad-mayor,"Severidad: Mayor.
+Apagar Artemis; confirmar una reserva; levantar Artemis; GET /api/notifications. Esperado: el aviso aparece. Obtenido: no se publica nunca. Workaround: la reserva figura en Mis reservas. Ver QA-27."
+"DEF-02 · JWT vencido, alterado, alg=none u otro emisor responde 403 y no 401",Error,High,defecto,severidad-mayor,"Severidad: Mayor.
+GET /api/users/profile con un token vencido. Esperado: 401. Obtenido: 403 (los 4 módulos). Evidencia: ApiAttackTest. Ver QA-33."
+DEF-03 · core escribe el email del usuario en el log de accesos denegados,Error,High,defecto,severidad-mayor,"Severidad: Mayor.
+Con sesión de CONDUCTOR, GET /api/users y mirar el log de core. Esperado: sin datos personales. Obtenido: el email del usuario. Causa: NotFoundAccessDeniedHandler loguea authentication.getName()."
+DEF-04 · El historial de Git conserva contraseñas y el secreto JWT por defecto,Error,High,defecto,severidad-mayor,"Severidad: Mayor.
+git log --all -p sobre docker-compose.yml y application.yml: POSTGRES_PASSWORD ecopedia, ARTEMIS_PASSWORD ecocharge, secreto JWT de dev. Ver QA-15."
+DEF-05 · El backoffice responde 500 al dar de baja un usuario o estación inexistente,Error,Medium,defecto,severidad-menor,"Severidad: Menor.
+Con sesión de ADMIN, DELETE /api/admin/users/999999. Esperado: 404. Obtenido: 500. Regresión: AdminErrorResponseTest (deshabilitado)."
+DEF-06 · Login con credenciales inválidas responde 400 y no 401,Error,Medium,defecto,severidad-menor,"Severidad: Menor.
+POST /api/auth/login con clave equivocada. Esperado: 401. Obtenido: 400."
+DEF-07 · Un recurso inexistente responde 400 y no 404,Error,Medium,defecto,severidad-menor,"Severidad: Menor.
+GET /api/pricing/connector/999999, GET /api/users/999999, DELETE /api/payment-methods/999999. Esperado: 404. Obtenido: 400."
+"DEF-08 · Terminales y Tarifas responden errores en texto plano, no Problem Details",Error,Medium,defecto,severidad-menor,"Severidad: Menor.
+GET /api/stations/999999. Esperado: application/problem+json. Obtenido: texto plano. Ver QA-31."
+DEF-09 · Los JWT no llevan ni validan iss/aud; los 4 módulos comparten la clave,Error,Low,defecto,severidad-menor,"Severidad: Menor.
+Observación de diseño: un módulo comprometido puede emitir tokens válidos para los demás."
+DEF-10 · Las respuestas no traen Content-Security-Policy,Error,Medium,defecto,severidad-menor,"Severidad: Menor.
+Cualquier respuesta de la API: falta CSP. A confirmar con ZAP. Ver QA-32."
+DEF-11 · La contraseña mínima es de 6 caracteres; ASVS 5.0 pide 8,Error,Medium,defecto,severidad-menor,"Severidad: Menor.
+@Size(min = 6) en RegisterRequest y ChangePasswordRequest."
+DEF-12 · Un parámetro con formato inválido en Terminales responde 404 con el mensaje interno de Java,Error,Medium,defecto,severidad-menor,"Severidad: Menor.
+GET /api/search?lat=1 OR 1=1--&lon=-58.38 o GET /api/connectors?stationId=abc. Esperado: 400. Obtenido: 404 con el cuerpo 'For input string: ...'. Causa: el @ExceptionHandler(IllegalArgumentException) de TerminalController atrapa también el error de conversión del parámetro. Evidencia: ApiAttackTest (core) · searchRejectsSqlInCoordinates."

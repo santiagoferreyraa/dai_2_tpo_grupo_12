@@ -4,14 +4,16 @@ import { api } from '@/lib/api'
 import type {
   AdminDashboardMetrics,
   ConnectorItem,
-  DefinePricingSchemeRequest,
-  PricingSchemeResponse,
+  StationFormData,
   StationItem,
   UserItem,
 } from '../types'
 
 /**
- * Repositorio de llamadas a la API del Backoffice Administrador (ECO-25, ECO-27, ECO-29).
+ * Repositorio de llamadas a la API del Backoffice Administrador (ECO-25, ECO-27).
+ *
+ * Las tarifas ya no están acá: desde el 31/10 son de la red y de cada estación, y las llamadas viven en
+ * `features/pricing`, que comparten /admin y /stations.
  */
 
 export async function fetchAdminDashboard(): Promise<AdminDashboardMetrics> {
@@ -93,12 +95,14 @@ export function fetchUsers(role?: Role): Promise<UserItem[]> {
   return api.get<UserItem[]>('/users', { params: { role } })
 }
 
-export function updateUserRole(userId: number, role: Role): Promise<UserItem> {
-  return api.patch<UserItem>(`/users/${userId}/role`, { role })
+/** Con la contraseña del ADMIN que lo pide: el backend la exige (02/11). */
+export function updateUserRole(userId: number, role: Role, password: string): Promise<UserItem> {
+  return api.patch<UserItem>(`/users/${userId}/role`, { role, password })
 }
 
-export function deactivateUser(userId: number): Promise<void> {
-  return api.delete<void>(`/users/${userId}`)
+/** Con la contraseña del ADMIN que lo pide, en el cuerpo: ver `api.delete`. */
+export function deactivateUser(userId: number, password: string): Promise<void> {
+  return api.delete<void>(`/users/${userId}`, { body: { password } })
 }
 
 export function activateUser(userId: number): Promise<void> {
@@ -109,19 +113,11 @@ export function fetchStations(): Promise<StationItem[]> {
   return api.get<StationItem[]>('/stations')
 }
 
-export function createStation(data: {
-  name: string
-  address: string
-  latitude: number
-  longitude: number
-}): Promise<StationItem> {
+export function createStation(data: StationFormData): Promise<StationItem> {
   return api.post<StationItem>('/stations', data)
 }
 
-export function updateStation(
-  stationId: number,
-  data: { name: string; address: string; latitude: number; longitude: number },
-): Promise<StationItem> {
+export function updateStation(stationId: number, data: StationFormData): Promise<StationItem> {
   return api.put<StationItem>(`/stations/${stationId}`, data)
 }
 
@@ -174,14 +170,4 @@ export function changeConnectorStatus(
 
 export function deleteConnector(connectorId: number): Promise<void> {
   return api.delete<void>(`/connectors/${connectorId}`)
-}
-
-export function fetchPricingScheme(connectorId: number): Promise<PricingSchemeResponse> {
-  return api.get<PricingSchemeResponse>(`/pricing/connector/${connectorId}`)
-}
-
-export function savePricingScheme(
-  request: DefinePricingSchemeRequest,
-): Promise<PricingSchemeResponse> {
-  return api.post<PricingSchemeResponse>('/pricing', request)
 }

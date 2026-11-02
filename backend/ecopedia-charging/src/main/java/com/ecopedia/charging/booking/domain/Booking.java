@@ -8,7 +8,11 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.UUID;
 
 /**
  * Una reserva confirmada: el conector queda bloqueado para el resto durante su ventana (RF08).
@@ -19,6 +23,10 @@ import java.time.Instant;
  *
  * <p>{@code connectorId} y {@code driverId} son identificadores sueltos y no relaciones JPA: el
  * conector y el usuario viven en {@code ecopedia-core}, otro artefacto. Ver la migración.
+ *
+ * <p><b>La seña viaja con la reserva desde ECO-53.</b> Se cobra antes de confirmar y la reserva
+ * anota lo cobrado; lo que pasa después con esa plata —devolverla o quedársela el operador— lo
+ * deciden los cambios de estado de acá, que son los que saben por qué terminó la reserva.
  */
 @Entity
 @Table(name = "bookings")
@@ -47,20 +55,85 @@ public class Booking {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    @Column(name = "deposit_amount", nullable = false, precision = 10, scale = 2)
+    private BigDecimal depositAmount = BigDecimal.ZERO;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "deposit_status", nullable = false, length = 20)
+    private DepositStatus depositStatus = DepositStatus.NONE;
+
+    @Column(name = "deposit_charge_id")
+    private Long depositChargeId;
+
+    @Column(name = "deposit_card_last_four", length = 4)
+    private String depositCardLastFour;
+
+    @Column(name = "deposit_refundable_until")
+    private Instant depositRefundableUntil;
+
+    @Column(name = "deposit_refund_amount", precision = 10, scale = 2)
+    private BigDecimal depositRefundAmount;
+
+    @Column(name = "checkout_key", length = 100, updatable = false)
+    private String checkoutKey;
+
+    @Column(name = "hold_id", length = 36, updatable = false)
+    private String holdId;
+
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
+
     /** Lo pide JPA. */
     protected Booking() {}
 
     /**
-     * El instante de creación entra por parámetro y no sale de {@code Instant.now()}: el resto
-     * del componente decide todo contra el {@code Clock} que le inyecta el contenedor, y una
-     * fecha que se toma por su cuenta es la única que un test no puede fijar.
+     * Una reserva sin seña ni checkout: la que confirman los tests de Reservas y, cuando exista, la
+     * carga sin reserva (ECO-58), que es una reserva instantánea sin seña.
+     *
+     * <p>El instante de creación entra por parámetro y no sale de {@code Instant.now()}: el resto
+     * del componente decide todo contra el {@code Clock} que le inyecta el contenedor, y una fecha
+     * que se toma por su cuenta es la única que un test no puede fijar.
      */
     public Booking(Long connectorId, Long driverId, TimeWindow window, Instant createdAt) {
         this.connectorId = connectorId;
         this.driverId = driverId;
         this.windowStart = window.start();
         this.windowEnd = window.end();
-        this.createdAt = createdAt;
+        /*
+         * A microsegundos, que es lo que guarda la base: igual que las ventanas (TimeWindow). Sin esto la
+         * respuesta del checkout llevaba los nanosegundos del reloj de Windows y la misma reserva leída
+         * de la base, no; un checkout repetido (QA-29) no devolvía exactamente la misma respuesta.
+         */
+        this.createdAt = createdAt.truncatedTo(ChronoUnit.MICROS);
+    }
+
+    /**
+     * Una reserva confirmada por el checkout, con la seña ya cobrada.
+     *
+     * @param refundableUntil hasta cuándo cancelar devuelve la seña; se ignora si no hubo seña.
+     * @param holdId la retención que se confirmó y {@code checkoutKey} la clave del pedido: juntas
+     *     permiten reconocer un checkout repetido (QA-29).
+     */
+    public Booking(
+            Long connectorId,
+            Long driverId,
+            TimeWindow window,
+            Instant createdAt,
+            BookingDeposit deposit,
+            Instant refundableUntil,
+            UUID holdId,
+            String checkoutKey) {
+        this(connectorId, driverId, window, createdAt);
+        if (deposit.isCharged()) {
+            this.depositAmount = deposit.amount();
+            this.depositStatus = DepositStatus.CHARGED;
+            this.depositChargeId = deposit.chargeId();
+            this.depositCardLastFour = deposit.cardLastFour();
+            this.depositRefundableUntil = refundableUntil;
+        }
+        this.holdId = holdId == null ? null : holdId.toString();
+        this.checkoutKey = checkoutKey;
     }
 
     public Long getId() {
@@ -87,12 +160,107 @@ public class Booking {
      * Cancela la reserva y con eso libera la ventana: el cruce solo mira las {@code CONFIRMED},
      * así que a partir de acá el slot se puede volver a reservar.
      *
+     * <p>Y decide la seña: <b>se devuelve si se cancela hasta {@link #getDepositRefundableUntil()}
+     * inclusive</b> —5 horas antes del inicio, decidido por Manuel el 31/10— y queda para el
+     * operador si se cancela después. La devolución no se hace acá: la reserva queda en
+     * {@link DepositStatus#REFUND_PENDING} y la pide quien habla con Pagos.
+     *
      * <p>Es un método con nombre y no un {@code setStatus} abierto porque no todo cambio de
-     * estado es válido desde cualquier otro: la incomparecencia y el consumo de la reserva (RF09,
-     * RF11) van a entrar como métodos propios, cada uno con su condición.
+     * estado es válido desde cualquier otro: solo se cancela una reserva confirmada cuya ventana
+     * todavía no terminó. Una que terminó no tiene nada que liberar, y dejar reescribirla sería
+     * borrar el historial de una reserva que el conductor usó o a la que no se presentó (RF09, que
+     * tiene su propio estado). Lo demás es {@link BookingStateConflictException} (QA-26). Cancelar
+     * una ya cancelada no llega acá: el servicio lo resuelve antes, porque es idempotente.
      */
-    public void cancel() {
+    public void cancel(Instant now) {
+        requireConfirmed("la cancelación");
+        if (!windowEnd.isAfter(now)) {
+            throw new BookingStateConflictException(id, "terminada", "la cancelación");
+        }
         this.status = BookingStatus.CANCELLED;
+        if (depositStatus == DepositStatus.CHARGED) {
+            if (now.isAfter(depositRefundableUntil)) {
+                this.depositStatus = DepositStatus.FORFEITED;
+            } else {
+                this.depositStatus = DepositStatus.REFUND_PENDING;
+                this.depositRefundAmount = this.depositAmount;
+            }
+        }
+    }
+
+    /**
+     * La carga no pudo iniciarse por causas ajenas al conductor —conector fuera de servicio,
+     * cargador que no responde o rechazo de la distribuidora (RF13, ECO-59)—: la reserva se libera
+     * sin penalización y la seña se reintegra entera, sin importar el plazo de preaviso. Solo sobre
+     * una reserva confirmada.
+     */
+    public void failActivation() {
+        requireConfirmed("la liberación por falla de habilitación");
+        this.status = BookingStatus.CANCELLED;
+        if (depositStatus == DepositStatus.CHARGED) {
+            this.depositStatus = DepositStatus.REFUND_PENDING;
+            this.depositRefundAmount = this.depositAmount;
+        }
+    }
+
+    /**
+     * La carga en curso se interrumpió por una falla ajena al conductor (RF13, ECO-59): se liquida
+     * el consumo real sin aplicar el piso de la seña y, si el consumo real fue menor que la seña,
+     * se reintegra la diferencia. Solo sobre una reserva confirmada.
+     */
+    public void settleFaultedCharge(BigDecimal realCost, Instant now) {
+        requireConfirmed("la liquidación por falla");
+        if (realCost == null || realCost.signum() < 0) {
+            throw new InvalidBookingRequestException("El consumo real no puede ser negativo");
+        }
+        if (realCost.signum() == 0) {
+            failActivation();
+            return;
+        }
+        Instant instant = now.truncatedTo(ChronoUnit.MICROS);
+        if (instant.isAfter(this.windowStart) && instant.isBefore(this.windowEnd)) {
+            this.windowEnd = instant;
+        }
+        if (depositStatus == DepositStatus.CHARGED) {
+            if (realCost.compareTo(this.depositAmount) < 0) {
+                this.depositStatus = DepositStatus.REFUND_PENDING;
+                this.depositRefundAmount = this.depositAmount.subtract(realCost);
+            } else {
+                this.depositRefundAmount = BigDecimal.ZERO;
+            }
+        }
+    }
+
+    /**
+     * El conductor no se presentó (RF09, ECO-57): la reserva deja de bloquear el conector y al
+     * conductor, y la seña queda para el operador. Es para lo que existe la seña. Solo sobre una
+     * reserva confirmada: el barrido ya las filtra así, y esto lo asegura para cualquier otro.
+     */
+    public void markNoShow() {
+        requireConfirmed("la incomparecencia");
+        this.status = BookingStatus.NO_SHOW;
+        if (depositStatus == DepositStatus.CHARGED) {
+            this.depositStatus = DepositStatus.FORFEITED;
+        }
+    }
+
+    /**
+     * Todos los cambios de estado parten de {@code CONFIRMED}: {@code CANCELLED} y {@code NO_SHOW}
+     * son finales (QA-26).
+     */
+    private void requireConfirmed(String transition) {
+        if (status != BookingStatus.CONFIRMED) {
+            throw new BookingStateConflictException(id, "en " + status, transition);
+        }
+    }
+
+    /** Pagos confirmó la devolución. */
+    public void markDepositRefunded() {
+        this.depositStatus = DepositStatus.REFUNDED;
+    }
+
+    public boolean isConfirmed() {
+        return status == BookingStatus.CONFIRMED;
     }
 
     public boolean isCancelled() {
@@ -103,7 +271,55 @@ public class Booking {
         return this.driverId.equals(driverId);
     }
 
+    /** Si esta reserva salió de confirmar esa retención. */
+    public boolean confirmedHold(UUID holdId) {
+        return holdId != null && holdId.toString().equals(this.holdId);
+    }
+
+    /** Si se devuelve o se devolvió la seña. */
+    public boolean isDepositRefunded() {
+        return depositStatus == DepositStatus.REFUND_PENDING || depositStatus == DepositStatus.REFUNDED;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public BigDecimal getDepositAmount() {
+        return depositAmount;
+    }
+
+    public DepositStatus getDepositStatus() {
+        return depositStatus;
+    }
+
+    public Long getDepositChargeId() {
+        return depositChargeId;
+    }
+
+    public String getDepositCardLastFour() {
+        return depositCardLastFour;
+    }
+
+    public Instant getDepositRefundableUntil() {
+        return depositRefundableUntil;
+    }
+
+    public BigDecimal getDepositRefundAmount() {
+        if (depositRefundAmount != null) {
+            return depositRefundAmount;
+        }
+        return isDepositRefunded() ? depositAmount : BigDecimal.ZERO;
+    }
+
+    public boolean isPartialDepositRefund() {
+        return depositRefundAmount != null
+                && depositRefundAmount.signum() > 0
+                && depositAmount != null
+                && depositRefundAmount.compareTo(depositAmount) < 0;
+    }
+
+    public String getCheckoutKey() {
+        return checkoutKey;
     }
 }

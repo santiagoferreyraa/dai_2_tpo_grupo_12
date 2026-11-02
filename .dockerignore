@@ -1,0 +1,24 @@
+# Lo que el build de las imágenes no tiene que copiar (docker/*.Dockerfile, contexto = la raíz).
+# Lo que se compila adentro se compila de cero; lo que es de cada máquina, se queda en la máquina.
+
+.git
+.env
+.env.*
+!.env.example
+
+**/node_modules
+**/target
+frontend/dist
+frontend/.mvn-node
+
+# Las bases H2 del perfil `local`, ANCLADAS igual que en el .gitignore: un "data" suelto se
+# llevaría puestos los paquetes Java booking/data, terminal/data, payment/data...
+data
+backend/*/data
+simulation/*/data
+
+# Lo que no entra en ninguna imagen.
+agent
+qa
+docs
+*.log

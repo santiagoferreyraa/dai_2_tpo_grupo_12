@@ -3,51 +3,65 @@ import { Link } from 'react-router'
 import { useSession } from '@/features/auth/session'
 import { displayNameOf } from '@/lib/displayName'
 
-import { BatteryIcon, BoltIcon, GaugeIcon, PlugIcon } from '@/features/navigation/icons'
+import { vehicleImageSrc } from '@/features/vehicles/assets'
+import SpecIcon from '@/features/vehicles/components/SpecIcon'
+import { VEHICLE_IMAGE, specsOf, useDriverVehicle } from '@/features/vehicles/vehicle'
 
 import { greetingFor } from '../greeting'
-import { DRIVER_VEHICLE, VEHICLE_IMAGE, specsOf } from '../vehicle'
-import type { SpecIcon } from '../vehicle'
 
 /**
  * El recuadro grande de la portada: el saludo, el vehículo y su ficha.
  *
- * **Tiene dos caras y muestran cosas distintas, no la misma con otro texto.** Con sesión abierta
- * el protagonista es el auto del conductor, con su ficha técnica abajo. Sin sesión no hay auto que
- * mostrar, así que el recuadro pasa a explicar para qué sirve entrar: lo que ocupa el lugar de la
- * ficha es la invitación, no una ficha vacía o con guiones.
+ * **Tiene TRES caras y muestran cosas distintas, no la misma con otro texto.** Con el auto ya
+ * elegido el protagonista es él, con su ficha técnica abajo. Sin sesión no hay auto que mostrar,
+ * así que el recuadro pasa a explicar para qué sirve entrar. Y con sesión pero sin auto —una
+ * cuenta recién creada, o alguien que se lo sacó— la invitación es otra: no hay que entrar, hay
+ * que elegirlo, y el enlace va al formulario del perfil en vez de al login.
  *
- * El vehículo está escrito a mano por ahora. Ver `vehicle.ts`, que explica por qué y qué cambia
- * cuando el conductor pueda elegirlo.
+ * **Esa tercera cara existe porque el auto es opcional.** Antes el vehículo era una constante y
+ * todo el que entraba tenía uno; ahora sale del perfil y arranca vacío. Sin este caso, una cuenta
+ * nueva vería la barra de la ficha con cuatro guiones —o peor, la ficha de otro— y nada que
+ * indicara que falta elegir algo.
  *
  * **El auto va como fondo y no como `<img>`.** Eso es lo que lo vuelve opcional: un fondo que no
  * existe simplemente no se dibuja y el recuadro se ve entero, mientras que una imagen rota deja el
  * ícono gris del navegador en el medio de lo primero que alguien mira.
  */
 
-/**
- * El dibujo de cada dato.
- *
- * La traducción vive acá y no en `vehicle.ts` por lo mismo que explica el tipo: allá están los
- * datos, acá el dibujo. El día que el vehículo venga del backend, el nombre del ícono llega en
- * el JSON y esta tabla no se toca.
- */
-const SPEC_ICONS: Record<SpecIcon, (props: { className?: string }) => React.ReactElement> = {
-  motor: BoltIcon,
-  connector: PlugIcon,
-  power: GaugeIcon,
-  battery: BatteryIcon,
-}
-
 export default function VehicleHero({ className = '' }: { className?: string }) {
   const session = useSession()
+  const vehicle = useDriverVehicle()
   const greeting = greetingFor(new Date().getHours())
 
   /*
-    Una sola imagen para las dos caras. Hubo un `/car-guest.png` aparte para la portada sin
-    sesión, pero era el mismo dibujo byte por byte. Ver `vehicle.ts`.
+    Las dos caras sin ficha comparten la forma —un renglón y un botón— y se diferencian en el
+    texto y en a dónde llevan. Resueltas acá arriba, el JSX de abajo tiene una sola rama en vez de
+    tres anidadas, y las medidas del auto pueden preguntar por "¿hay ficha?" en vez de repetir la
+    condición entera.
   */
-  const image = VEHICLE_IMAGE
+  const hasSpecs = session !== null && vehicle !== null
+
+  /*
+    La foto del auto elegido, y el dibujo genérico cuando no hay ninguno.
+
+    **Una sola, no las dos.** Probé ponerlas en dos capas para que el genérico hiciera de
+    reemplazo cuando la foto de un modelo no está —un fondo no tiene `onError`—, y está mal: las
+    fotos del catálogo son PNG con fondo transparente, así que el genérico se veía POR DETRÁS del
+    auto de verdad y la portada mostraba dos autos encimados. Lo que un fondo no puede hacer es
+    enterarse de que no cargó; si la foto falta, el recuadro queda sin auto, que es lo que hacía
+    antes de que hubiera fotos por modelo.
+
+    Sin sesión o sin auto elegido va el genérico. Hubo un `/car-guest.png` aparte para esa cara,
+    pero era el mismo dibujo byte por byte. Ver `vehicle.ts`.
+
+    **El porcentaje de `bg-[length:…]` manda sobre la altura del ARCHIVO, no sobre la del auto**, y
+    por eso las fotos del catálogo están recortadas al ras: si una trae aire transparente arriba y
+    abajo, su auto se dibuja más chico que el de al lado con la misma medida —había fotos con el
+    auto ocupando el 48% del archivo y otras el 97%, o sea el doble—. Recortadas, el mismo
+    porcentaje da el mismo tamaño para los diecinueve, y nada en el código tiene que saber qué
+    margen traía cada una.
+  */
+  const image = vehicle === null ? VEHICLE_IMAGE : vehicleImageSrc(vehicle)
 
   /*
    * A qué altura se apoya el auto, y por qué son dos valores y no uno.
@@ -61,8 +75,9 @@ export default function VehicleHero({ className = '' }: { className?: string }) 
    * El número sale de dónde tiene que caer el borde de arriba de la barra: por la mitad de las
    * ruedas de adelante. Como la barra es de vidrio, esa mitad se sigue viendo a través.
    */
-  const carPosition =
-    session === null ? 'bg-[position:center_bottom_5.25rem]' : 'bg-[position:center_bottom_6.5rem]'
+  const carPosition = hasSpecs
+    ? 'bg-[position:center_bottom_6.5rem]'
+    : 'bg-[position:center_bottom_5.25rem]'
 
   return (
     <section
@@ -105,12 +120,17 @@ export default function VehicleHero({ className = '' }: { className?: string }) 
           {session === null ? greeting : `${greeting}, ${displayNameOf(session)}`} 👋
         </p>
 
-        {session === null ? (
+        {vehicle === null ? (
           <>
             {/*
               Un punto más chico en el celular. A 4xl, "tu red de carga." no entra en un renglón
               en un teléfono angosto y el título pasa a tres: el tercero se le monta al auto, que
               ya está apoyado sobre la barra y no tiene para dónde bajar.
+
+              **El título es el mismo con sesión y sin ella.** Las dos caras dicen lo mismo —este
+              lugar es para tu auto— y lo que cambia es el paso que falta, que lo dice la barra de
+              abajo. Dos títulos distintos para la misma idea harían que entrar cambie el encabezado
+              sin que haya cambiado nada de lo que se está mirando.
             */}
             <h1 className="text-text mt-2 max-w-sm text-3xl leading-[1.05] font-extrabold tracking-tight text-balance md:text-4xl">
               Tu auto,
@@ -124,17 +144,18 @@ export default function VehicleHero({ className = '' }: { className?: string }) 
               mientras que un auto pisando el texto rompe lo primero que alguien mira.
             */}
             <p className="text-text-muted mt-3 hidden max-w-xs text-sm leading-relaxed md:block">
-              Entrá y guardá tu vehículo: el mapa te muestra solo las estaciones con el conector que
-              usás.
+              {session === null
+                ? 'Entrá y guardá tu vehículo: el mapa te muestra solo las estaciones con el conector que usás.'
+                : 'Elegí tu modelo y la portada cuenta cuántas estaciones cargan tu conector y cuánto tarda.'}
             </p>
           </>
         ) : (
           <>
             <h1 className="text-text mt-2 text-4xl leading-none font-extrabold tracking-tight uppercase">
-              {DRIVER_VEHICLE.name}
+              {vehicle.name}
             </h1>
             <p className="text-text-muted mt-1 text-sm font-bold tracking-wide uppercase">
-              {DRIVER_VEHICLE.brand}
+              {vehicle.brand}
             </p>
           </>
         )}
@@ -163,15 +184,20 @@ export default function VehicleHero({ className = '' }: { className?: string }) 
         solo lado la dejaría torcida dentro de un recuadro que es simétrico.
       */}
       <div className="glass-panel relative mt-6 mr-[calc(50%-50vw)] rounded-2xl rounded-r-none px-5 py-4 md:mr-0 md:rounded-r-2xl">
-        {session === null ? (
+        {vehicle === null ? (
+          /*
+            La misma forma para las dos caras sin ficha, y lo que cambia es el paso que falta: sin
+            sesión hay que entrar, con sesión hay que elegir el auto. El destino del botón es la
+            diferencia de verdad —`/login` contra el formulario del perfil—, así que el texto lo
+            acompaña en vez de repetir "iniciá sesión" a alguien que ya la tiene.
+          */
           <div className="flex flex-wrap items-center justify-between gap-4">
             <p className="text-text text-sm font-semibold">Todavía no elegiste tu vehículo.</p>
-            {/* `/login` la trae ECO-36. Ver el comentario de `ProfilePill.tsx`. */}
             <Link
-              to="/login"
+              to={session === null ? '/login' : '/profile/edit'}
               className="brand-fill text-on-primary rounded-xl px-4 py-2 text-sm font-semibold transition-colors"
             >
-              Iniciar sesión
+              {session === null ? 'Iniciar sesión' : 'Elegir mi auto'}
             </Link>
           </div>
         ) : (
@@ -193,8 +219,7 @@ export default function VehicleHero({ className = '' }: { className?: string }) 
             el recuadro puede pagar.
           */
           <dl className="grid grid-cols-2 justify-items-center gap-x-3 gap-y-4 sm:grid-cols-4 md:gap-x-4 md:gap-y-5">
-            {specsOf(DRIVER_VEHICLE).map((spec) => {
-              const Icon = SPEC_ICONS[spec.icon]
+            {specsOf(vehicle).map((spec) => {
               return (
                 <div key={spec.label} className="flex items-center gap-2 md:gap-3">
                   {/*
@@ -204,7 +229,10 @@ export default function VehicleHero({ className = '' }: { className?: string }) 
                     sostiene solo el mismo peso, y el aire alrededor hace el trabajo que hacía el
                     borde.
                   */}
-                  <Icon className="text-primary h-8 w-8 shrink-0 md:h-10 md:w-10" />
+                  <SpecIcon
+                    name={spec.icon}
+                    className="text-primary h-8 w-8 shrink-0 md:h-10 md:w-10"
+                  />
 
                   <div>
                     <dt className="text-text-muted text-[11px] font-medium">{spec.label}</dt>

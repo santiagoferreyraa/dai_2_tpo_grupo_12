@@ -1,0 +1,62 @@
+# La entrada al sistema cuando corre todo con `docker compose up`.
+#
+# ECOPEDIA_SITE_ADDRESS decide cómo atiende:
+#   - `:80` (lo que pone compose si el .env no dice nada): HTTP en http://localhost, sin
+#     certificado. Es para correrlo en una PC.
+#   - un dominio, por ejemplo `pedia.com.ar`: Caddy le pide el certificado a Let's Encrypt solo y
+#     atiende en HTTPS, redirigiendo el HTTP. Necesita que el dominio apunte a esta máquina y
+#     los puertos 80 y 443 abiertos. Ver el README, "Todo con Docker".
+{$ECOPEDIA_SITE_ADDRESS} {
+	encode gzip
+
+	# QA-32: cabeceras de seguridad para todo lo que sale por acá. Las que llevan "?" se ponen
+	# solo si la respuesta no trae la suya: la API (core, charging...) ya manda una CSP que no
+	# permite nada, más estricta que la del front, y esa se respeta.
+	#
+	# La CSP del front permite exactamente lo que usa la aplicación: los mosaicos del mapa (Esri,
+	# como imágenes), la ruta (OSRM) y la búsqueda de direcciones (Photon), Google Fonts, y las
+	# fotos de las estaciones, que son direcciones https que pega el operador. Si se agrega un
+	# servicio externo al front, va acá también, o el navegador lo bloquea en silencio (lo dice
+	# la consola). 'unsafe-inline' solo en estilos: Leaflet y React ponen estilos en línea.
+	#
+	# HSTS: el navegador solo la respeta por HTTPS, así que en una PC con `:80` no hace nada. Sin
+	# includeSubDomains ni preload, para no atar a otros subdominios de pedia.com.ar.
+	header {
+		?Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://router.project-osrm.org https://photon.komoot.io; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		?X-Frame-Options "DENY"
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(self), camera=(), microphone=()"
+		-Server
+	}
+
+	# El mismo reparto que el proxy de Vite en desarrollo (frontend/vite.config.ts). Si se
+	# agrega una ruta allá, va acá también. Lo más específico primero; el resto de /api, a core.
+	handle /api/bookings* {
+		reverse_proxy charging:8082
+	}
+	handle /api/checkout* {
+		reverse_proxy charging:8082
+	}
+	handle /api/payment-methods* {
+		reverse_proxy integration:8083
+	}
+	handle /api/notifications* {
+		reverse_proxy async:8084
+	}
+	handle /api/* {
+		reverse_proxy core:8081
+	}
+
+	# Todo lo demás es el front. Las rutas de React Router (/stations/map, /admin...) no existen
+	# como archivo, así que caen en index.html y las resuelve el navegador.
+	#
+	# Las rutas /internal/** de los módulos no pasan por acá: Caddy no las reenvía, así que
+	# desde afuera solo devuelven la página.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -9,6 +9,8 @@
 @import "./features/profile/profile.css";
 /* La burbuja de la reserva del celular y las animaciones de achicarla y agrandarla. */
 @import "./features/bookings/bookings.css";
+/* La ventanita de la campanita y los recuadros de aviso que entran solos. */
+@import "./features/notifications/notifications.css";
 /* La burbuja del agente —la gota que cambia de forma— y el panel del chat. */
 @import "./features/agent/agent.css";
 
@@ -60,7 +62,21 @@
   --color-primary: #b9fe70;
   --color-on-primary: #0d111c;
   --color-danger: #fca5a5;
+  --color-selected: #8ed94f;
 }
+
+/*
+  **`--color-selected` es el único color que NO cambia entre temas**, y es a propósito: es el verde
+  con el que se marca el auto del conductor en la grilla del selector, y ese contorno no se apoya
+  sobre el fondo de la aplicación sino sobre el de la ventana modal, que es casi el mismo gris en
+  los dos temas.
+
+  No se usa `--color-primary`, que es el verde que sí cambia, porque el del tema claro es bastante
+  oscuro: de contorno se leía como un gris verdoso y no como "este es el tuyo", que fue justamente
+  lo que había que arreglar. Y es un color que no tiene que llegar a los 4.5 de WCAG porque no hay
+  nada que leer ahí: el cartel que lo acompaña está marcado como decorativo, y lo que anuncia el
+  lector de pantalla es el `aria-pressed` del botón.
+*/
 
 /*
   Los resplandores del fondo (ver `.app-shell`). Van sueltos y no en `@theme` porque no son
@@ -252,6 +268,27 @@
 
 [data-theme="light"] .glass-modal {
   background-color: color-mix(in srgb, var(--color-surface) 96%, transparent);
+}
+
+/*
+  El vidrio que tiene una FOTO atrás y no un fondo: la ficha técnica del selector de auto, que se
+  monta sobre la cola del modelo.
+
+  **El 32% de `.glass-panel` está medido contra el fondo de la aplicación**, que es parejo y de un
+  color conocido. Acá atrás hay un auto: zonas casi negras —una rueda, un vidrio polarizado— y
+  otras casi blancas, en cualquier lugar del panel según el modelo. Sobre las oscuras, el rótulo
+  gris de cada dato se perdía.
+
+  El 80% deja la cola del auto como una sombra detrás del vidrio —que es lo que el montaje quiere
+  decir— y al mismo tiempo acota cuánto puede llegar a oscurecerse el panel: en el peor punto, el
+  texto sigue por encima del 4.5 de WCAG. Es el mismo valor en los dos temas porque el problema no
+  es el tema sino la foto, que es la misma en los dos.
+
+  No alcanzaba con subirlo al valor de `.glass-modal`: ahí el auto desaparece del todo y la ficha
+  deja de estar montada sobre nada.
+*/
+.glass-over-photo {
+  background-color: color-mix(in srgb, var(--color-surface) 80%, transparent);
 }
 
 /*
@@ -1005,4 +1042,68 @@ textarea:-webkit-autofill {
   .card-jiggle {
     animation: none;
   }
+}
+
+/* ─────────────────── El velo de la franja de arriba ───────────────────
+
+  La capa que desvanece el contenido contra la franja de navegación. El PORQUÉ y el DÓNDE están
+  en `features/navigation/TopBar.tsx`, que es quien la monta; acá está solo cómo se dibuja.
+
+  Nace en el techo de la ventana y baja 6.25rem. Los primeros 5rem son los de la franja —el mismo
+  `md:pt-20` que `App.tsx` le reserva al `<main>`— y ahí el velo va a fuerza entera, escondido
+  detrás de la franja; lo que se ve es el último centímetro, el que cae sobre el borde donde el
+  contenido se corta.
+
+  **Es SOLO desenfoque: no lleva tinte de ningún color, y eso no es austeridad.** Un velo teñido
+  del color de fondo tapa el fondo, que acá no es un color sino un degradado que se mueve: la
+  franja quedaba apoyada sobre una banda plana, despegada de la pantalla. El desenfoque no tiene
+  ese problema porque desenfocar un degradado suave devuelve casi el mismo degradado —detrás de
+  la franja no se nota nada— y en cambio deshace por completo lo que sí tiene detalle, que es el
+  contenido. Eso es exactamente lo que se busca: que el fondo siga pasando y el contenido no.
+
+  El desenfoque es además lo que ablanda el recorte, y por eso alcanza con él solo: muestrea
+  también lo que está más allá del borde, así que la línea recta donde el contenido termina se
+  mezcla con el fondo de arriba y se vuelve un pasaje en vez de un filo.
+
+  El `mask-image` es lo que evita cambiar un corte por otro: sin él, el desenfoque termina en una
+  línea recta y se lee como un borde. **Y se mantiene parejo hasta 5rem**, que es donde está el
+  corte: una máscara que ya viene bajando lo deja asomar.
+
+  **Termina en 6.25rem y no más abajo** porque debajo de la franja hay pantallas que arrancan con
+  controles y no con contenido que scrollea —la fila de filtros del mapa es la que manda acá—.
+  Lo que no se mueve no necesita desvanecerse, y desenfocarlo es esconder un control.
+
+  Es hermana de la franja y no hija, así que es fija por su cuenta y lleva su propio `z-index`:
+  1140, por encima de cualquier pantalla, por debajo de la tira de la reserva activa (1145) —que
+  si no saldría borroneada— y de la franja (1150). El porqué está en `TopBar.tsx`.
+*/
+.top-bar__fade {
+  position: fixed;
+  z-index: 1140;
+  inset: 0 0 auto 0;
+  height: 6.25rem;
+  pointer-events: none;
+
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+
+  /*
+    Los tramos intermedios no son adorno: una máscara de dos puntas se apaga en línea recta, y el
+    quiebre donde empieza a bajar se alcanza a leer como un escalón tenue. Con los puntos de en
+    medio la caída arranca despacio y termina despacio, que es como se apaga una sombra.
+  */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 5rem,
+    rgb(0 0 0 / 0.55) 5.5rem,
+    rgb(0 0 0 / 0.2) 5.9rem,
+    transparent 6.25rem
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black 5rem,
+    rgb(0 0 0 / 0.55) 5.5rem,
+    rgb(0 0 0 / 0.2) 5.9rem,
+    transparent 6.25rem
+  );
 }

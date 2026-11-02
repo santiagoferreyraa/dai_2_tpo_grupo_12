@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Los tipos del contrato de la distribuidora: la única fuente de las clases Java, de la
+    validación de cada pedido y del WSDL, que importa este archivo (wsdl/powerGrid.wsdl).
+
+    Contract-first (ARQUITECTURA §1.3): se escribe primero el contrato, en vez de generarlo por
+    reflexión desde las clases. Queda estable y deliberado, que es lo que se espera de un sistema
+    legado y lo que pide la Entrega 4.
+
+    Un rechazo de la red NO es un Fault: "el nodo no aguanta 150 kW" es una respuesta de negocio
+    válida, con feasible = false y el motivo. Los Fault quedan para los pedidos que el servicio no
+    puede procesar: un nodo que no existe o una potencia que no tiene sentido.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:tns="http://ecopedia.com/simulation/power-grid/v1"
+           targetNamespace="http://ecopedia.com/simulation/power-grid/v1"
+           elementFormDefault="qualified">
+
+    <!-- El código del nodo, como lo escribe la distribuidora: CABA-CENTRO. -->
+    <xs:simpleType name="NodeId">
+        <xs:restriction base="xs:string">
+            <xs:pattern value="[A-Z0-9]+(-[A-Z0-9]+)*"/>
+            <xs:maxLength value="40"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <!--
+        La potencia, en kW con hasta dos decimales. El rango (mayor a cero y no más que lo que
+        maneja un nodo) NO se fija acá a propósito: fuera de rango tiene que ser un
+        InvalidDemandFault, que dice qué pasó, y no un error de validación genérico.
+    -->
+    <xs:simpleType name="PowerKw">
+        <xs:restriction base="xs:decimal">
+            <xs:totalDigits value="8"/>
+            <xs:fractionDigits value="2"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <!-- Por qué la distribuidora no autoriza. -->
+    <xs:simpleType name="RestrictionReason">
+        <xs:restriction base="xs:string">
+            <!-- Hay un tope de demanda vigente y lo pedido lo supera. -->
+            <xs:enumeration value="DEMAND_CAP_EXCEEDED"/>
+            <!-- El nodo está en una ventana de mantenimiento: no entrega potencia extra. -->
+            <xs:enumeration value="MAINTENANCE_WINDOW"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:element name="CheckNodeFeasibilityRequest">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="nodeId" type="tns:NodeId"/>
+                <xs:element name="requestedPowerKw" type="tns:PowerKw"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="CheckNodeFeasibilityResponse">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="nodeId" type="tns:NodeId"/>
+                <xs:element name="feasible" type="xs:boolean"/>
+                <!-- El tope que el nodo acepta ahora. Con feasible = false, lo que sí se podría pedir. -->
+                <xs:element name="maxAllowedPowerKw" type="tns:PowerKw"/>
+                <!-- Solo cuando feasible = false. -->
+                <xs:element name="reason" type="tns:RestrictionReason" minOccurs="0"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+
+    <!-- El nodo no existe en el sistema de la distribuidora. -->
+    <xs:element name="UnknownNodeFault">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="nodeId" type="tns:NodeId"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+
+    <!-- La potencia pedida es nula, negativa o más de lo que maneja un nodo. -->
+    <xs:element name="InvalidDemandFault">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="requestedPowerKw" type="tns:PowerKw"/>
+                <xs:element name="maxSupportedPowerKw" type="tns:PowerKw"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+
+</xs:schema>

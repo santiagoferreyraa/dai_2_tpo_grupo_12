@@ -70,9 +70,6 @@
             de pago había que agregar JPA, Flyway y el datasource. Eso es exactamente lo que
             pasó: RF02 obliga a persistir marca, últimos cuatro y token del conductor. El
             número completo sigue sin guardarse en ninguna parte.
-
-            Falta todavía spring-boot-starter-web-services (Spring-WS) para el cliente SOAP;
-            se agrega cuando se genere el WSDL de la distribuidora. Ver ARQUITECTURA §3.1.
         -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -104,9 +101,41 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!--
+            El cliente SOAP de RedEléctrica hacia la distribuidora (ARQUITECTURA §3.1).
+
+            spring-ws-core y no el starter de web services: este módulo solo CONSUME un servicio
+            SOAP, no publica ninguno. El starter levantaría un MessageDispatcherServlet vacío en
+            /services; igual, la autoconfiguración que lo hace queda excluida en el application.yml,
+            porque spring-ws-core alcanza para activarla.
+        -->
+        <dependency>
+            <groupId>org.springframework.ws</groupId>
+            <artifactId>spring-ws-core</artifactId>
+        </dependency>
+
+        <!-- WS-Security: el UsernameToken que exige la distribuidora, con WSS4J. -->
+        <dependency>
+            <groupId>org.springframework.ws</groupId>
+            <artifactId>spring-ws-security</artifactId>
+        </dependency>
+
+        <!-- Lee y escribe las clases que JAXB genera del contrato. -->
+        <dependency>
+            <groupId>org.glassfish.jaxb</groupId>
+            <artifactId>jaxb-runtime</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- MockWebServiceServer: el cliente SOAP contra una distribuidora de mentira. -->
+        <dependency>
+            <groupId>org.springframework.ws</groupId>
+            <artifactId>spring-ws-test</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -116,6 +145,32 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+
+            <!--
+                Las clases del contrato de la distribuidora, generadas de la copia del contrato que
+                vive en este módulo (src/main/resources/wsdl/). El WSDL importa ese XSD, y se genera
+                del XSD porque es donde están los tipos. Las clases quedan en target/.
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>jaxb2-maven-plugin</artifactId>
+                <version>3.2.0</version>
+                <executions>
+                    <execution>
+                        <id>xjc</id>
+                        <goals>
+                            <goal>xjc</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <sources>
+                        <source>src/main/resources/wsdl/power-grid.xsd</source>
+                    </sources>
+                    <packageName>com.ecopedia.integration.powergrid.ws.contract</packageName>
+                    <noGeneratedHeaderComments>true</noGeneratedHeaderComments>
+                </configuration>
             </plugin>
         </plugins>
     </build>

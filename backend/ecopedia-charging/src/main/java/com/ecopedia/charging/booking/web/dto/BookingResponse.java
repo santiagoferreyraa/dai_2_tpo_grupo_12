@@ -2,6 +2,8 @@ package com.ecopedia.charging.booking.web.dto;
 
 import com.ecopedia.charging.booking.domain.Booking;
 import com.ecopedia.charging.booking.domain.BookingStatus;
+import com.ecopedia.charging.booking.domain.DepositStatus;
+import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
@@ -14,9 +16,22 @@ import java.time.Instant;
  *
  * <p>{@code driverId} tampoco viaja: el conductor solo recibe sus propias reservas, así que sería
  * decirle quién es a alguien que ya lo sabe.
+ *
+ * @param depositAmount la seña cobrada; 0 si no hubo.
+ * @param depositRefundableUntil hasta cuándo cancelar la devuelve; {@code null} si no hubo seña.
+ * @param cardLastFour la tarjeta con la que se cobró, para el diálogo de cancelar.
  */
 public record BookingResponse(
-        Long id, Long connectorId, Instant start, Instant end, BookingStatus status, Instant createdAt) {
+        Long id,
+        Long connectorId,
+        Instant start,
+        Instant end,
+        BookingStatus status,
+        Instant createdAt,
+        BigDecimal depositAmount,
+        DepositStatus depositStatus,
+        Instant depositRefundableUntil,
+        String cardLastFour) {
 
     public static BookingResponse fromDomain(Booking booking) {
         return new BookingResponse(
@@ -25,6 +40,10 @@ public record BookingResponse(
                 booking.getWindow().start(),
                 booking.getWindow().end(),
                 booking.getStatus(),
-                booking.getCreatedAt());
+                booking.getCreatedAt(),
+                booking.getDepositAmount(),
+                booking.getDepositStatus(),
+                booking.getDepositRefundableUntil(),
+                booking.getDepositCardLastFour());
     }
 }

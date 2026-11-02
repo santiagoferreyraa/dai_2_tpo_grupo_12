@@ -33,8 +33,8 @@ import org.springframework.web.bind.annotation.*;
  * {@code CPO} editaba o borraba la estación de otro. Las operaciones sobre una estación o un
  * conector que ya existen piden ser {@code ADMIN} o ser el {@code CPO} dueño, y el dueño lo
  * resuelve {@link TerminalAccess} desde la misma anotación. El alta deja como dueño a quien la
- * hace. Si la estación no existe, el operador recibe 403 y no 404: no le confirma a nadie qué ids
- * hay.
+ * hace. Si la estación no existe o es de otro, el operador recibe el mismo 404 (SEC-05): no le
+ * confirma a nadie qué ids hay.
  */
 @RestController
 @RequestMapping("/api")
@@ -166,8 +166,5 @@ public class TerminalController {
         return ResponseEntity.noContent().build();
     }
 
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<String> handleIllegalArgument(IllegalArgumentException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ex.getMessage());
-    }
+    /* Los errores (un id inexistente, un parámetro mal escrito) los traduce ApiExceptionHandler. */
 }

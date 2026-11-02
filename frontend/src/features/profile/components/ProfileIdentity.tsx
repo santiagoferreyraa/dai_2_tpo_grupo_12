@@ -2,6 +2,7 @@ import { Link } from 'react-router'
 
 import { roleLabel } from '@/features/auth/roles'
 import { useSession } from '@/features/auth/session'
+import { vehicleLabelOf } from '@/features/vehicles/vehicle'
 import { displayNameOf } from '@/lib/displayName'
 
 /**
@@ -16,7 +17,7 @@ import { displayNameOf } from '@/lib/displayName'
  * la barra, que son cincuenta y seis píxeles de alto: entraba un campo y nada más.
  *
  * **No pide nada al backend para mostrarse.** Los cuatro datos ya están en la sesión: el correo
- * y el rol viajan en el token, y el nombre lo trae `hydrateFullName` apenas se entra. Pedirlo de
+ * y el rol viajan en el token, y el nombre lo trae `hydrateProfile` apenas se entra. Pedirlo de
  * nuevo acá sería una segunda llamada para traer lo mismo, y encima dejaría a esta pantalla
  * mostrando un cartel de error cuando el resto de la aplicación sigue andando.
  *
@@ -48,11 +49,11 @@ export default function ProfileIdentity() {
     { label: 'Nombre', value: displayNameOf(session) },
     { label: 'Correo', value: session.email },
     /*
-      El auto no existe todavía como dato del sistema: no hay entidad, ni endpoint, ni pantalla
-      para elegirlo. La columna se dibuja igual y vacía, porque el lugar ya está decidido y el
-      dato no. Ver `home/vehicle.ts`.
+      El guion es para quien todavía no eligió auto, que es un estado normal y no un dato que
+      falta. No se dice "elegí tu auto" acá: esta barra es una ficha de datos, no un lugar donde
+      se actúa, y el lápiz que está al lado ya lleva al formulario donde se elige.
     */
-    { label: 'Auto', value: '—' },
+    { label: 'Auto', value: session.vehicle === null ? '—' : vehicleLabelOf(session.vehicle) },
     { label: 'Rol', value: roleLabel(session.role) },
   ]
 

@@ -3,6 +3,7 @@ package com.ecopedia.charging.booking.service;
 import com.ecopedia.charging.booking.domain.Booking;
 import com.ecopedia.charging.booking.domain.BookingRepository;
 import com.ecopedia.charging.booking.domain.BookingStatus;
+import com.ecopedia.charging.booking.domain.DepositStatus;
 import com.ecopedia.charging.booking.domain.TimeWindow;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -65,6 +66,49 @@ class InMemoryBookingRepository implements BookingRepository {
         return findByConnectorIdAndStatus(connectorId, status).stream()
                 .filter(booking -> booking.getWindow().overlaps(window))
                 .sorted(Comparator.comparing(booking -> booking.getWindow().start()))
+                .toList();
+    }
+
+    @Override
+    public List<Booking> findOverlappingForDriver(Long driverId, BookingStatus status, Instant start, Instant end) {
+        TimeWindow window = new TimeWindow(start, end);
+        return findByDriverIdOrderByWindowStartAsc(driverId).stream()
+                .filter(booking -> booking.getStatus() == status)
+                .filter(booking -> booking.getWindow().overlaps(window))
+                .toList();
+    }
+
+    @Override
+    public List<Booking> findInProgressForDriver(Long driverId, BookingStatus status, Instant at) {
+        return findByDriverIdOrderByWindowStartAsc(driverId).stream()
+                .filter(booking -> booking.getStatus() == status)
+                .filter(booking -> !booking.getWindow().start().isAfter(at)
+                        && booking.getWindow().end().isAfter(at))
+                .toList();
+    }
+
+    @Override
+    public Optional<Booking> findByDriverIdAndCheckoutKey(Long driverId, String checkoutKey) {
+        return saved.values().stream()
+                .filter(booking -> booking.getDriverId().equals(driverId))
+                .filter(booking -> checkoutKey != null && checkoutKey.equals(booking.getCheckoutKey()))
+                .findFirst();
+    }
+
+    @Override
+    public List<Booking> findByStatusAndWindowStartLessThanEqualAndWindowEndAfter(
+            BookingStatus status, Instant startedBy, Instant now) {
+        return saved.values().stream()
+                .filter(booking -> booking.getStatus() == status)
+                .filter(booking -> !booking.getWindow().start().isAfter(startedBy))
+                .filter(booking -> booking.getWindow().end().isAfter(now))
+                .toList();
+    }
+
+    @Override
+    public List<Booking> findByDepositStatus(DepositStatus depositStatus) {
+        return saved.values().stream()
+                .filter(booking -> booking.getDepositStatus() == depositStatus)
                 .toList();
     }
 

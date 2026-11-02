@@ -1,7 +1,9 @@
 package com.ecopedia.charging.booking.domain;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -44,13 +46,29 @@ public interface BookingService {
      * comprometida una ventana que se cruce con esta —ni retenida ni ya reservada—. La retención
      * vence sola pasado el plazo configurado ({@code ecopedia.booking.hold-ttl}).
      *
+     * <p><b>También verifica que el conductor esté libre</b>, que es la otra mitad del bloqueo: no
+     * puede retener nada con una reserva en curso, ni con otra reserva que se cruce con la ventana
+     * pedida aunque sea en otra estación.
+     *
+     * <p><b>Y si ya tenía una retención, esta la reemplaza</b>: el conductor tiene una sola a la
+     * vez, y la anterior queda liberada. No se rechaza el pedido, porque cambiar de horario antes
+     * de confirmar es el caso normal y rechazarlo lo dejaría esperando a que venza lo suyo.
+     *
      * @throws ConnectorNotFoundException si el conector no existe
      * @throws ConnectorNotBookableException si el conector está fuera de servicio
-     * @throws SlotUnavailableException si la ventana se cruza con otra retención vigente o con
-     *     una reserva confirmada
+     * @throws SlotUnavailableException si la ventana se cruza con la retención vigente o la reserva
+     *     confirmada de OTRO conductor
+     * @throws DriverAlreadyBookedException si el conductor tiene una reserva en curso o una que se
+     *     cruza con la ventana pedida
      * @throws InvalidBookingRequestException si la ventana ya empezó
      */
     Hold startHold(Long connectorId, TimeWindow window, Long driverId);
+
+    /**
+     * Consulta una retención vigente por id (ECO-35, para uso del Facade de Checkout).
+     * Devuelve vacía si no existe o ya venció.
+     */
+    Optional<Hold> findHold(UUID holdId);
 
     /**
      * Convierte una retención vigente en una reserva guardada (ECO-32).
@@ -59,16 +77,78 @@ public interface BookingService {
      * bloqueado para el resto durante esa ventana (RF08), y la reserva sobrevive a un reinicio
      * del proceso porque ya es un compromiso del conductor.
      *
-     * <p>Recibe el conductor y no la tarjeta, que es lo que dice el documento: en esta entrega
-     * no se cobra la seña, así que la tarjeta todavía no tiene para qué viajar. El conductor sí,
-     * porque solo quien retuvo el slot lo puede confirmar.
+     * <p><b>Recibe la seña ya cobrada, no la tarjeta</b> (ECO-53). Cobrar es del checkout, que
+     * habla con Pagos; Reservas anota lo que se cobró y fija hasta cuándo cancelar la devuelve.
      *
-     * @throws HoldNotFoundException si no hay ninguna retención con ese id
+     * @param deposit la seña cobrada, o {@link BookingDeposit#none()}
+     * @param checkoutKey la {@code Idempotency-Key} del checkout, o {@code null} si no pasó por él
+     * @throws HoldNotFoundException si no hay ninguna retención con ese id, o si es de otro
+     *     conductor: desde afuera no se distingue (SEC-06)
      * @throws HoldExpiredException si la retención venció antes de confirmarse
-     * @throws BookingAccessDeniedException si la retención es de otro conductor
      * @throws SlotUnavailableException si mientras tanto se guardó otra reserva que se cruza
+     * @throws DriverAlreadyBookedException si mientras tanto el conductor quedó con una reserva en
+     *     curso o con otra que se cruza con esta ventana
      */
-    Booking confirmBooking(UUID holdId, Long driverId);
+    Booking confirmBooking(UUID holdId, Long driverId, BookingDeposit deposit, String checkoutKey);
+
+    /**
+     * Confirma sin seña y sin checkout. Es lo que usan los tests de Reservas, que prueban el
+     * calendario y no la plata, y lo que va a usar la carga sin reserva (ECO-58), que no lleva seña.
+     */
+    default Booking confirmBooking(UUID holdId, Long driverId) {
+        return confirmBooking(holdId, driverId, BookingDeposit.none(), null);
+    }
+
+    /** La reserva que el conductor ya confirmó con esa clave de checkout, si la hay (QA-29). */
+    Optional<Booking> findByCheckoutKey(Long driverId, String checkoutKey);
+
+    /**
+     * Hasta cuándo cancelar una reserva con esa ventana devuelve la seña: el inicio menos el plazo
+     * de devolución ({@code ecopedia.booking.deposit-refund-notice}). El front lo muestra antes de
+     * pagar, para que el conductor sepa a qué se compromete.
+     */
+    Instant depositRefundDeadline(TimeWindow window);
+
+    /**
+     * Marca como incomparecencia las reservas confirmadas cuyo inicio más la tolerancia ya pasó
+     * (RF09, ECO-57), y avisa a cada conductor. La llama un barrido periódico.
+     *
+     * <p>Solo toca las {@code CONFIRMED}: una reserva que SesionesDeCarga marque como iniciada
+     * (ECO-44) no la ve, y ese es todo el contrato entre los dos.
+     *
+     * @return cuántas marcó
+     */
+    int expireNoShows();
+
+    /** Las reservas canceladas a tiempo cuya seña todavía no se pudo devolver. */
+    List<Booking> findPendingDepositRefunds();
+
+    /** Anota que Pagos devolvió la seña de la reserva. */
+    void markDepositRefunded(Long bookingId);
+
+    /**
+     * Libera una reserva sin penalización y encola el reintegro total de la seña cuando la carga no
+     * pudo iniciarse por causas ajenas al conductor —conector fuera de servicio, cargador que no
+     * responde o rechazo de la distribuidora (RF13, ECO-59)—.
+     *
+     * <p>A diferencia de {@link #cancelBooking}, el reintegro de la seña no depende del plazo de
+     * preaviso: el conductor se presentó en tiempo y forma y la falla es del operador o de la red.
+     *
+     * @throws BookingNotFoundException si la reserva no existe
+     * @throws BookingStateConflictException si la reserva ya se cerró sin reintegro (409)
+     */
+    Booking releaseForActivationFailure(Long bookingId);
+
+    /**
+     * Liquida una reserva cuya carga en curso se interrumpió por una falla ajena al conductor
+     * (RF13, ECO-59): libera el resto de la ventana y, si el consumo real fue menor que la seña,
+     * encola el reintegro de la diferencia sin aplicar el piso de la seña.
+     *
+     * @throws BookingNotFoundException si la reserva no existe
+     * @throws BookingStateConflictException si la reserva no está confirmada (409)
+     * @throws InvalidBookingRequestException si el costo es negativo
+     */
+    Booking settleFaultedBooking(Long bookingId, BigDecimal realCost);
 
     /**
      * Cancela una reserva del propio conductor y libera su ventana (ECO-32).
@@ -77,9 +157,14 @@ public interface BookingService {
      * que el conductor pidió —que la reserva no valga— ya se cumplió. Importa para el front, que
      * puede reintentar un pedido que se cortó sin tener que preguntar antes cómo quedó.
      *
-     * @throws BookingNotFoundException si no hay ninguna reserva con ese id
-     * @throws BookingAccessDeniedException si la reserva es de otro conductor
-     * @throws InvalidBookingRequestException si la ventana ya terminó: no hay nada que liberar
+     * <p>Con seña cobrada, cancelar hasta {@link #depositRefundDeadline} inclusive la devuelve; más
+     * tarde, queda para el operador (decidido por Manuel el 31/10). La devolución en sí la pide
+     * quien habla con Pagos: acá la reserva queda en {@link DepositStatus#REFUND_PENDING}.
+     *
+     * @throws BookingNotFoundException si no hay ninguna reserva con ese id, o si es de otro
+     *     conductor: desde afuera no se distingue (SEC-06)
+     * @throws BookingStateConflictException si la ventana ya terminó o el conductor no se presentó: 409
+     *     (QA-26)
      */
     void cancelBooking(Long bookingId, Long driverId);
 

@@ -11,9 +11,6 @@ public interface AdminService {
     /** Obtiene el resumen métrico consolidado del estado general de la plataforma. */
     AdminDashboard getDashboardSummary();
 
-    /** Baja lógica administrativa de un usuario. */
-    void deactivateUser(Long userId);
-
     /** Alta/Reactivación lógica administrativa de un usuario. */
     void activateUser(Long userId);
 

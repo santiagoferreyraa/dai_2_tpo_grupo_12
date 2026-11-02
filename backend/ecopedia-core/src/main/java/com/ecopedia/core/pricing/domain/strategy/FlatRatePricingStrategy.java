@@ -3,29 +3,21 @@ package com.ecopedia.core.pricing.domain.strategy;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
-/**
- * Estrategia de Tarifa Plana (ECO-30).
- * Precio fijo por kWh consumido + penalización fija por minuto de exceso.
- */
+/** Tarifa plana: el kWh al precio de red, sin recargo (ECO-30). */
 public class FlatRatePricingStrategy implements PricingStrategy {
 
     @Override
-    public BigDecimal calculateDeposit(PricingContext context) {
-        return context.scheme().getDepositAmount();
+    public BigDecimal energyCost(BigDecimal kwh, BigDecimal baseKwhRate) {
+        return kwh.multiply(effectiveKwhRate(baseKwhRate)).setScale(2, RoundingMode.HALF_UP);
     }
 
     @Override
-    public BigDecimal estimateCost(PricingContext context) {
-        BigDecimal kwh = context.kwhConsumed() != null ? context.kwhConsumed() : BigDecimal.ZERO;
-        return kwh.multiply(context.scheme().getKwhRate()).setScale(2, RoundingMode.HALF_UP);
+    public BigDecimal effectiveKwhRate(BigDecimal baseKwhRate) {
+        return baseKwhRate.setScale(2, RoundingMode.HALF_UP);
     }
 
     @Override
-    public BigDecimal calculateRealCost(PricingContext context) {
-        BigDecimal kwhCost = context.kwhConsumed().multiply(context.scheme().getKwhRate());
-        BigDecimal penalty = BigDecimal.valueOf(context.excessMinutes())
-                .multiply(context.scheme().getExcessPenaltyPerMin());
-
-        return kwhCost.add(penalty).setScale(2, RoundingMode.HALF_UP);
+    public boolean isPeak() {
+        return false;
     }
 }

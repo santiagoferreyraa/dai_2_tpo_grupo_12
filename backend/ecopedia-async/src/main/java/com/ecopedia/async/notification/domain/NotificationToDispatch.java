@@ -1,5 +1,6 @@
 package com.ecopedia.async.notification.domain;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
@@ -17,4 +18,26 @@ public record NotificationToDispatch(
         Long bookingId,
         Long connectorId,
         Instant windowStart,
-        Instant windowEnd) {}
+        Instant windowEnd,
+        BigDecimal depositAmount,
+        Boolean depositRefunded,
+        String cardLastFour,
+        Instant depositRefundableUntil) {
+
+    /** Un aviso de una reserva sin seña. */
+    public NotificationToDispatch(
+            String eventId,
+            NotificationType type,
+            Long recipientId,
+            Long bookingId,
+            Long connectorId,
+            Instant windowStart,
+            Instant windowEnd) {
+        this(eventId, type, recipientId, bookingId, connectorId, windowStart, windowEnd, null, null, null, null);
+    }
+
+    /** Si la reserva tuvo seña. Un mensaje de antes de ECO-53 no la trae, y vale como sin seña. */
+    public boolean hasDeposit() {
+        return depositAmount != null && depositAmount.signum() > 0;
+    }
+}

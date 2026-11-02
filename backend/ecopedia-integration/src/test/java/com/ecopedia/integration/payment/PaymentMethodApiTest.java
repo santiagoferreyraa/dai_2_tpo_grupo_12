@@ -1,28 +1,42 @@
 package com.ecopedia.integration.payment;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ecopedia.integration.payment.data.JpaPaymentMethodRepository;
+import com.ecopedia.integration.payment.domain.CardBrand;
+import com.ecopedia.integration.payment.domain.PaymentGatewayPort;
+import com.ecopedia.integration.payment.domain.PaymentGatewayUnavailableException;
+import com.ecopedia.integration.payment.domain.TokenizedCard;
+import com.ecopedia.integration.web.ApiProblems;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.UUID;
 import javax.crypto.SecretKey;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -39,6 +53,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * elimine las tarjetas de otro. {@code hasRole('CONDUCTOR')} los deja pasar a los dos; lo que separa
  * a uno de otro es el id que sale del token, y eso solo se verifica ejerciéndolo.
  */
+@ExtendWith(OutputCaptureExtension.class)
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("dev")
@@ -54,6 +69,20 @@ class PaymentMethodApiTest {
 
     @Autowired
     private JpaPaymentMethodRepository paymentMethodRepository;
+
+    /*
+     * La pasarela es otro proceso, y este test es de Pagos: se reemplaza el puerto, no se la
+     * levanta. Lo que ella valida lo prueban sus propios tests (simulation/payment-gateway), y la
+     * traducción de sus respuestas, PaymentGatewayRestClientTest.
+     */
+    @MockitoBean
+    private PaymentGatewayPort paymentGateway;
+
+    @BeforeEach
+    void gatewayAcceptsCards() {
+        when(paymentGateway.tokenize(any()))
+                .thenAnswer(call -> new TokenizedCard(CardBrand.VISA, "1111", "tok_" + UUID.randomUUID()));
+    }
 
     @Value("${ecopedia.jwt.secret}")
     private String secret;
@@ -117,19 +146,19 @@ class PaymentMethodApiTest {
     @Test
     @DisplayName("Un operador no puede registrar medios de pago")
     void deniesTheOperator() throws Exception {
-        mockMvc.perform(registerAs(1L, "CPO", VALID_CARD)).andExpect(status().isForbidden());
+        mockMvc.perform(registerAs(1L, "CPO", VALID_CARD)).andExpect(status().isNotFound());
     }
 
     @Test
     @DisplayName("El administrador tampoco: RF03 no le da las tarjetas ajenas")
     void deniesTheAdministrator() throws Exception {
-        mockMvc.perform(registerAs(1L, "ADMIN", VALID_CARD)).andExpect(status().isForbidden());
+        mockMvc.perform(registerAs(1L, "ADMIN", VALID_CARD)).andExpect(status().isNotFound());
     }
 
     @Test
     @DisplayName("Sin token no se puede ni listar")
     void deniesTheAnonymous() throws Exception {
-        mockMvc.perform(get("/api/payment-methods")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/payment-methods")).andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -146,7 +175,7 @@ class PaymentMethodApiTest {
                 .compact();
 
         mockMvc.perform(get("/api/payment-methods").header(HttpHeaders.AUTHORIZATION, "Bearer " + forged))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -166,7 +195,7 @@ class PaymentMethodApiTest {
 
     @Test
     @DisplayName("Un conductor no puede eliminar la tarjeta de otro")
-    void deniesRemovingSomeoneElsesCard() throws Exception {
+    void deniesRemovingSomeoneElsesCard(CapturedOutput output) throws Exception {
         String created = mockMvc.perform(registerAs(1L, "CONDUCTOR", VALID_CARD))
                 .andReturn()
                 .getResponse()
@@ -175,10 +204,12 @@ class PaymentMethodApiTest {
 
         mockMvc.perform(delete("/api/payment-methods/" + cardId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(2L, "CONDUCTOR")))
-                // 400 y no 403: contestar 403 desconectaría la sesión del frontend y además
+                // 404 y no 403: contestar 403 desconectaría la sesión del frontend y además
                 // confirmaría que ese id existe. Ver PaymentExceptionHandler.
-                .andExpect(status().isBadRequest())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("No se encontró")));
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value(ApiProblems.NOT_FOUND_DETAIL));
+        // La respuesta no lo dice; el log sí (SEC-06).
+        assertThat(output).contains("Acceso denegado: el conductor 2 quiso dar de baja la tarjeta " + cardId);
 
         // Y sigue estando para su dueño.
         mockMvc.perform(get("/api/payment-methods").header(HttpHeaders.AUTHORIZATION, bearer(1L, "CONDUCTOR")))
@@ -205,6 +236,9 @@ class PaymentMethodApiTest {
     @Test
     @DisplayName("Un número mal copiado devuelve 400 con el motivo, no un 500")
     void explainsARejectedCard() throws Exception {
+        when(paymentGateway.tokenize(argThat(card -> card.number().endsWith("2"))))
+                .thenThrow(new IllegalArgumentException(
+                        "El número de tarjeta no es válido. Revisá que esté bien copiado"));
         String typo =
                 """
                 {"number":"4111111111111112","expiryMonth":9,"expiryYear":2029,\
@@ -225,5 +259,19 @@ class PaymentMethodApiTest {
         mockMvc.perform(registerAs(1L, "CONDUCTOR", missingHolder))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("titular")));
+    }
+
+    @Test
+    @DisplayName("Con la pasarela caída, 503 con su código y un mensaje para probar en un rato; no se guarda nada")
+    void gatewayUnavailable() throws Exception {
+        when(paymentGateway.tokenize(any()))
+                .thenThrow(new PaymentGatewayUnavailableException(new java.io.IOException("Connection refused")));
+
+        mockMvc.perform(registerAs(1L, "CONDUCTOR", VALID_CARD))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("PAYMENT_GATEWAY_UNAVAILABLE"))
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("Probá de nuevo")));
+
+        assertThat(paymentMethodRepository.count()).isZero();
     }
 }

@@ -92,8 +92,15 @@ export default function ActiveBookingBanner() {
       {/*
       El `px-6` es el de la franja de navegación de arriba, así los bordes de las dos coinciden y se
       leen como una sola pieza. El `pb-2` separa la franja del contenido sin comerle alto al mapa.
+
+      El `z-[1145]` la pone por ENCIMA del velo de la navegación (1140), que baja un poco más
+      abajo del borde de la franja para desvanecer ahí el contenido que se corta. Esta tira empieza
+      justo en ese borde, así que sin el z-index le tocaría la mitad del velo y saldría borroneada.
+      Y la deja por DEBAJO de la franja (1150), porque lo que cuelga de ella —la ventanita de
+      avisos, las sugerencias del buscador— cae justo encima de esta tira y tiene que taparla. Ver
+      `.top-bar__fade` y el z-index de `TopBar`.
     */}
-      <div className="hidden shrink-0 px-6 pb-2 md:block">
+      <div className="relative z-[1145] hidden shrink-0 px-6 pb-2 md:block">
         <section
           aria-label="Tu reserva activa"
           /*

@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef } from 'react'
 import { Link, NavLink, useLocation } from 'react-router'
 
 import { useSession } from '@/features/auth/session'
+import NotificationBell from '@/features/notifications/NotificationBell'
 import ThemeToggle from '@/features/theme/ThemeToggle'
 
 import { isSectionActive, MAIN_SECTIONS, visibleSections } from './navSections'
@@ -30,6 +31,18 @@ export default function TopBar() {
   const session = useSession()
   /* Solo las que le corresponden a quien mira. Ver `visibleSections`. */
   const sections = visibleSections(MAIN_SECTIONS, session?.role ?? null)
+
+  /*
+    Si el velo se dibuja. Se apaga en las pantallas de estaciones —el mapa y el ABM— y no por
+    capricho: ahí abajo de la franja no empieza contenido que scrollea sino cosas que no se
+    mueven, la fila de filtros y el borde del mapa. Lo que se queda quieto no tiene nada que
+    desvanecer, así que el velo no le aporta un pasaje: le come el borde de arriba.
+
+    La excepción vive ACÁ y no en esas pantallas a propósito. El velo es de la franja y lo que se
+    decide es si la franja lo usa; repartir la regla en cada pantalla sería hacer que todas
+    tengan que saber de una capa que no es suya.
+  */
+  const fades = !(pathname === '/stations' || pathname.startsWith('/stations/'))
 
   const listRef = useRef<HTMLElement>(null)
   const dotRef = useRef<HTMLSpanElement>(null)
@@ -115,12 +128,43 @@ export default function TopBar() {
       filtros se dibujaban por delante de las sugerencias. Se veía solo en pantalla ancha, porque
       en celular el buscador es el que está ADENTRO de esa misma fila.
 
-      1140 lo deja por encima de todo lo del mapa y por debajo de las ventanas modales, que son
+      1150 lo deja por encima de todo lo del mapa y por debajo de las ventanas modales, que son
       1200 y tienen que tapar la navegación.
+
+      **Y por encima de la tira de la reserva activa (1145)**, que es lo que obliga a sacar el
+      velo de acá adentro. Lo que cuelga de la franja —la ventanita de avisos, las sugerencias
+      del buscador— vive en el contexto de apilado de la franja, así que no puede ganarle a nada
+      que la franja entera pierda: con la franja en 1140, la tira se dibujaba por encima de la
+      ventanita de avisos. Pero la tira tiene que quedar por encima del velo, o le toca la mitad
+      del desenfoque. Por eso el velo es un hermano de la franja y no un hijo: va en 1140, debajo
+      de la tira, y la franja en 1150, encima.
     */
-    <header className="fixed inset-x-0 top-0 z-[1140] hidden md:block">
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-6 px-6 py-4">
+    <>
+      {fades && <span className="top-bar__fade hidden md:block" aria-hidden="true" />}
+
+      <header className="fixed inset-x-0 top-0 z-[1150] hidden md:block">
         {/*
+        El velo que desvanece el contenido antes de que llegue hasta acá.
+
+        La franja es transparente y flota sobre la página, así que el contenido de abajo termina
+        contra ella: o le pasa por detrás y se lee mezclado con los rótulos, o lo recorta el
+        `padding` que `App.tsx` le reserva y queda una línea recta a lo ancho de la pantalla.
+
+        **Arranca en el borde de la ventana y no donde empieza el contenido**, y eso es lo único
+        que hay que entender de esta capa. Puesta a la altura del corte, el que se ve es su propio
+        borde de arriba: se cambia un corte por otro, apenas más abajo. Naciendo en el techo, su
+        mitad fuerte queda escondida detrás de esta misma franja —donde no hay nada más que
+        tapar— y lo único que se ve de ella es cómo se apaga, justo sobre el filo que tiene que
+        disimular.
+
+        Vive en la franja y no en cada pantalla porque el problema no es de ninguna pantalla en
+        particular: lo produce esta franja al flotar, así que se arregla donde se origina y vale
+        para todas. Ver `.top-bar__fade` en index.css. Se monta arriba, al lado de la franja y no
+        adentro: ver el comentario del z-index.
+      */}
+
+        <div className="relative grid grid-cols-[1fr_auto_1fr] items-center gap-6 px-6 py-4">
+          {/*
           El logo y el buscador, juntos a la izquierda.
 
           El logo se dibuja como MÁSCARA y no como `<img>`, y eso es lo que le permite ser del
@@ -132,42 +176,42 @@ export default function TopBar() {
           espera de un logo, y sin texto adentro necesita su propio nombre para el lector de
           pantalla.
         */}
-        {/*
+          {/*
           Sin `justify-self`: la celda se estira y el buscador puede pedir su ancho contra ella.
           Con `justify-self-start` la celda se encogía hasta el contenido, y ahí el `w-full` del
           buscador se resolvía contra sí mismo y quedaba en la mitad de lo que tenía disponible.
         */}
-        <div className="flex items-center gap-3">
-          <Link to="/" aria-label="Ecopedia, ir a la portada">
-            <span className="brand-mark brand-fill block h-9 w-9" aria-hidden="true" />
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link to="/" aria-label="Ecopedia, ir a la portada">
+              <span className="brand-mark brand-fill block h-9 w-9" aria-hidden="true" />
+            </Link>
 
-          <SearchBox className="w-full max-w-sm" />
-        </div>
+            <SearchBox className="w-full max-w-sm" />
+          </div>
 
-        <nav
-          ref={listRef}
-          aria-label="Navegación principal"
-          className="relative flex items-center gap-1"
-        >
-          {sections.map((section) => {
-            const active = isSectionActive(section, pathname)
-            return (
-              <NavLink
-                key={section.to}
-                to={section.to}
-                end={section.end}
-                data-active={active ? 'true' : 'false'}
-                className={`rounded-lg px-3.5 py-2 text-sm transition-colors ${
-                  active ? 'text-primary font-semibold' : 'text-text-muted hover:text-text'
-                }`}
-              >
-                {section.label}
-              </NavLink>
-            )
-          })}
+          <nav
+            ref={listRef}
+            aria-label="Navegación principal"
+            className="relative flex items-center gap-1"
+          >
+            {sections.map((section) => {
+              const active = isSectionActive(section, pathname)
+              return (
+                <NavLink
+                  key={section.to}
+                  to={section.to}
+                  end={section.end}
+                  data-active={active ? 'true' : 'false'}
+                  className={`rounded-lg px-3.5 py-2 text-sm transition-colors ${
+                    active ? 'text-primary font-semibold' : 'text-text-muted hover:text-text'
+                  }`}
+                >
+                  {section.label}
+                </NavLink>
+              )
+            })}
 
-          {/*
+            {/*
             El punto. Se posiciona con `transform` y no con `left` porque el navegador puede
             moverlo sin rehacer el layout de la fila en cada cuadro.
 
@@ -176,18 +220,28 @@ export default function TopBar() {
             sobre esa medida. Un porcentaje adentro de `translate` se resuelve contra el propio
             elemento, así que sumarlos daría cualquier cosa.
           */}
-          <span
-            ref={dotRef}
-            aria-hidden="true"
-            className="top-nav__dot top-nav__dot--idle brand-fill absolute bottom-0.5 left-0 h-1 w-1 rounded-full opacity-0"
-          />
-        </nav>
+            <span
+              ref={dotRef}
+              aria-hidden="true"
+              className="top-nav__dot top-nav__dot--idle brand-fill absolute bottom-0.5 left-0 h-1 w-1 rounded-full opacity-0"
+            />
+          </nav>
 
-        <div className="flex items-center gap-3 justify-self-end">
-          <ThemeToggle />
-          <ProfilePill />
+          {/*
+          Tema, avisos y perfil. La campanita va **en el medio y no en una punta**, y no es un
+          orden arbitrario: los tres son controles del usuario y no de la aplicación, pero solo el
+          del medio cambia con lo que pasa afuera. Entre dos piezas quietas, el círculo con el
+          número es lo único que se mueve, y ahí es donde el ojo lo encuentra sin buscarlo.
+
+          Sin sesión no se dibuja: ver `NotificationBell`.
+        */}
+          <div className="flex items-center gap-3 justify-self-end">
+            <ThemeToggle />
+            <NotificationBell />
+            <ProfilePill />
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
+    </>
   )
 }

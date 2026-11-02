@@ -72,6 +72,23 @@ ecopedia:
     # valores, no código.
     url: ${ECOPEDIA_CORE_URL:http://localhost:8081}
 
+  integration:
+    # Dónde está ecopedia-integration. Checkout le consulta por medios de pago registrados (RF02).
+    url: ${ECOPEDIA_INTEGRATION_URL:http://localhost:8083}
+
+  # La clave de servicio con la que este artefacto llama a las rutas /internal/** de los otros (hoy,
+  # la consulta a la distribuidora en ecopedia-integration). La misma variable la lee integration.
+  # Sin valor por defecto, por lo mismo que el secreto del JWT.
+  internal:
+    token: ${ECOPEDIA_INTERNAL_TOKEN}
+
+  charging:
+    # Desde qué potencia una carga es "rápida" y hay que preguntarle a la distribuidora (RF15), y a
+    # cuánto se carga cuando no se puede autorizar la rápida. 22 kW es el tope habitual de la carga
+    # en alterna. Decidido por Manuel el 28/10: ver ChargingPowerPolicy.
+    fast-charge-threshold-kw: 22
+    normal-power-kw: 22
+
   booking:
     # Cuánto dura una retención de slot antes de vencer sola (ISO-8601: PT10M = 10 minutos).
     # Es el tiempo que tiene el conductor para confirmar. Ver ARQUITECTURA_ECOPEDIA.md §2.3.
@@ -85,6 +102,22 @@ ecopedia:
     # los fija por variable de entorno sin tocar código.
     max-window: ${ECOPEDIA_BOOKING_MAX_WINDOW:PT4H}
     max-horizon: ${ECOPEDIA_BOOKING_MAX_HORIZON:P30D}
+
+    # Hasta cuánto antes del inicio cancelar devuelve la seña (ECO-53). Decidido por Manuel el
+    # 31/10: 5 horas, inclusive. Se fija en cada reserva al confirmarla, así que cambiarlo no toca
+    # las que ya están: se rigen por lo que se le dijo al conductor al pagar.
+    deposit-refund-notice: ${ECOPEDIA_BOOKING_DEPOSIT_REFUND_NOTICE:PT5H}
+
+    # Cada cuánto se reintenta devolver una seña que Pagos no pudo devolver en el momento.
+    deposit-refund-retry-interval: ${ECOPEDIA_BOOKING_DEPOSIT_REFUND_RETRY:PT15S}
+
+    # La tolerancia de RF09: pasado este tiempo desde el inicio sin presentarse, la reserva es una
+    # incomparecencia y la seña queda para el operador (ECO-57). Los avisos y la pantalla dicen
+    # "15 minutos": si se cambia acá, hay que cambiar esos textos.
+    no-show-grace: ${ECOPEDIA_BOOKING_NO_SHOW_GRACE:PT15M}
+
+    # Cada cuánto se buscan incomparecencias.
+    no-show-sweep-interval: ${ECOPEDIA_BOOKING_NO_SHOW_SWEEP:PT1M}
 
 ---
 # Perfil de desarrollo: base en memoria, para levantar el módulo sin PostgreSQL instalado.
@@ -124,6 +157,8 @@ spring:
 ecopedia:
   jwt:
     secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
+  internal:
+    token: ${ECOPEDIA_INTERNAL_TOKEN:ecopedia-dev-only-internal-token}
 
 ---
 # Perfil local: la base de este integrante, en un archivo de su propio disco.
@@ -174,3 +209,5 @@ spring:
 ecopedia:
   jwt:
     secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
+  internal:
+    token: ${ECOPEDIA_INTERNAL_TOKEN:ecopedia-dev-only-internal-token}

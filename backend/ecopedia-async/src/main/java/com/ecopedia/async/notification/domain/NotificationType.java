@@ -9,5 +9,7 @@ package com.ecopedia.async.notification.domain;
  */
 public enum NotificationType {
     BOOKING_CONFIRMED,
-    BOOKING_CANCELLED
+    BOOKING_CANCELLED,
+    /** El conductor no se presentó y la reserva se cerró sola (ECO-57). */
+    BOOKING_NO_SHOW
 }

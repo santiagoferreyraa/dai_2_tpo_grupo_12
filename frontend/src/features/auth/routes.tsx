@@ -1,18 +1,19 @@
 import type { RouteObject } from 'react-router'
 
-import ForbiddenPage from './ForbiddenPage'
 import LoginPage from './LoginPage'
+import NotFoundPage from './NotFoundPage'
 import RegisterPage from './RegisterPage'
 
 /**
  * Rutas de la feature "auth". Las tres son públicas, por definición: son la puerta.
  *
- * `forbidden` está acá y no en la feature que la usa porque no es de ninguna: la manda el
- * guard, que vive en esta carpeta, y va a servir igual a cualquier otra pantalla que se
- * proteja por rol más adelante.
+ * El comodín `*` está acá y no en la feature que lo usa porque no es de ninguna: la misma
+ * pantalla la dibuja el guard, que vive en esta carpeta, cuando falta el rol. React Router
+ * elige la ruta más específica, así que el comodín solo atrapa lo que ninguna otra reconoce,
+ * sin importar en qué lugar del arreglo esté.
  */
 export const authRoutes: RouteObject[] = [
   { path: 'login', element: <LoginPage /> },
   { path: 'register', element: <RegisterPage /> },
-  { path: 'forbidden', element: <ForbiddenPage /> },
+  { path: '*', element: <NotFoundPage /> },
 ]

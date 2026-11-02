@@ -2,6 +2,11 @@ spring:
   application:
     name: ecopedia-integration
 
+  # Este módulo consume un servicio SOAP, no publica ninguno. Con spring-ws-core en el classpath,
+  # Spring Boot levantaría igual un MessageDispatcherServlet vacío en /services; se excluye.
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.webservices.WebServicesAutoConfiguration
+
   # Desde ECO-26 este módulo tiene tabla propia: los medios de pago del conductor (RF02).
   # Antes no la tenía y el bloque de abajo no existía; el comentario que estaba en su lugar
   # decía que, si eso cambiaba, había que copiar el datasource de core. Es lo que se hizo.
@@ -38,13 +43,29 @@ server:
   port: ${SERVER_PORT:8083}
 
 # --- Sistemas externos simulados ---
-# La pasarela todavía no existe como proceso: PaymentGatewayPort corre hoy contra una
-# implementación local. Esta dirección queda declarada para cuando se levante. Ver §3.2.
+# La pasarela corre como proceso aparte (simulation/payment-gateway, 8086) y Pagos le habla por
+# REST con PaymentGatewayRestClient. Ver ARQUITECTURA §3.2.
 ecopedia:
   payment-gateway:
-    url: ${ECOPEDIA_PAYMENT_GATEWAY_URL:http://localhost:8091}
+    url: ${ECOPEDIA_PAYMENT_GATEWAY_URL:http://localhost:8086}
+    # La clave con la que Pagos se presenta ante la pasarela. La misma variable la lee la
+    # pasarela. Sin valor por defecto: sin perfil, el módulo no arranca sin el .env.
+    access-token: ${ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN}
+    # Si la pasarela no conecta en 2 s o no contesta en 5 s, se la da por caída: el conductor
+    # recibe un "probá de nuevo en un momento" en vez de una pantalla colgada.
+    connect-timeout: 2s
+    read-timeout: 5s
+  # La distribuidora corre como proceso aparte (simulation/power-grid, 8087) y RedEléctrica le habla
+  # por SOAP con PowerGridWsClient. Ver ARQUITECTURA §3.1.
   power-grid:
-    url: ${ECOPEDIA_POWER_GRID_URL:http://localhost:8092/ws}
+    url: ${ECOPEDIA_POWER_GRID_URL:http://localhost:8087/ws}
+    # El UsernameToken de WS-Security. Las mismas variables las lee la distribuidora. La
+    # contraseña, sin valor por defecto: sin perfil, el módulo no arranca sin el .env.
+    username: ${ECOPEDIA_POWER_GRID_USERNAME:ecopedia}
+    password: ${ECOPEDIA_POWER_GRID_PASSWORD}
+    # Los mismos que con la pasarela, y sin reintentos: ver PowerGridClientConfig.
+    connect-timeout: 2s
+    read-timeout: 5s
 
   # La MISMA clave con la que Usuarios firma en ecopedia-core. Si las dos no coinciden, este
   # módulo rechaza todos los tokens y la pantalla de tarjetas queda inaccesible sin ningún
@@ -52,6 +73,13 @@ ecopedia:
   # de allá.
   jwt:
     secret: ${ECOPEDIA_JWT_SECRET}
+
+  # La clave con la que los otros artefactos de Ecopedia llaman a las rutas /internal/** (hoy, la
+  # consulta a la distribuidora de SesionesDeCarga). No es la de un usuario: es la del servicio. La
+  # misma variable la lee ecopedia-charging. Sin valor por defecto, por lo mismo que el secreto del
+  # JWT. Ver InternalTokenFilter.
+  internal:
+    token: ${ECOPEDIA_INTERNAL_TOKEN}
 
 ---
 # Perfil de desarrollo: base en memoria, para levantar el módulo sin PostgreSQL instalado.
@@ -84,6 +112,12 @@ spring:
 ecopedia:
   jwt:
     secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
+  payment-gateway:
+    access-token: ${ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN:ecopedia-dev-only-gateway-token}
+  power-grid:
+    password: ${ECOPEDIA_POWER_GRID_PASSWORD:ecopedia-dev-only-power-grid-password}
+  internal:
+    token: ${ECOPEDIA_INTERNAL_TOKEN:ecopedia-dev-only-internal-token}
 
 ---
 # Perfil local: la base de este integrante, en un archivo de su propio disco.
@@ -131,3 +165,9 @@ spring:
 ecopedia:
   jwt:
     secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
+  payment-gateway:
+    access-token: ${ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN:ecopedia-dev-only-gateway-token}
+  power-grid:
+    password: ${ECOPEDIA_POWER_GRID_PASSWORD:ecopedia-dev-only-power-grid-password}
+  internal:
+    token: ${ECOPEDIA_INTERNAL_TOKEN:ecopedia-dev-only-internal-token}

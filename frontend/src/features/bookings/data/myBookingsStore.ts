@@ -19,7 +19,7 @@ import { listMyBookings } from './bookingsRepository'
  *
  * **La lista es de una sesión.** Se guarda con el token con que se pidió: si se cierra la sesión o
  * entra otra cuenta, lo guardado no es de quien mira y se descarta. Solo se pide con rol
- * CONDUCTOR, que es el único que tiene reservas; con otro rol el backend contestaría 403.
+ * CONDUCTOR, que es el único que tiene reservas; con otro rol el backend contestaría 404.
  */
 
 export type MyBookingsState =

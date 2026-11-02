@@ -40,16 +40,19 @@
         esta misma lista la misma semana y cada merge conflictuaría acá. Declarados de entrada,
         este archivo no se vuelve a tocar.
 
-        Pendientes de crear más adelante (simuladores de sistemas externos):
-          - distribuidora-soap     (el legado, publica el WSDL)
-          - cargador-simulador     (publica telemetría al tópico)
-          - pasarela-simulada      (el partner de pagos, expone la API REST)
+        Los sistemas externos simulados viven aparte, en simulation/: no son Ecopedia, son los
+        procesos con los que Ecopedia se integra. Cada uno corre por su cuenta y habla un
+        protocolo real: la pasarela (REST), la distribuidora (SOAP) y los cargadores (órdenes por
+        REST, telemetría por el tópico).
     -->
     <modules>
         <module>backend/ecopedia-core</module>
         <module>backend/ecopedia-charging</module>
         <module>backend/ecopedia-integration</module>
         <module>backend/ecopedia-async</module>
+        <module>simulation/payment-gateway</module>
+        <module>simulation/power-grid</module>
+        <module>simulation/charger</module>
     </modules>
 
     <build>

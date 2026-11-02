@@ -5,6 +5,8 @@
  * Los nombres de campo son los que viajan en el JSON, así que van tal cual salen de Jackson.
  */
 
+import type { VehicleModel } from '@/features/vehicles/types'
+
 /**
  * Los roles con el nombre que viaja en el token, que es el del enum Java.
  *
@@ -50,6 +52,15 @@ export interface UserProfile {
   role: Role
   active: boolean
   createdAt: string
+  /**
+   * El auto elegido, o `null` si todavía no eligió ninguno.
+   *
+   * **Viene la ficha entera y no el id**, y eso es deliberado del lado del backend: la portada
+   * necesita el conector y las potencias apenas abre —para contar estaciones compatibles y
+   * estimar cuánto tarda una carga—, y con un id suelto tendría que pedir el catálogo entero
+   * para traducirlo. Ver `UserProfileResponse` en el backend.
+   */
+  vehicle: VehicleModel | null
 }
 
 /**
@@ -68,6 +79,17 @@ export interface Session {
   email: string
   role: Role
   expiresAt: number
+  /**
+   * El auto del conductor, o `null` mientras no se sepa cuál es.
+   *
+   * Llega con el nombre, de la misma llamada y por el mismo motivo: el login no lo trae. Ver
+   * `fullName`, que explica la espera.
+   *
+   * **`null` es ambiguo acá a propósito**: significa "no eligió auto" y también "todavía no
+   * llegó el perfil". Distinguirlos pediría un tercer estado que ninguna pantalla usaría: las
+   * dos situaciones se dibujan igual —sin ficha— y la segunda dura un instante.
+   */
+  vehicle: VehicleModel | null
   /**
    * El nombre real, o `null` mientras no se sepa.
    *

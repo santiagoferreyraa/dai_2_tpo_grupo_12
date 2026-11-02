@@ -1,123 +1,198 @@
 package com.ecopedia.core.pricing;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
-import com.ecopedia.core.pricing.domain.*;
-import com.ecopedia.core.pricing.domain.strategy.FlatRatePricingStrategy;
-import com.ecopedia.core.pricing.domain.strategy.OccupancyPenaltyPricingStrategy;
-import com.ecopedia.core.pricing.domain.strategy.PeakOffPeakPricingStrategy;
-import com.ecopedia.core.pricing.domain.strategy.PricingContext;
+import com.ecopedia.core.pricing.domain.ChargeBreakdown;
+import com.ecopedia.core.pricing.domain.ChargeSpeed;
+import com.ecopedia.core.pricing.domain.NetworkRates;
+import com.ecopedia.core.pricing.domain.NetworkRatesRepository;
+import com.ecopedia.core.pricing.domain.PricingRules;
+import com.ecopedia.core.pricing.domain.StationPricing;
+import com.ecopedia.core.pricing.domain.StationPricingRepository;
+import com.ecopedia.core.pricing.domain.strategy.OccupancyPenalty;
+import com.ecopedia.core.pricing.domain.strategy.PricingStrategySelector;
 import com.ecopedia.core.pricing.service.PricingServiceImpl;
+import com.ecopedia.core.terminal.domain.Connector;
+import com.ecopedia.core.terminal.domain.Station;
+import com.ecopedia.core.terminal.domain.TerminalService;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
-@ExtendWith(MockitoExtension.class)
+/**
+ * Tarificación con el modelo del 31/10, sin levantar Spring: qué estrategia toca en cada caso y cuánto
+ * sale una carga.
+ *
+ * <p>Las horas se escriben en UTC a propósito, que es como corre el servidor en AWS: las 21:00 UTC son las
+ * 18:00 en Buenos Aires. Si el cálculo usara la zona del servidor, los bordes de la franja darían al revés.
+ */
 class PricingServiceTest {
 
-    @Mock
-    private PricingSchemeRepository pricingSchemeRepository;
+    private static final PricingRules RULES = new PricingRules(
+            ZoneId.of("America/Argentina/Buenos_Aires"),
+            new BigDecimal("22"),
+            18,
+            22,
+            new BigDecimal("1.2"),
+            15,
+            new BigDecimal("1.5"));
 
-    @InjectMocks
-    private PricingServiceImpl pricingService;
+    private static final StationPricing WITH_PEAK = new StationPricing(7L, new BigDecimal("5000"), true, Instant.EPOCH);
+    private static final StationPricing WITHOUT_PEAK =
+            new StationPricing(7L, new BigDecimal("5000"), false, Instant.EPOCH);
 
-    private PricingScheme mockFlatScheme;
-
-    @BeforeEach
-    void setUp() {
-        mockFlatScheme = new PricingScheme();
-        mockFlatScheme.setId(1L);
-        mockFlatScheme.setConnectorId(10L);
-        mockFlatScheme.setStrategyType(PricingStrategyType.FLAT_RATE);
-        mockFlatScheme.setKwhRate(new BigDecimal("10.00"));
-        mockFlatScheme.setDepositAmount(new BigDecimal("100.00"));
-        mockFlatScheme.setExcessPenaltyPerMin(new BigDecimal("2.00"));
+    /** Un instante dado en hora de Buenos Aires, por ejemplo "17:59": es UTC-3, así que se le suman 3 h. */
+    private static Instant argentina(String hhmm) {
+        return Instant.parse("2026-11-02T" + hhmm + ":00Z").plusSeconds(3 * 3600);
     }
 
-    @Test
-    void testFlatRatePricingStrategy() {
-        FlatRatePricingStrategy strategy = new FlatRatePricingStrategy();
-        PricingContext context =
-                new PricingContext(mockFlatScheme, new BigDecimal("15.00"), 30, 5, LocalDateTime.now());
+    @Nested
+    class StrategySelection {
 
-        BigDecimal deposit = strategy.calculateDeposit(context);
-        BigDecimal estimate = strategy.estimateCost(context);
-        BigDecimal realCost = strategy.calculateRealCost(context);
+        private final PricingStrategySelector selector = new PricingStrategySelector(RULES);
 
-        assertEquals(new BigDecimal("100.00"), deposit);
-        assertEquals(new BigDecimal("150.00"), estimate); // 15 kWh * 10 = 150
-        assertEquals(new BigDecimal("160.00"), realCost); // 150 + 5 min * 2 = 160
+        @ParameterizedTest(name = "inicio a las {0} → pico: {1}")
+        @CsvSource({"17:59, false", "18:00, true", "21:59, true", "22:00, false", "03:00, false"})
+        @DisplayName("Decide la hora de INICIO, en hora argentina: [18:00, 22:00)")
+        void peakDependsOnTheStartHour(String start, boolean peak) {
+            assertThat(selector.select(argentina(start), WITH_PEAK).isPeak()).isEqualTo(peak);
+        }
+
+        @Test
+        @DisplayName("Una estación sin el check de hora pico cobra tarifa plana también a las 19")
+        void stationWithoutPeakIsAlwaysFlat() {
+            assertThat(selector.select(argentina("19:00"), WITHOUT_PEAK).isPeak())
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("Las 18:00 de Buenos Aires son las 21:00 UTC: la zona del servidor no cuenta")
+        void usesTheDriverTimeZoneNotTheServers() {
+            assertThat(selector.isPeakHour(Instant.parse("2026-11-02T21:00:00Z")))
+                    .isTrue();
+            assertThat(selector.isPeakHour(Instant.parse("2026-11-02T18:00:00Z")))
+                    .isFalse();
+        }
     }
 
-    @Test
-    void testPeakOffPeakPricingStrategy() {
-        mockFlatScheme.setStrategyType(PricingStrategyType.PEAK_OFF_PEAK);
-        mockFlatScheme.setPeakKwhRate(new BigDecimal("20.00"));
+    @Nested
+    class SpeedAndPenalty {
 
-        PeakOffPeakPricingStrategy strategy = new PeakOffPeakPricingStrategy();
+        @ParameterizedTest(name = "{0} kW → {1}")
+        @CsvSource({"7.2, NORMAL", "22, NORMAL", "22.01, FAST", "150, FAST"})
+        @DisplayName("Normal hasta 22 kW inclusive; rápida por encima, como en ECO-52")
+        void speedByDeliveredPower(String kw, ChargeSpeed speed) {
+            assertThat(RULES.speedFor(new BigDecimal(kw))).isEqualTo(speed);
+        }
 
-        LocalDateTime offPeakTime = LocalDateTime.of(2026, 9, 7, 14, 0); // 14:00 (valle)
-        PricingContext offPeakContext = new PricingContext(mockFlatScheme, new BigDecimal("10.00"), 30, 0, offPeakTime);
-        BigDecimal offPeakCost = strategy.estimateCost(offPeakContext);
-
-        LocalDateTime peakTime = LocalDateTime.of(2026, 9, 7, 19, 0); // 19:00 (pico)
-        PricingContext peakContext = new PricingContext(mockFlatScheme, new BigDecimal("10.00"), 30, 0, peakTime);
-        BigDecimal peakCost = strategy.estimateCost(peakContext);
-
-        assertEquals(new BigDecimal("100.00"), offPeakCost); // 10 kWh * 10
-        assertEquals(new BigDecimal("200.00"), peakCost); // 10 kWh * 20
+        @ParameterizedTest(name = "{0} min de exceso → $ {1}")
+        @CsvSource({"0, 0.00", "10, 2000.00", "15, 3000.00", "16, 4800.00"})
+        @DisplayName("La multa: $ 200 por minuto, y pasados 15 minutos todos los minutos a ×1,5")
+        void penaltyEscalatesAfterFifteenMinutes(long minutes, String expected) {
+            assertThat(new OccupancyPenalty(RULES).of(minutes, new BigDecimal("200")))
+                    .isEqualByComparingTo(expected);
+        }
     }
 
-    @Test
-    void testOccupancyPenaltyPricingStrategyProgressive() {
-        OccupancyPenaltyPricingStrategy strategy = new OccupancyPenaltyPricingStrategy();
-        PricingContext context =
-                new PricingContext(mockFlatScheme, new BigDecimal("10.00"), 30, 20, LocalDateTime.now());
+    @Nested
+    class Charges {
 
-        BigDecimal realCost = strategy.calculateRealCost(context);
+        private PricingServiceImpl service;
+        private Connector connector;
 
-        // kWh = 10 * 10 = 100.
-        // Excess > 15 min -> penalty rate = 2.00 * 1.5 = 3.00 per min.
-        // Penalty = 20 * 3.00 = 60.
-        // Total = 160.00
-        assertEquals(new BigDecimal("160.00"), realCost);
-    }
+        @BeforeEach
+        void setUp() {
+            NetworkRatesRepository rates = mock(NetworkRatesRepository.class);
+            when(rates.findById(NetworkRates.SINGLETON_ID))
+                    .thenReturn(Optional.of(new NetworkRates(
+                            new BigDecimal("100"), new BigDecimal("150"), new BigDecimal("200"), Instant.EPOCH)));
+            StationPricingRepository stations = mock(StationPricingRepository.class);
+            when(stations.findById(7L)).thenReturn(Optional.of(WITH_PEAK));
 
-    @Test
-    void testEstimateCostFailsWhenLessThanDepositRF06() {
-        when(pricingSchemeRepository.findByConnectorId(10L)).thenReturn(Optional.of(mockFlatScheme));
+            Station station = mock(Station.class);
+            when(station.getId()).thenReturn(7L);
+            connector = mock(Connector.class);
+            when(connector.getStation()).thenReturn(station);
+            when(connector.getMaxPowerKw()).thenReturn(new BigDecimal("150"));
+            TerminalService terminals = mock(TerminalService.class);
+            when(terminals.getConnector(12L)).thenReturn(connector);
 
-        // 5 kWh * $10 = $50. Seña = $100.
-        // Debe lanzar IllegalArgumentException según RF06.
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> pricingService.estimateCost(10L, new BigDecimal("5.00"), LocalDateTime.now()));
-    }
+            service = new PricingServiceImpl(
+                    rates, stations, terminals, RULES, Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
+        }
 
-    @Test
-    void testDefineSchemeSuccess() {
-        when(pricingSchemeRepository.findByConnectorId(10L)).thenReturn(Optional.empty());
-        when(pricingSchemeRepository.save(any(PricingScheme.class))).thenReturn(mockFlatScheme);
+        @Test
+        @DisplayName("Carga rápida que empieza 21:30 y termina después de las 22: toda a precio pico, $ 180 el kWh")
+        void fastChargeStartedInPeakIsAllPeak() {
+            ChargeBreakdown cost =
+                    service.calculateRealCost(12L, new BigDecimal("10"), new BigDecimal("150"), argentina("21:30"), 0);
 
-        PricingSchemeData data = new PricingSchemeData(
-                10L,
-                PricingStrategyType.FLAT_RATE,
-                new BigDecimal("10.00"),
-                new BigDecimal("100.00"),
-                new BigDecimal("2.00"),
-                null);
-        PricingScheme saved = pricingService.defineScheme(data);
+            assertThat(cost.speed()).isEqualTo(ChargeSpeed.FAST);
+            assertThat(cost.peak()).isTrue();
+            assertThat(cost.kwhRate()).isEqualByComparingTo("180");
+            assertThat(cost.total()).isEqualByComparingTo("1800");
+        }
 
-        assertNotNull(saved);
-        assertEquals(10L, saved.getConnectorId());
-        verify(pricingSchemeRepository, times(1)).save(any(PricingScheme.class));
+        @Test
+        @DisplayName("Carga normal que empieza 17:30 y sigue después de las 18: toda a precio normal, $ 100 el kWh")
+        void normalChargeStartedBeforePeakIsAllFlat() {
+            ChargeBreakdown cost =
+                    service.calculateRealCost(12L, new BigDecimal("10"), new BigDecimal("22"), argentina("17:30"), 0);
+
+            assertThat(cost.speed()).isEqualTo(ChargeSpeed.NORMAL);
+            assertThat(cost.peak()).isFalse();
+            assertThat(cost.total()).isEqualByComparingTo("1000");
+        }
+
+        @Test
+        @DisplayName("Un conector rápido que la red bajó a 22 kW se cobra como carga normal")
+        void downgradedFastConnectorIsChargedAsNormal() {
+            ChargeBreakdown cost =
+                    service.calculateRealCost(12L, new BigDecimal("10"), new BigDecimal("22"), argentina("12:00"), 0);
+
+            assertThat(cost.speed()).isEqualTo(ChargeSpeed.NORMAL);
+            assertThat(cost.kwhRate()).isEqualByComparingTo("100");
+        }
+
+        @Test
+        @DisplayName("Pico y exceso se aplican juntos: energía a precio pico más la multa escalada")
+        void peakAndPenaltyApplyTogether() {
+            ChargeBreakdown cost =
+                    service.calculateRealCost(12L, new BigDecimal("10"), new BigDecimal("22"), argentina("19:00"), 16);
+
+            assertThat(cost.peak()).isTrue();
+            assertThat(cost.energyCost()).isEqualByComparingTo("1200"); // 10 kWh × $ 120
+            assertThat(cost.penalty()).isEqualByComparingTo("4800"); // 16 min × $ 200 × 1,5
+            assertThat(cost.total()).isEqualByComparingTo("6000");
+        }
+
+        @Test
+        @DisplayName("La seña es la de la estación del conector")
+        void depositIsTheStations() {
+            assertThat(service.calculateDeposit(12L)).isEqualByComparingTo("5000");
+        }
+
+        @Test
+        @DisplayName("El estimado usa la potencia máxima del conector y no puede quedar por debajo de la seña")
+        void estimateUsesTheConnectorPowerAndKeepsTheFloor() {
+            ChargeBreakdown estimate = service.estimateCost(12L, new BigDecimal("40"), argentina("12:00"));
+            assertThat(estimate.speed()).isEqualTo(ChargeSpeed.FAST);
+            assertThat(estimate.total()).isEqualByComparingTo("6000");
+
+            assertThatThrownBy(() -> service.estimateCost(12L, new BigDecimal("10"), argentina("12:00")))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
     }
 }

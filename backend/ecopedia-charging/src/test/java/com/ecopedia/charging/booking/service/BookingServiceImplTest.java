@@ -3,23 +3,28 @@ package com.ecopedia.charging.booking.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.ecopedia.charging.booking.domain.Booking;
-import com.ecopedia.charging.booking.domain.BookingAccessDeniedException;
+import com.ecopedia.charging.booking.domain.BookingDeposit;
 import com.ecopedia.charging.booking.domain.BookingEvent;
 import com.ecopedia.charging.booking.domain.BookingEventType;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
+import com.ecopedia.charging.booking.domain.BookingStateConflictException;
 import com.ecopedia.charging.booking.domain.BookingStatus;
 import com.ecopedia.charging.booking.domain.ConnectorCatalog;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
 import com.ecopedia.charging.booking.domain.ConnectorSnapshot;
+import com.ecopedia.charging.booking.domain.DepositStatus;
+import com.ecopedia.charging.booking.domain.DriverAlreadyBookedException;
 import com.ecopedia.charging.booking.domain.Hold;
 import com.ecopedia.charging.booking.domain.HoldExpiredException;
 import com.ecopedia.charging.booking.domain.HoldNotFoundException;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
 import com.ecopedia.charging.booking.domain.TimeWindow;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -48,6 +53,14 @@ class BookingServiceImplTest {
     private static final Long DRIVER = 42L;
     private static final Long OTHER_DRIVER = 43L;
 
+    /**
+     * Un tercero, para las pruebas que necesitan dos retenciones vivas además de la del primero.
+     *
+     * <p>Hace falta porque un conductor tiene UNA retención a la vez: pidiendo dos con el mismo,
+     * la segunda reemplaza a la primera y el conteo no da lo que la prueba quiere mirar.
+     */
+    private static final Long THIRD_DRIVER = 44L;
+
     /** Un conector que existe y está libre. */
     private static final ConnectorCatalog AVAILABLE = id -> Optional.of(new ConnectorSnapshot(id, 1L, "AVAILABLE"));
 
@@ -67,12 +80,23 @@ class BookingServiceImplTest {
 
     private static final Duration MAX_HORIZON = Duration.ofDays(30);
 
+    /** Cancelar hasta 5 horas antes devuelve la seña (Manuel, 31/10). */
+    private static final Duration REFUND_NOTICE = Duration.ofHours(5);
+
+    /** La tolerancia de RF09. */
+    private static final Duration NO_SHOW_GRACE = Duration.ofMinutes(15);
+
+    private static final BookingDeposit PAID = new BookingDeposit(new BigDecimal("8000.00"), 77L, "4242");
+
+    private InMemoryBookingRepository repository;
+
     /** El componente recién inicializado por el "contenedor", con el plazo de retención pedido. */
     private BookingServiceImpl started(ConnectorCatalog catalog, Duration holdTtl) {
         clock = new MutableClock(Instant.parse("2026-09-14T12:00:00Z"));
         events = new RecordingBookingEventPublisher();
+        repository = new InMemoryBookingRepository();
         service = new BookingServiceImpl(
-                catalog, new InMemoryBookingRepository(), events, clock, holdTtl, MAX_WINDOW, MAX_HORIZON);
+                catalog, repository, events, clock, holdTtl, MAX_WINDOW, MAX_HORIZON, REFUND_NOTICE, NO_SHOW_GRACE);
         service.start();
         return service;
     }
@@ -134,7 +158,7 @@ class BookingServiceImplTest {
         TimeWindow rightAfter = new TimeWindow(window.end(), window.end().plus(Duration.ofHours(1)));
 
         service.startHold(CONNECTOR, rightAfter, OTHER_DRIVER);
-        service.startHold(CONNECTOR + 1, window, OTHER_DRIVER);
+        service.startHold(CONNECTOR + 1, window, THIRD_DRIVER);
         assertThat(service.activeHoldCount()).isEqualTo(3);
     }
 
@@ -161,8 +185,10 @@ class BookingServiceImplTest {
     @DisplayName("Al destruirse el componente (@PreDestroy) se liberan las retenciones")
     void destroyReleasesPendingHolds() {
         started(AVAILABLE, Duration.ofMinutes(10));
+        /* Dos conductores y no dos retenciones del mismo: cada uno tiene a lo sumo una. */
         service.startHold(CONNECTOR, windowIn(2), DRIVER);
-        service.startHold(CONNECTOR, windowIn(4), DRIVER);
+        service.startHold(CONNECTOR, windowIn(4), OTHER_DRIVER);
+        assertThat(service.activeHoldCount()).isEqualTo(2);
 
         service.stop();
 
@@ -297,7 +323,7 @@ class BookingServiceImplTest {
             TimeWindow rightAfter = new TimeWindow(window.end(), window.end().plus(Duration.ofHours(1)));
 
             service.startHold(CONNECTOR, rightAfter, OTHER_DRIVER);
-            service.startHold(CONNECTOR + 1, window, OTHER_DRIVER);
+            service.startHold(CONNECTOR + 1, window, THIRD_DRIVER);
             assertThat(service.activeHoldCount()).isEqualTo(2);
         }
 
@@ -328,8 +354,9 @@ class BookingServiceImplTest {
             started(AVAILABLE, Duration.ofMinutes(10));
             Hold hold = service.startHold(CONNECTOR, windowIn(2), DRIVER);
 
+            // Como si no existiera (SEC-06): "existe pero no es tuya" ya es contar algo.
             assertThatThrownBy(() -> service.confirmBooking(hold.id(), OTHER_DRIVER))
-                    .isInstanceOf(BookingAccessDeniedException.class);
+                    .isInstanceOf(HoldNotFoundException.class);
 
             // Y el intento fallido no le arruina la retención a su dueño.
             assertThat(service.activeHoldCount()).isEqualTo(1);
@@ -385,7 +412,7 @@ class BookingServiceImplTest {
                     service.startHold(CONNECTOR, windowIn(2), DRIVER).id(), DRIVER);
 
             assertThatThrownBy(() -> service.cancelBooking(booking.getId(), OTHER_DRIVER))
-                    .isInstanceOf(BookingAccessDeniedException.class);
+                    .isInstanceOf(BookingNotFoundException.class);
             assertThat(booking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
         }
 
@@ -419,7 +446,7 @@ class BookingServiceImplTest {
             clock.advance(Duration.ofHours(4));
 
             assertThatThrownBy(() -> service.cancelBooking(booking.getId(), DRIVER))
-                    .isInstanceOf(InvalidBookingRequestException.class);
+                    .isInstanceOf(BookingStateConflictException.class);
             assertThat(booking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
         }
     }
@@ -484,7 +511,7 @@ class BookingServiceImplTest {
                     service.startHold(CONNECTOR, windowIn(2), DRIVER).id(), DRIVER);
 
             assertThatThrownBy(() -> service.cancelBooking(booking.getId(), OTHER_DRIVER))
-                    .isInstanceOf(BookingAccessDeniedException.class);
+                    .isInstanceOf(BookingNotFoundException.class);
             assertThat(events.published())
                     .extracting(BookingEvent::type)
                     .containsExactly(BookingEventType.BOOKING_CONFIRMED);
@@ -506,6 +533,133 @@ class BookingServiceImplTest {
         assertThat(mine.get(0).getWindow().start())
                 .isBefore(mine.get(1).getWindow().start());
         assertThat(mine).allMatch(booking -> booking.getDriverId().equals(DRIVER));
+    }
+
+    /**
+     * La otra mitad del bloqueo: la reserva ocupa el conector para el resto y ocupa al conductor
+     * para sí mismo. Son las tres reglas que faltaban y que dejaban al mismo conductor reservando
+     * dos conectores a la misma hora con un solo auto.
+     */
+    @Nested
+    @DisplayName("Un conductor, una reserva por vez")
+    class OneAtATimePerDriver {
+
+        /** El código viaja en el cuerpo del 409 y el front elige el mensaje con él: se prueba. */
+        private String codeOf(Throwable thrown) {
+            assertThat(thrown).isInstanceOf(DriverAlreadyBookedException.class);
+            return ((DriverAlreadyBookedException) thrown).code();
+        }
+
+        @Test
+        @DisplayName("Retener de nuevo reemplaza la retención anterior y libera el slot que tenía")
+        void newHoldReplacesTheDriverPreviousOne() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            TimeWindow first = windowIn(2);
+
+            service.startHold(CONNECTOR, first, DRIVER);
+            service.startHold(CONNECTOR + 1, windowIn(4), DRIVER);
+
+            // Una sola retención viva, y la que soltó dejó el slot libre para cualquier otro.
+            assertThat(service.activeHoldCount()).isEqualTo(1);
+            assertThat(service.startHold(CONNECTOR, first, OTHER_DRIVER).driverId())
+                    .isEqualTo(OTHER_DRIVER);
+        }
+
+        /* El caso que antes contestaba 409 sobre un slot propio y el front tapaba recordando el hold. */
+        @Test
+        @DisplayName("Volver a pedir el mismo horario que uno ya tenía retenido no es un conflicto")
+        void rebookingTheSameWindowIsNotAConflict() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            TimeWindow window = windowIn(2);
+            service.startHold(CONNECTOR, window, DRIVER);
+
+            assertThatCode(() -> service.startHold(CONNECTOR, window, DRIVER)).doesNotThrowAnyException();
+            assertThat(service.activeHoldCount()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("Con el auto cargando no se reserva nada, ni para más tarde")
+        void aBookingInProgressBlocksEverything() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            service.confirmBooking(
+                    service.startHold(CONNECTOR, windowIn(1), DRIVER).id(), DRIVER);
+
+            // El reloj entra en la ventana reservada: la reserva pasa a estar en curso.
+            clock.advance(Duration.ofMinutes(70));
+
+            Throwable thrown = catchThrowable(() -> service.startHold(CONNECTOR + 1, windowIn(5), DRIVER));
+            assertThat(codeOf(thrown)).isEqualTo("DRIVER_CHARGING");
+
+            // Y el conector sigue libre para cualquier otro: lo que está tomado es el conductor.
+            assertThatCode(() -> service.startHold(CONNECTOR + 1, windowIn(5), OTHER_DRIVER))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("No se puede reservar el mismo horario en dos estaciones distintas")
+        void cannotBookTwoConnectorsForTheSameHours() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            TimeWindow window = windowIn(2);
+            service.confirmBooking(service.startHold(CONNECTOR, window, DRIVER).id(), DRIVER);
+
+            Throwable thrown = catchThrowable(() -> service.startHold(CONNECTOR + 1, window, DRIVER));
+            assertThat(codeOf(thrown)).isEqualTo("DRIVER_WINDOW_TAKEN");
+
+            // Media hora de cruce es cruce igual.
+            assertThatThrownBy(() -> service.startHold(
+                            CONNECTOR + 1,
+                            new TimeWindow(
+                                    window.start().plus(Duration.ofMinutes(30)),
+                                    window.end().plus(Duration.ofMinutes(30))),
+                            DRIVER))
+                    .isInstanceOf(DriverAlreadyBookedException.class);
+        }
+
+        /* El bloqueo es por hora y no por conductor a secas: dos cargas en el día son legítimas. */
+        @Test
+        @DisplayName("Dos reservas del mismo conductor en horarios que no se cruzan se permiten")
+        void allowsTwoBookingsAtDifferentHours() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            service.confirmBooking(
+                    service.startHold(CONNECTOR, windowIn(2), DRIVER).id(), DRIVER);
+
+            assertThatCode(() -> service.confirmBooking(
+                            service.startHold(CONNECTOR, windowIn(4), DRIVER).id(), DRIVER))
+                    .doesNotThrowAnyException();
+            assertThat(service.getDriverBookings(DRIVER)).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("Cancelada la reserva, el conductor queda libre para ese horario")
+        void cancellingFreesTheDriver() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            TimeWindow window = windowIn(2);
+            Booking booking = service.confirmBooking(
+                    service.startHold(CONNECTOR, window, DRIVER).id(), DRIVER);
+
+            service.cancelBooking(booking.getId(), DRIVER);
+
+            assertThatCode(() -> service.startHold(CONNECTOR + 1, window, DRIVER))
+                    .doesNotThrowAnyException();
+        }
+
+        /*
+         * La regla se vuelve a chequear al confirmar, y no es redundante: entre retener y confirmar
+         * pasan minutos, y en el medio la reserva que el conductor ya tenía puede haber arrancado.
+         */
+        @Test
+        @DisplayName("Si la carga arrancó mientras revisaba, confirmar se rechaza")
+        void confirmRecheckesTheDriver() {
+            started(AVAILABLE, Duration.ofHours(2));
+            service.confirmBooking(
+                    service.startHold(CONNECTOR, windowIn(1), DRIVER).id(), DRIVER);
+            Hold later = service.startHold(CONNECTOR + 1, windowIn(5), DRIVER);
+
+            clock.advance(Duration.ofMinutes(70));
+
+            Throwable thrown = catchThrowable(() -> service.confirmBooking(later.id(), DRIVER));
+            assertThat(codeOf(thrown)).isEqualTo("DRIVER_CHARGING");
+        }
     }
 
     /*
@@ -658,6 +812,243 @@ class BookingServiceImplTest {
             assertThatThrownBy(() -> service.getAvailability(
                             CONNECTOR, clock.instant().plus(Duration.ofHours(2)), clock.instant()))
                     .isInstanceOf(InvalidBookingRequestException.class);
+        }
+    }
+
+    /** La seña al cancelar (ECO-53) y la incomparecencia (ECO-57). */
+    @Nested
+    class DepositAndNoShow {
+
+        /** Una reserva con seña cobrada que empieza dentro de {@code hoursFromNow} horas. */
+        private Booking paidBookingIn(long hoursFromNow) {
+            Hold hold = service.startHold(CONNECTOR, windowIn(hoursFromNow), DRIVER);
+            return service.confirmBooking(hold.id(), DRIVER, PAID, "checkout-key-1");
+        }
+
+        @Test
+        @DisplayName("Confirmar con seña la anota y fija la devolución hasta 5 horas antes del inicio")
+        void confirmingWithADepositRecordsIt() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+
+            Booking booking = paidBookingIn(24);
+
+            assertThat(booking.getDepositStatus()).isEqualTo(DepositStatus.CHARGED);
+            assertThat(booking.getDepositAmount()).isEqualByComparingTo("8000");
+            assertThat(booking.getDepositChargeId()).isEqualTo(77L);
+            assertThat(booking.getDepositRefundableUntil())
+                    .isEqualTo(booking.getWindow().start().minus(REFUND_NOTICE));
+            assertThat(service.findByCheckoutKey(DRIVER, "checkout-key-1")).contains(booking);
+            assertThat(service.findByCheckoutKey(OTHER_DRIVER, "checkout-key-1"))
+                    .isEmpty();
+        }
+
+        @Test
+        @DisplayName("Cancelar justo 5 horas antes del inicio devuelve la seña")
+        void cancellingExactlyAtTheDeadlineRefunds() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(6);
+
+            clock.advance(Duration.ofHours(1)); // faltan exactamente 5 horas
+            service.cancelBooking(booking.getId(), DRIVER);
+
+            Booking cancelled = repository.findById(booking.getId()).orElseThrow();
+            assertThat(cancelled.getStatus()).isEqualTo(BookingStatus.CANCELLED);
+            assertThat(cancelled.getDepositStatus()).isEqualTo(DepositStatus.REFUND_PENDING);
+            assertThat(service.findPendingDepositRefunds()).containsExactly(cancelled);
+
+            BookingEvent event = events.published().get(events.published().size() - 1);
+            assertThat(event.type()).isEqualTo(BookingEventType.BOOKING_CANCELLED);
+            assertThat(event.depositRefunded()).isTrue();
+            assertThat(event.cardLastFour()).isEqualTo("4242");
+        }
+
+        @Test
+        @DisplayName("Cancelar un segundo después del plazo no devuelve la seña")
+        void cancellingOneSecondLateForfeits() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(6);
+
+            clock.advance(Duration.ofHours(1).plusSeconds(1));
+            service.cancelBooking(booking.getId(), DRIVER);
+
+            Booking cancelled = repository.findById(booking.getId()).orElseThrow();
+            assertThat(cancelled.getDepositStatus()).isEqualTo(DepositStatus.FORFEITED);
+            assertThat(service.findPendingDepositRefunds()).isEmpty();
+            BookingEvent event = events.published().get(events.published().size() - 1);
+            assertThat(event.depositRefunded()).isFalse();
+            assertThat(event.depositAmount()).isEqualByComparingTo("8000");
+        }
+
+        @Test
+        @DisplayName("Cancelar una reserva sin seña no inventa una devolución")
+        void cancellingWithoutDepositHasNoRefund() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Hold hold = service.startHold(CONNECTOR, windowIn(24), DRIVER);
+            Booking booking = service.confirmBooking(hold.id(), DRIVER);
+
+            service.cancelBooking(booking.getId(), DRIVER);
+
+            assertThat(repository.findById(booking.getId()).orElseThrow().getDepositStatus())
+                    .isEqualTo(DepositStatus.NONE);
+            assertThat(events.published().get(events.published().size() - 1).depositRefunded())
+                    .isNull();
+        }
+
+        @Test
+        @DisplayName("Anotar la devolución deja la seña como devuelta")
+        void markingTheRefundCompletesIt() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(24);
+            service.cancelBooking(booking.getId(), DRIVER);
+
+            service.markDepositRefunded(booking.getId());
+
+            assertThat(repository.findById(booking.getId()).orElseThrow().getDepositStatus())
+                    .isEqualTo(DepositStatus.REFUNDED);
+            assertThat(service.findPendingDepositRefunds()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("Pasados 15 minutos del inicio sin presentarse, es una incomparecencia y la seña se pierde")
+        void noShowAfterTheGracePeriod() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(1);
+
+            clock.advance(Duration.ofHours(1).plus(NO_SHOW_GRACE));
+            int marked = service.expireNoShows();
+
+            assertThat(marked).isEqualTo(1);
+            Booking noShow = repository.findById(booking.getId()).orElseThrow();
+            assertThat(noShow.getStatus()).isEqualTo(BookingStatus.NO_SHOW);
+            assertThat(noShow.getDepositStatus()).isEqualTo(DepositStatus.FORFEITED);
+            BookingEvent event = events.published().get(events.published().size() - 1);
+            assertThat(event.type()).isEqualTo(BookingEventType.BOOKING_NO_SHOW);
+            assertThat(event.eventId()).isEqualTo("booking-" + booking.getId() + "-BOOKING_NO_SHOW");
+        }
+
+        @Test
+        @DisplayName("Un segundo antes de cumplirse la tolerancia, todavía no es una incomparecencia")
+        void notANoShowBeforeTheGracePeriodEnds() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(1);
+
+            clock.advance(Duration.ofHours(1).plus(NO_SHOW_GRACE).minusSeconds(1));
+
+            assertThat(service.expireNoShows()).isZero();
+            assertThat(repository.findById(booking.getId()).orElseThrow().getStatus())
+                    .isEqualTo(BookingStatus.CONFIRMED);
+        }
+
+        @Test
+        @DisplayName("El barrido no toca una reserva cancelada, y una incomparecencia no se marca dos veces")
+        void noShowOnlyTouchesConfirmedBookings() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking cancelled = paidBookingIn(1);
+            service.cancelBooking(cancelled.getId(), DRIVER);
+            Hold other = service.startHold(CONNECTOR + 1, windowIn(2), OTHER_DRIVER);
+            service.confirmBooking(other.id(), OTHER_DRIVER);
+
+            // La de OTHER_DRIVER empieza en 2 h y dura 1: a las 2 h 15 m está dentro de su ventana.
+            clock.advance(Duration.ofHours(2).plus(NO_SHOW_GRACE));
+
+            assertThat(service.expireNoShows()).isEqualTo(1);
+            assertThat(service.expireNoShows()).isZero();
+            assertThat(repository.findById(cancelled.getId()).orElseThrow().getStatus())
+                    .isEqualTo(BookingStatus.CANCELLED);
+        }
+
+        @Test
+        @DisplayName("Una reserva cuya ventana ya terminó entera no se marca: queda como estaba, sin aviso")
+        void finishedWindowsAreLeftAlone() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(1);
+            int eventsBefore = events.published().size();
+
+            // Termina a las 2 h: el barrido llega cuando ya terminó (reserva vieja o servidor apagado).
+            clock.advance(Duration.ofHours(2));
+
+            assertThat(service.expireNoShows()).isZero();
+            Booking untouched = repository.findById(booking.getId()).orElseThrow();
+            assertThat(untouched.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+            assertThat(untouched.getDepositStatus()).isEqualTo(DepositStatus.CHARGED);
+            assertThat(events.published()).hasSize(eventsBefore);
+        }
+
+        @Test
+        @DisplayName("Una incomparecencia libera al conductor y al conector, y ya no se puede cancelar")
+        void noShowFreesTheDriverAndTheConnector() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(1);
+            clock.advance(Duration.ofHours(1).plus(NO_SHOW_GRACE));
+
+            // Antes del barrido, la reserva en curso bloquea al conductor para cualquier otra.
+            assertThatThrownBy(() -> service.startHold(CONNECTOR + 1, windowIn(5), DRIVER))
+                    .isInstanceOf(DriverAlreadyBookedException.class);
+
+            service.expireNoShows();
+
+            assertThatCode(() -> service.startHold(CONNECTOR + 1, windowIn(5), DRIVER))
+                    .doesNotThrowAnyException();
+            // El resto de la ventana del conector vuelve a estar libre para otro conductor.
+            Instant now = clock.instant();
+            assertThat(service.getAvailability(
+                            CONNECTOR, now, booking.getWindow().end()))
+                    .containsExactly(new TimeWindow(now, booking.getWindow().end()));
+            assertThatThrownBy(() -> service.cancelBooking(booking.getId(), DRIVER))
+                    .isInstanceOf(BookingStateConflictException.class);
+        }
+
+        @Test
+        @DisplayName(
+                "RF13 / ECO-59: falla en la habilitación dentro de la ventana libera la reserva sin penalización y reintegra el 100% de la seña")
+        void activationFailureInsideWindowRefundsFullDepositAndFreesDriverAndConnector() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(1);
+
+            // El conductor llega en horario (ya venció hace rato el plazo de 5 h de preaviso).
+            clock.advance(Duration.ofHours(1).plusMinutes(5));
+
+            Booking released = service.releaseForActivationFailure(booking.getId());
+
+            assertThat(released.getStatus()).isEqualTo(BookingStatus.CANCELLED);
+            assertThat(released.getDepositStatus()).isEqualTo(DepositStatus.REFUND_PENDING);
+            assertThat(released.getDepositRefundAmount()).isEqualByComparingTo("8000");
+            assertThat(released.isPartialDepositRefund()).isFalse();
+            assertThat(service.findPendingDepositRefunds()).containsExactly(released);
+
+            BookingEvent event = events.published().get(events.published().size() - 1);
+            assertThat(event.type()).isEqualTo(BookingEventType.BOOKING_CANCELLED);
+            assertThat(event.depositRefunded()).isTrue();
+
+            // El conductor y el conector quedan libres inmediatamente.
+            assertThatCode(() -> service.startHold(CONNECTOR + 1, windowIn(2), DRIVER))
+                    .doesNotThrowAnyException();
+            // Idempotente si se vuelve a llamar.
+            assertThat(service.releaseForActivationFailure(booking.getId()).getDepositStatus())
+                    .isEqualTo(DepositStatus.REFUND_PENDING);
+        }
+
+        @Test
+        @DisplayName(
+                "RF13 / ECO-59: falla con la carga en curso liquida el consumo real sin piso de la seña, reintegra la diferencia y libera el resto de la ventana")
+        void midSessionFaultSettlesRealConsumptionWithoutDepositFloor() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(1);
+
+            // Carga en curso: pasaron 20 minutos de la ventana y ocurre la falla con $3200 consumidos.
+            clock.advance(Duration.ofHours(1).plusMinutes(20));
+
+            Booking settled = service.settleFaultedBooking(booking.getId(), new BigDecimal("3200"));
+
+            assertThat(settled.getDepositStatus()).isEqualTo(DepositStatus.REFUND_PENDING);
+            assertThat(settled.getDepositRefundAmount()).isEqualByComparingTo("4800");
+            assertThat(settled.isPartialDepositRefund()).isTrue();
+            assertThat(settled.getWindow().end()).isEqualTo(clock.instant());
+            assertThat(service.findPendingDepositRefunds()).containsExactly(settled);
+
+            // El resto de la ventana quedó libre para el conductor y el conector.
+            assertThatCode(() -> service.startHold(CONNECTOR + 1, windowIn(2), DRIVER))
+                    .doesNotThrowAnyException();
         }
     }
 }

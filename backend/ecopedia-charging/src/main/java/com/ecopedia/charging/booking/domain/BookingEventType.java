@@ -8,5 +8,6 @@ package com.ecopedia.charging.booking.domain;
  */
 public enum BookingEventType {
     BOOKING_CONFIRMED,
-    BOOKING_CANCELLED
+    BOOKING_CANCELLED,
+    BOOKING_NO_SHOW
 }

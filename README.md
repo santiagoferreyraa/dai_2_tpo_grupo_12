@@ -25,7 +25,8 @@ TP Integrador — **Desarrollo de Aplicaciones II** (3.4.218, Comisión Lunes TM
 - Maven 3.9+
 - Node 20+
 - pnpm 11+ *(`npm install -g pnpm`)*
-- Docker Desktop *(opcional — solo para el ambiente de la demo; ver "Los tres ambientes")*
+- Docker Desktop *(opcional — para el ambiente de la demo, ver "Los tres ambientes", o para correr
+  todo sin instalar nada más, ver "Todo con Docker")*
 
 ---
 
@@ -53,6 +54,11 @@ su propio scroll. Se cambia de uno a otro con las flechas, y las teclas están s
 vista en el recuadro de ayuda. Es [mprocs](https://www.npmjs.com/package/mprocs), y se
 configura en `mprocs.yaml`.
 
+**Cada proceso aparece con su puerto y el mismo nombre que tiene en `docker-compose.yml`**
+(`8081 core`, `8082 charging`, `8086 payment-gateway`…), así la lista sale ordenada y se llama
+igual acá y en el servidor. El último, `docker`, levanta el broker (`docker compose up -d activemq`)
+y termina: queda en DOWN y es lo esperado. Si Docker no está abierto, el error queda en ese panel.
+
 Lo que más se usa: **reiniciar un solo proceso sin bajar el otro**. Tocaste una clase del
 backend y querés relevantarlo sin perder el estado del navegador — lo reiniciás desde el
 panel y Vite ni se entera.
@@ -60,29 +66,43 @@ panel y Vite ni se entera.
 El frontend queda en http://localhost:5173. **Se navega siempre por el 5173:** el proxy ya está
 configurado y reparte `/api` entre los backends.
 
-**Son tres procesos, porque son tres artefactos desplegables**: `ecopedia-core` en el 8081
-(usuarios, estaciones), `ecopedia-charging` en el 8082 (reservas) y `ecopedia-integration` en el
-8083 (medios de pago). Ver ARQUITECTURA §6.4. El proxy de Vite manda `/api/bookings` al 8082,
-`/api/payment-methods` al 8083 y todo lo demás al 8081, así que desde el navegador se ve como una
+**Son cuatro procesos, porque son cuatro artefactos desplegables**: `ecopedia-core` en el 8081
+(usuarios, estaciones), `ecopedia-charging` en el 8082 (reservas), `ecopedia-integration` en el
+8083 (medios de pago) y `ecopedia-async` en el 8084 (notificaciones). Ver ARQUITECTURA §6.4. El
+proxy de Vite manda `/api/bookings` al 8082, `/api/payment-methods` al 8083,
+`/api/notifications` al 8084 y todo lo demás al 8081, así que desde el navegador se ve como una
 sola API.
+
+**El sexto es el asistente del chat** (`8085 agent`), un proceso en Node y no en Java: el proxy le
+manda `/api/agent`. Sin clave de Gemini arranca igual. Ver "El asistente", más abajo.
+
+**Del séptimo al noveno proceso no son Ecopedia:** son los sistemas externos simulados. La pasarela
+de pagos, en el 8086 (`8086 payment-gateway` en el panel), a la que Pagos le habla por REST; la
+distribuidora eléctrica, en el 8087 (`8087 power-grid`), a la que RedEléctrica le pregunta por SOAP
+antes de una carga rápida; y los cargadores, en el 8088 (`8088 charger`), que Terminales enciende y apaga por REST y que
+publican la telemetría en el broker. El navegador nunca les habla directo. Ver "La pasarela de pagos
+simulada", "La distribuidora eléctrica simulada" y "Los cargadores simulados", más abajo.
 
 | Comando | Qué hace |
 |---------|----------|
-| `pnpm dev` | Los tres backends, el asistente y el front, cada uno en su panel |
+| `pnpm dev` | Los nueve procesos, cada uno en su panel |
 | `pnpm dev:back` | Solo `ecopedia-core` (8081) |
 | `pnpm dev:charging` | Solo Reservas (`ecopedia-charging`, 8082). Necesita el backend arriba |
 | `pnpm dev:pay` | Solo Pagos (`ecopedia-integration`, 8083), que sirve los medios de pago |
-| `pnpm dev:async` | Solo Notificaciones (`ecopedia-async`, 8084). Necesita el broker: ver "Notificaciones" |
+| `pnpm dev:async` | Solo Notificaciones (`ecopedia-async`, 8084). Para recibir avisos necesita el broker: ver "Notificaciones" |
+| `pnpm dev:gateway` | Solo la pasarela de pagos simulada (8086). Pagos la necesita para cargar tarjetas |
+| `pnpm dev:grid` | Solo la distribuidora eléctrica simulada (8087, SOAP). Todavía no la llama ninguna pantalla |
+| `pnpm dev:charger` | Solo los cargadores simulados (8088). Para encender necesitan el broker. Todavía no los llama ninguna pantalla |
 | `pnpm dev:agent` | Solo el asistente del chat (8085). Ver "El asistente" |
 | `pnpm dev:front` | Solo el frontend |
-| `pnpm dev:plain` | Los cuatro en una sola tira de logs, con prefijos `[back]`/`[charging]`/`[pay]`/`[front]` |
-| `pnpm dev:mem` | Lo mismo, pero con las bases **en memoria**: se borra todo al bajar |
-| `pnpm demo` | Todo contra **PostgreSQL**, con Notificaciones. Necesita la infraestructura arriba |
-| `pnpm free-ports` | Libera el 8081, el 8082, el 8083, el 8084, el 8085 y el 5173 a mano |
+| `pnpm dev:plain` | Todos menos Notificaciones en una sola tira de logs, con prefijos `[back]`/`[charging]`/`[pay]`/`[gateway]`/`[grid]`/`[charger]`/`[front]` |
+| `pnpm dev:mem` | Los nueve, pero con las bases **en memoria**: se borra todo al bajar |
+| `pnpm demo` | Los nueve contra **PostgreSQL** (la pasarela, con su propia base en archivo; la distribuidora y los cargadores no tienen base). Necesita la infraestructura arriba |
+| `pnpm free-ports` | Libera el 8081, el 8082, el 8083, el 8084, el 8085, el 8086, el 8087, el 8088 y el 5173 a mano |
 | `pnpm build` | Empaqueta el frontend adentro del JAR del backend |
 | `pnpm start` | Corre ese JAR |
 
-`pnpm dev` levanta los tres backends con el perfil `local`: **bases H2 en un archivo de tu
+`pnpm dev` levanta los backends y la pasarela con el perfil `local`: **bases H2 en un archivo de tu
 disco, sin PostgreSQL instalado y sin Docker.** Lo que cargues sobrevive a bajar y volver a
 levantar. Consolas de H2: http://localhost:8081/h2-console, http://localhost:8082/h2-console y
 http://localhost:8083/h2-console
@@ -98,6 +118,87 @@ y ahí no hay nada escuchando `/api/bookings`. Para probar reservas se usa `pnpm
 **`pnpm dev` no levanta Notificaciones ni necesita Docker.** Reservas publica los avisos en el
 broker, y si el broker no está, la reserva se confirma igual y el aviso queda en el log de
 `charging`. Para trabajar sobre las notificaciones, ver "Notificaciones" más abajo.
+
+### Todo con Docker
+
+Para correr el sistema entero **sin instalar JDK, Maven, Node ni pnpm**: solo Git y Docker (Docker
+Desktop, o Docker Engine con `docker compose`). Es lo que corre el servidor de la demo.
+
+```bash
+git clone https://github.com/santiagoferreyraa/dai_2_tpo_grupo_12.git
+cd dai_2_tpo_grupo_12
+cp .env.example .env          # y completar las variables vacías (ver abajo)
+docker compose up -d --build
+```
+
+**Qué completar en el `.env`.** Todas las variables que en `.env.example` están vacías:
+
+| Variable | Qué poner |
+|---|---|
+| `ECOPEDIA_ADMIN_PASSWORD` | La contraseña de la cuenta `ADMIN` inicial, de 6 caracteres o más |
+| `ECOPEDIA_CPO_PASSWORD` | La de la cuenta `CPO` inicial, igual |
+| `ECOPEDIA_JWT_SECRET` | Cualquier texto al azar de **64 caracteres o más** (firma los tokens) |
+| Las otras seis (`ECOPEDIA_DB_PASSWORD`, `ECOPEDIA_BROKER_PASSWORD`, `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN`, `ECOPEDIA_POWER_GRID_PASSWORD`, `ECOPEDIA_CHARGER_ACCESS_TOKEN`, `ECOPEDIA_INTERNAL_TOKEN`) | Cualquier texto al azar, solo letras y números. Nadie los escribe después: los usan los procesos entre sí |
+
+Con alguna vacía, `docker compose up` no arranca y dice cuál falta. **En vez de completarlas a mano**,
+`node scripts/env-init.mjs` (= `pnpm env:init`; sin Node, ver abajo) arma el `.env` con todas al
+azar, también las dos contraseñas de las cuentas, que quedan escritas en el `.env`. No imprime
+ninguna.
+
+Y se entra por **http://localhost**, con estas dos cuentas:
+
+| Rol | Mail | Contraseña |
+|---|---|---|
+| `ADMIN` | `admin@pedia.com.ar` | la de `ECOPEDIA_ADMIN_PASSWORD` en el `.env` |
+| `CPO` | `cpo@pedia.com.ar` | la de `ECOPEDIA_CPO_PASSWORD` en el `.env` |
+
+Los mails salen de `ECOPEDIA_ADMIN_EMAIL` y `ECOPEDIA_CPO_EMAIL`, y se pueden cambiar en el `.env` antes
+del primer arranque (cambiarlos después crea otra cuenta, no renombra la anterior). **En el servidor de
+la demo las cuentas son otras**: sus mails y contraseñas están solo en el `.env` de allá y se pasan por
+privado. Core crea las dos cuentas al arrancar si no existen, y **no las vuelve a tocar**:
+la contraseña se cambia desde el perfil, y un arranque nuevo no la pisa. **Los conductores se
+registran desde la web**, y desde la cuenta `ADMIN`, en `/admin` → Usuarios, se le cambia el rol a
+cualquiera. La cuenta `CPO` es dueña de las 15 estaciones de ejemplo (si en esa base ya había otros
+`CPO`, la primera vez se reparten entre todos, por partes iguales; no se repite). La primera vez compila todo adentro de Docker: en una PC
+de desarrollo, unos 4 minutos entre construir y arrancar (más si tiene que bajar las imágenes
+base, o en una máquina chica). Las siguientes, con la caché, alrededor de un minuto. Los primeros minutos el navegador puede
+ver **502**: la página ya está, pero los módulos todavía arrancan.
+
+**Sin Node en la máquina**, el `.env` se genera con el mismo script, dentro de un contenedor:
+
+```bash
+docker run --rm -v "$PWD":/app -w /app node:24-alpine node scripts/env-init.mjs          # bash
+docker run --rm -v "${PWD}:/app" -w /app node:24-alpine node scripts/env-init.mjs        # PowerShell
+```
+
+**Qué levanta.** Once contenedores: PostgreSQL, Artemis, los cuatro módulos, los tres simuladores y
+`web`, que es [Caddy](https://caddyserver.com/) sirviendo el front y repartiendo `/api` entre los
+módulos con las mismas reglas que el proxy de Vite (`docker/Caddyfile`). **Hacia afuera solo se
+publica `web`**; los módulos y los simuladores se hablan por la red interna de compose, y la base y el
+broker quedan en `127.0.0.1`, como siempre. Corre sin perfil de Spring, o sea contra PostgreSQL:
+es el mismo ambiente que `pnpm demo`, **con los mismos volúmenes**, así que comparten los datos.
+
+| Comando | Qué hace |
+|---|---|
+| `docker compose ps` | El estado de los once. Los Java pasan a `healthy` cuando escuchan |
+| `docker compose logs -f core` | El log de uno (`charging`, `integration`, `async`, `payment-gateway`, `power-grid`, `charger`, `web`...) |
+| `docker compose down` | Baja todo. Los datos quedan en los volúmenes |
+| `git pull && docker compose up -d --build` | Actualiza a lo último |
+
+**No mezclarlo con `pnpm demo`.** Para `pnpm demo`, la infraestructura se levanta nombrando los dos
+servicios (`docker compose up -d postgres activemq`, ver "Con PostgreSQL"). Con las dos cosas arriba
+quedan dos copias de cada módulo contra la misma base y el mismo broker.
+
+**Si el 80 está ocupado** en tu máquina, agregá `ECOPEDIA_HTTP_PORT=8080` al `.env` y entrá por
+http://localhost:8080.
+
+**En un servidor, con dominio:** `ECOPEDIA_SITE_ADDRESS=<el dominio>` en el `.env`, el dominio
+apuntando a la máquina y los puertos 80 y 443 abiertos. Caddy saca el certificado de Let's Encrypt
+solo y atiende en HTTPS. Los certificados se guardan en un volumen, así que un `up` nuevo no pide
+otro.
+
+**Memoria:** cada JVM tiene un techo de 384 MB (`JAVA_TOOL_OPTIONS` en `docker-compose.yml`). Con
+todo arriba y en reposo, los once ocupan unos 2,7 GB; a Docker Desktop conviene darle al menos 6 GB.
 
 ### Los tres ambientes
 
@@ -141,7 +242,7 @@ una migración, `pnpm dev:mem` te evita el borrado en cada vuelta.
 
 #### Promover un usuario a `CPO`
 
-Registrarse deja el rol `CONDUCTOR`, así que `/stations` rebota a `/forbidden`. El ABM pide `CPO`,
+Registrarse deja el rol `CONDUCTOR`, así que `/stations` muestra "Página no encontrada". El ABM pide `CPO`,
 y el rol se cambia a mano. La consulta es la misma en los tres; cambia por dónde entrás:
 
 ```sql
@@ -157,8 +258,26 @@ justo el momento en que algo sale mal delante del docente, así que la demo no s
 
 **Un `CPO` ve y toca solo sus estaciones**: las que dio de alta él. El backend le responde 403
 ante cualquier cambio sobre una ajena, y `/stations` le muestra únicamente las propias. Las 15
-del seed son del usuario con id 1 —el primero que se registró en esa base—; el `ADMIN` las
+del seed son del usuario con id 1 —el primero que se registró en esa base—, salvo que core haya creado la
+cuenta `CPO` inicial del `.env` (ver "Todo con Docker"), que las reparte entre los `CPO`. El `ADMIN` las
 administra todas desde `/admin`.
+
+#### Sacarle el rol o dar de baja a un `ADMIN`
+
+**Desde la aplicación no se puede**, a propósito: en `/admin` los controles de una cuenta `ADMIN` están
+deshabilitados y el backend rechaza el pedido con 409 `ADMIN_PROTECTED`, también sobre la propia cuenta.
+Así nadie deja la plataforma sin administradores ni le saca el acceso a otro con un clic. A las demás
+cuentas sí se las da de baja o se les cambia el rol desde `/admin`, escribiendo la contraseña del `ADMIN`.
+
+Para un `ADMIN`, por la base, con la misma entrada que arriba:
+
+```sql
+update core.users set role = 'CONDUCTOR' where email = 'el-admin@ejemplo.com';  -- sacarle el rol
+update core.users set active = false where email = 'el-admin@ejemplo.com';      -- darlo de baja
+```
+
+Core lee el rol y el estado de la base en cada pedido, así que en `/admin` el cambio vale en el acto; los
+otros módulos solo miran el token, que vence a las 2 horas. **Antes de tocar uno, comprobar que quede otro `ADMIN` activo.**
 
 ### Si el puerto quedó tomado
 
@@ -190,15 +309,19 @@ lo que se documenta y se defiende. Primero, una sola vez, el `.env` (ver abajo):
 pnpm env:init
 ```
 
-Después la infraestructura:
+Después la infraestructura. **`pnpm demo` la levanta sola** con su proceso `docker`; a mano es:
 
 ```bash
-docker compose up -d
+docker compose up -d postgres activemq
 ```
+
+**Nombrando los dos servicios.** Un `docker compose up` a secas levanta el sistema entero en
+contenedores (ver "Todo con Docker"), y con `pnpm demo` arriba quedarían dos copias de cada
+módulo contra la misma base y el mismo broker.
 
 Deja arriba PostgreSQL (`localhost:5432`) y ActiveMQ Artemis (`localhost:61616`, consola web en
 http://localhost:8161/console). **Los dos escuchan solo en `127.0.0.1`**: desde otra máquina de la
-red no se llega, y está bien, porque los usan los backends de esta misma. Y después los cinco
+red no se llega, y está bien, porque los usan los backends de esta misma. Y después los
 procesos:
 
 ```bash
@@ -210,10 +333,10 @@ apunta a PostgreSQL. Si preferís uno solo, `pnpm demo:back`, `pnpm demo:chargin
 `pnpm demo:pay` y `pnpm demo:async`.
 
 **Si la base no está arriba, el backend no arranca.** Es el error más común de este ambiente, y
-casi siempre falta el `docker compose up -d`. Se ve en dos lugares distintos y conviene reconocer
+casi siempre falta el `docker compose up -d postgres activemq`. Se ve en dos lugares distintos y conviene reconocer
 los dos:
 
-- **En el panel `back`**, al final de la traza: `java.net.ConnectException: Connection refused`,
+- **En el panel `8081 core`**, al final de la traza: `java.net.ConnectException: Connection refused`,
   y el proceso termina con `BUILD FAILURE`.
 - **En el navegador**, algo menos obvio: **el front levanta igual y cada llamada a `/api`
   devuelve 502.** El proxy de Vite sigue en pie, pero no tiene a quién reenviarle. Un 502 acá no
@@ -226,13 +349,39 @@ que puedan migrar por separado sin pisarse.
 #### El `.env`
 
 Los secretos viven en un `.env` en la raíz, **que no se versiona**. `pnpm env:init` lo genera a
-partir de `.env.example` con valores al azar, y no pisa uno que ya exista. Tiene tres variables:
+partir de `.env.example` con valores al azar, y no pisa uno que ya exista. Tiene siete secretos,
+las dos cuentas iniciales y dos ajustes:
 
 | Variable | Qué es |
 |---|---|
 | `ECOPEDIA_JWT_SECRET` | La firma de los tokens. La comparten los cuatro backends |
 | `ECOPEDIA_DB_PASSWORD` | La contraseña de PostgreSQL |
 | `ECOPEDIA_BROKER_PASSWORD` | La contraseña de Artemis |
+| `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN` | La clave con la que Pagos se presenta ante la pasarela simulada. La leen los dos |
+| `ECOPEDIA_POWER_GRID_PASSWORD` | La contraseña del UsernameToken con que RedEléctrica se presenta ante la distribuidora simulada. La leen los dos |
+| `ECOPEDIA_CHARGER_ACCESS_TOKEN` | La clave con la que Terminales (en core) se presenta ante los cargadores simulados. La leen los dos |
+| `ECOPEDIA_INTERNAL_TOKEN` | La clave de servicio entre artefactos de Ecopedia, para las rutas `/internal/**` (hoy, `charging` llamando a RedEléctrica y al cobro de la seña en `integration`). La leen los dos |
+| `ECOPEDIA_ADMIN_EMAIL`, `ECOPEDIA_ADMIN_PASSWORD`, `ECOPEDIA_CPO_EMAIL`, `ECOPEDIA_CPO_PASSWORD` | Las cuentas con las que se entra la primera vez (ver "Todo con Docker"). `docker compose up` las exige; `pnpm dev` y `pnpm demo` las crean solo si están |
+| `ECOPEDIA_LOGIN_MAX_FAILURES` | Cuántos logins fallidos seguidos bloquean una cuenta. Sin valor, 5 |
+| `ECOPEDIA_LOGIN_LOCK_MINUTES` | Cuántos minutos dura ese bloqueo. Sin valor, 15; para la demo conviene 1 |
+
+Un `.env` generado antes de que existieran los dos ajustes no los tiene, y no hace falta
+regenerarlo: core usa los valores por defecto. Para cambiarlos, se agregan a mano.
+
+**Un `.env` anterior a las cuentas iniciales no las tiene**, y con él `docker compose up` no arranca
+(dice cuál falta). Se agregan a mano las cuatro líneas de `.env.example`, con las contraseñas
+completas. Las cuentas se crean en el arranque siguiente, sin tocar los datos que ya había.
+
+**La clave de la pasarela, la contraseña de la distribuidora, la clave de los cargadores y la de servicio,
+en cambio, son secretos:** un `.env` anterior no las tiene, y sin ellas `pnpm demo` no levanta los procesos que
+las usan (`Could not resolve placeholder 'ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN'` en la pasarela y en
+Pagos, `... 'ECOPEDIA_POWER_GRID_PASSWORD'` en la distribuidora y también en Pagos, que es el mismo
+artefacto que RedEléctrica, y `... 'ECOPEDIA_CHARGER_ACCESS_TOKEN'` en los cargadores y **en core**,
+que es el que les da las órdenes, y `... 'ECOPEDIA_INTERNAL_TOKEN'` en Pagos y en Reservas). Se agrega a
+mano la línea que falte, `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN=`, `ECOPEDIA_POWER_GRID_PASSWORD=`,
+`ECOPEDIA_CHARGER_ACCESS_TOKEN=` o `ECOPEDIA_INTERNAL_TOKEN=`, con cualquier valor largo al azar, o se borra el `.env` y se corre
+`pnpm env:init` de nuevo (eso cambia también los demás secretos). `pnpm dev` y `pnpm dev:mem` no
+las necesitan.
 
 `docker compose` lo lee solo, y los scripts del backend lo cargan con `scripts/with-env.mjs`,
 así que no hay que exportar nada a mano. Una variable que ya esté en el entorno le gana al
@@ -306,26 +455,30 @@ Al confirmar o cancelar una reserva, Reservas deja un mensaje en la cola
 `notifications.dispatch` de Artemis, y `ecopedia-async` (8084) lo consume, arma el aviso, lo
 guarda y manda el mail. **El mail es simulado:** se escribe en el log.
 
-Necesita el broker, que es el de `docker-compose.yml`. Para probarlo sin tocar PostgreSQL alcanza
-con levantar solo el broker y usar el ambiente propio. El broker también necesita el `.env`
-(`pnpm env:init`, una vez):
+`pnpm dev` ya levanta `async` y también el broker, que es el de `docker-compose.yml`: lo arranca el
+proceso `docker` de la lista, sin tocar PostgreSQL. Lo único que hace falta es Docker abierto y el
+`.env`, que el broker también necesita (`pnpm env:init`, una vez). A mano, sin mprocs:
 
 ```bash
 docker compose up -d activemq
-pnpm dev          # core, Reservas, Pagos y front
-pnpm dev:async    # Notificaciones, en otra terminal
 ```
 
-Con `pnpm demo` no hace falta nada de esto: ya levanta los cinco procesos y `docker compose up -d`
-trae el broker.
+**Sin el broker el proceso arranca igual** y la campanita y la sección del perfil contestan —el
+historial es HTTP y no pasa por la cola—, pero no llega ningún aviso nuevo y el panel `8084 async` se
+llena de reintentos de conexión. Si al confirmar una reserva no aparece nada, ese panel y el
+`WARN` de `8082 charging` ("No se pudo publicar el aviso en la cola…") son los dos lugares donde
+mirar primero. Y el panel `docker`, que dice si el broker pudo arrancar.
+
+Con `pnpm demo` tampoco hace falta nada aparte: su proceso `docker` levanta el broker junto con
+PostgreSQL.
 
 Dónde se ve cada paso, después de confirmar una reserva:
 
 | Qué | Dónde |
 |-----|-------|
-| Reservas publicó | Panel `charging`: `Aviso booking-N-BOOKING_CONFIRMED publicado en la cola notifications.dispatch` |
+| Reservas publicó | Panel `8082 charging`: `Aviso booking-N-BOOKING_CONFIRMED publicado en la cola notifications.dispatch` |
 | El mensaje pasó por el broker | http://localhost:8161/console (usuario `ecopedia`, contraseña la de `ECOPEDIA_BROKER_PASSWORD` en el `.env`) → *Queues* → `notifications.dispatch`: los contadores de agregados y consumidos |
-| Notificaciones lo recibió y mandó el mail | Panel `async`: `Recibido de la cola...` y la línea `[MAIL SIMULADO]` |
+| Notificaciones lo recibió y mandó el mail | Panel `8084 async`: `Recibido de la cola...` y la línea `[MAIL SIMULADO]` |
 | Quedó guardado | `GET http://localhost:8084/api/notifications` con el token del conductor, o la consola de H2 en http://localhost:8084/h2-console (tabla `async.notifications`) |
 
 **Para ver el desacople**, que es lo que muestra la mensajería: bajá `async`, confirmá una
@@ -339,6 +492,275 @@ Dos cosas que conviene reconocer:
 - **Sin el broker, Reservas reserva igual**, y en su panel aparece en WARN
   `No se pudo publicar el aviso`, con el aviso entero. Ese aviso no se reenvía solo.
 
+#### Mensajes que no se pudieron procesar
+
+Si `async` no puede procesar un mensaje —la base no responde, o el mensaje no se puede leer—, no
+lo da por consumido y Artemis se lo vuelve a entregar: **cinco intentos**, con 2, 4, 8 y 16
+segundos de espera entre uno y otro. Al quinto fallo lo aparta en la cola de mensajes muertos
+**`DLQ.notifications.dispatch`** (en la dirección `DLA`, no en la `DLQ` común: el porqué está en el
+archivo) y sigue con los demás. La regla está en `docker/artemis/broker.properties` y vale para
+todos los destinos.
+
+En el panel `8084 async` queda un WARN por cada intento (`El mensaje booking-N-... falló en el
+intento 2 de 5`) y un ERROR en el último (`... y pasa a la cola de mensajes muertos`). Un mensaje
+que no se pudo leer aparece como `El mensaje ilegible ID:...`.
+
+**Para reprocesarlos**, una vez resuelto lo que fallaba: consola de Artemis
+(http://localhost:8161/console) → `DLA` → *Queues* → `DLQ.notifications.dispatch` → *Operations* →
+**`retryMessages()`** → *Execute*. Los manda de vuelta a `notifications.dispatch` y `async` los
+vuelve a procesar. Un aviso que ya se había guardado no se duplica: se descarta por su `eventId`.
+
+> **El número de intentos está en dos lugares:** en `broker.properties`, que es el que manda, y en
+> `ecopedia.notifications.max-delivery-attempts` de `ecopedia-async`, que solo sirve para que el
+> log diga "intento 2 de 5". `DeadLetterQueueTest` falla si no coinciden.
+
+### La pasarela de pagos simulada
+
+Pagos no valida ni cobra tarjetas por su cuenta: le habla por REST a la pasarela, un proceso
+aparte en `simulation/payment-gateway` (8086), con su propia base y su propio contrato (RNF04).
+La API imita la forma de la de Mercado Pago (`/v1/card_tokens`, `/v1/payments`,
+`/v1/payments/{id}/refunds`). `pnpm dev` ya la levanta; sin ella, cargar una tarjeta responde
+"No pudimos comunicarnos con el procesador de pagos".
+
+**Solo acepta tarjetas de prueba.** Cualquier otro número —aunque sea una tarjeta real y
+válida— se rechaza antes de tokenizar. Cada una se comporta distinto, para poder mostrar las
+fallas a pedido:
+
+| Número | Marca | Qué hace |
+|--------|-------|----------|
+| `4242 4242 4242 4242` | VISA | Aprueba todo |
+| `4111 1111 1111 1111` | VISA | Aprueba todo |
+| `5555 5555 5555 4444` | Mastercard | Aprueba todo |
+| `3782 822463 10005` | American Express | Aprueba todo |
+| `4000 0000 0000 0002` | VISA | Rechaza el cobro y la validación |
+| `4000 0000 0000 9995` | VISA | La validación da que sí, pero el cobro se rechaza por fondos |
+| `4000 0000 0000 0077` | VISA | Aprueba, pero tarda 8 s: más que el timeout de Pagos (5 s) |
+
+Vencimiento futuro cualquiera y cualquier nombre.
+
+**La pasarela no guarda el número de la tarjeta**, ni en la base ni en el log: guarda marca,
+últimos cuatro, vencimiento y cómo se comporta la tarjeta de prueba. Se ve en la consola de H2,
+http://localhost:8086/h2-console, tabla `card_tokens` (la URL de conexión es la que imprime el
+log). La base está en `simulation/payment-gateway/data/`, que no se versiona.
+
+Dos cosas más: **escucha solo en `127.0.0.1`** y **pide una clave en cada llamada**
+(`Authorization: Bearer`), la de `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN`. Con `pnpm dev` y
+`pnpm dev:mem` los dos lados traen la misma de desarrollo.
+
+### La seña de la reserva
+
+Confirmar una reserva **cobra la seña de verdad**, contra la pasarela de arriba. La seña es de cada
+estación y la fija su operador (en `/stations`, o el `ADMIN` en `/admin`). Las 15 estaciones del
+seed ya traen una: **$ 5.000 si tienen algún conector rápido y $ 3.000 si no**. Una estación nueva
+no pide seña hasta que su operador la cargue.
+
+| Caso | Qué pasa |
+|------|----------|
+| Tarjeta que aprueba | Se cobra y se confirma |
+| `4000 0000 0000 0002` o `…9995` | 402 `CARD_DECLINED`: no se confirma y la retención sigue, para probar con otra |
+| `4000 0000 0000 0077` (8 s) | 503 `PAYMENT_UNAVAILABLE`. El reintento con la misma clave **no cobra dos veces** |
+| Cancelar hasta 5 h antes del inicio | Se devuelve la seña, sola, en unos segundos |
+| Cancelar después | La seña no se devuelve |
+| No presentarse | A los 15 min del inicio la reserva pasa a `NO_SHOW`, el conector se libera, la seña no se devuelve y llega un aviso |
+
+**El checkout pide la cabecera `Idempotency-Key`** (sin ella, 400 `IDEMPOTENCY_KEY_REQUIRED`): el
+mismo valor en cada reintento del mismo pedido devuelve la reserva ya hecha en vez de cobrar otra
+vez. El front la genera solo; con `curl`, `-H "Idempotency-Key: $(uuidgen)"`.
+
+`charging` cobra y devuelve por **`POST /internal/payments/deposits`** y
+**`POST /internal/payments/deposits/{id}/refund`** en `integration` (8083), con la clave de servicio,
+igual que RedEléctrica: el importe lo decide Tarificación, nunca el conductor, y por eso no hay una
+ruta pública de cobro.
+
+Los plazos son configurables en `charging`, y para una demo conviene achicarlos:
+
+| Variable | Qué es | Por defecto |
+|---|---|---|
+| `ECOPEDIA_BOOKING_DEPOSIT_REFUND_NOTICE` | Hasta cuánto antes del inicio cancelar devuelve la seña | `PT5H` |
+| `ECOPEDIA_BOOKING_NO_SHOW_GRACE` | La tolerancia desde el inicio antes de marcar la incomparecencia | `PT15M` |
+| `ECOPEDIA_BOOKING_NO_SHOW_SWEEP` | Cada cuánto se buscan incomparecencias | `PT1M` |
+| `ECOPEDIA_BOOKING_DEPOSIT_REFUND_RETRY` | Cada cuánto se reintenta una devolución que no salió | `PT15S` |
+
+Si se cambia la tolerancia, hay que cambiar también los textos que dicen "15 minutos" (el aviso de
+`async` y la pantalla de reservar).
+
+### Los precios de la carga
+
+Los fija el `ADMIN` en `/admin` → Tarifas, y valen para todas las estaciones. Vienen sembrados, en
+pesos:
+
+| Qué | Precio sembrado |
+|---|---|
+| Carga normal (hasta 22 kW) | $ 350 por kWh |
+| Carga rápida (más de 22 kW) | $ 550 por kWh |
+| Multa por minuto de exceso | $ 200 |
+
+- **Normal o rápida** se decide por la potencia que se entregó de verdad: una rápida que la
+  distribuidora bajó a 22 kW se cobra como normal.
+- **Hora pico:** si la carga **empieza** entre las 18:00 y las 21:59 (hora argentina) y la estación
+  la tiene activada, el kWh vale ×1,2. Decide la hora de inicio: empezar 21:30 es pico aunque termine
+  después de las 22.
+- **Multa:** pasados 15 minutos de exceso, todos los minutos se cobran ×1,5. Se suma con la hora pico.
+
+La franja, los factores, el corte de 22 kW y la zona horaria están en `ecopedia.pricing` del
+`application.yml` de core. **El corte de 22 kW tiene que coincidir** con el de `charging`
+(`ecopedia.charging.fast-charge-threshold-kw`).
+
+`GET /api/pricing/estimate?connectorId=&estimatedKwh=&start=` dice cuánto saldría una carga y con qué
+precio; sirve para probar la hora pico con `curl` sin esperar a las 18.
+
+### La distribuidora eléctrica simulada
+
+Antes de habilitar una carga rápida, RedEléctrica le pregunta a la distribuidora si el nodo de la
+estación aguanta la potencia pedida (RF15). La distribuidora es el sistema legado: un proceso aparte
+en `simulation/power-grid` (8087), que publica un servicio **SOAP con su WSDL** (RNF04). `pnpm dev`
+ya la levanta. **Todavía no la llama ninguna pantalla:** quien la usa es SesionesDeCarga, por la ruta
+interna de abajo, y la habilitación que la dispara llega con ECO-44.
+
+| Qué | Dónde |
+|-----|-------|
+| El servicio | `POST http://localhost:8087/ws` |
+| El WSDL | http://localhost:8087/ws/powerGrid.wsdl |
+| El XSD que importa | http://localhost:8087/ws/power-grid.xsd |
+
+Una sola operación, `CheckNodeFeasibility`: recibe `nodeId` y `requestedPowerKw` y contesta
+`feasible`, `maxAllowedPowerKw` y, si no autoriza, el motivo. **Un "no" de la red es una respuesta,
+no un error.** Los Faults son dos: `UnknownNodeFault` (el nodo no existe) e `InvalidDemandFault`
+(potencia nula, negativa o de más de 1000 kW).
+
+**Conoce solo un catálogo de nodos de prueba**, uno por comportamiento. Las 15 estaciones del seed
+ya tienen el suyo (el campo "nodo de la distribuidora" de los formularios de estación):
+
+| Nodo | Qué hace | Estaciones del seed |
+|------|----------|---------------------|
+| `CABA-CENTRO` | Autoriza hasta 600 kW | 1, 2, 4, 5 |
+| `CABA-NORTE` | Autoriza hasta 400 kW | 3, 6, 7, 8 |
+| `CABA-OESTE` | Tope de demanda vigente: autoriza hasta 50 kW | 9, 10 |
+| `CABA-SUR` | En mantenimiento: no autoriza nada | 11 |
+| `GBA-NORTE` | Autoriza hasta 300 kW | 12, 13, 14 |
+| `LA-PLATA` | Autoriza, pero tarda 8 s: más que el timeout de RedEléctrica (5 s) | 15 |
+
+**Pide WS-Security en cada pedido:** un UsernameToken con el usuario `ecopedia` y la contraseña de
+`ECOPEDIA_POWER_GRID_PASSWORD` (con `pnpm dev` y `pnpm dev:mem`, una de desarrollo). Además escucha
+solo en `127.0.0.1`, valida cada pedido contra el XSD, rechaza el XML con `DOCTYPE` (no hay
+entidades externas) y corta los pedidos de más de 16 KB.
+
+**Para probarla contra el proceso real**, con la distribuidora arriba (`pnpm dev:grid`):
+
+```bash
+mvn -pl backend/ecopedia-integration test -Dtest=PowerGridLiveTest -Dpower-grid.live=true
+```
+
+Corre cada nodo, los dos Faults, la contraseña equivocada y el timeout del nodo lento con el
+cliente de verdad. CI no lo corre, porque necesita el proceso levantado. Si el `.env` tiene
+`ECOPEDIA_POWER_GRID_PASSWORD` (con `pnpm dev` también la usan), se agrega `-Dpower-grid.password=` con esa.
+
+#### Quién le pregunta: SesionesDeCarga, por una ruta interna
+
+SesionesDeCarga vive en `ecopedia-charging` y RedEléctrica en `ecopedia-integration`, así que le pregunta
+por **`POST /internal/power-grid/feasibility`** (8083). Las rutas `/internal/**` no son para usuarios: piden
+la **clave de servicio** (`ECOPEDIA_INTERNAL_TOKEN`, Bearer), el token de un conductor no las abre, y el
+proxy de Vite no las manda. Contesta 200 con la respuesta de la red (también un "no"), 422 con el motivo
+si la distribuidora rechazó el pedido (`UNKNOWN_NODE`, `INVALID_DEMAND`) y 503 si no contestó.
+
+Con la respuesta, `ChargingPowerPolicy` decide con qué potencia se habilita el conector (decidido el
+28/10; todavía no la llama nadie, la usa la habilitación de ECO-44):
+
+| Caso | Potencia |
+|------|----------|
+| Conector de hasta 22 kW | La suya, sin preguntar (RF15 pide la consulta solo para la carga rápida) |
+| La red autoriza | La del conector |
+| La red dice que no, con tope | Hasta el tope |
+| La red dice que no, con tope 0 (`CABA-SUR`) | No arranca: es la falla de RF13, reintegro de la seña |
+| Estación sin nodo, nodo desconocido, red caída o lenta | Potencia normal, 22 kW |
+
+Para probar el recorrido entero, con `pnpm dev` arriba:
+
+```bash
+mvn -pl backend/ecopedia-charging test -Dtest=PowerGridFeasibilityLiveTest -Dpower-grid.live=true
+```
+
+Si el `.env` tiene `ECOPEDIA_INTERNAL_TOKEN`, se agrega `-Dinternal.token=` con esa.
+
+Para mirarla a mano, un pedido mínimo con `curl` (el cuerpo, en un archivo):
+
+```xml
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                  xmlns:pg="http://ecopedia.com/simulation/power-grid/v1">
+  <soapenv:Header>
+    <wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
+      <wsse:UsernameToken>
+        <wsse:Username>ecopedia</wsse:Username>
+        <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText">ecopedia-dev-only-power-grid-password</wsse:Password>
+      </wsse:UsernameToken>
+    </wsse:Security>
+  </soapenv:Header>
+  <soapenv:Body>
+    <pg:CheckNodeFeasibilityRequest>
+      <pg:nodeId>CABA-OESTE</pg:nodeId>
+      <pg:requestedPowerKw>150</pg:requestedPowerKw>
+    </pg:CheckNodeFeasibilityRequest>
+  </soapenv:Body>
+</soapenv:Envelope>
+```
+
+```bash
+curl -H "Content-Type: text/xml" --data-binary @pedido.xml http://localhost:8087/ws
+```
+
+### Los cargadores simulados
+
+El hardware de las estaciones —o la central del fabricante que lo controla— es un proceso aparte en
+`simulation/charger` (8088). Terminales le da dos órdenes por REST, **encender** y **apagar** un
+conector, y mientras el conector carga, el simulador publica una lectura cada 2 segundos en el
+**tópico** `telemetry.charging` de Artemis: kWh acumulados, potencia y porcentaje de batería. `pnpm dev`
+ya lo levanta. **Todavía no lo llama ninguna pantalla:** la habilitación de la carga llega con ECO-44,
+y quien lee el tópico, con ECO-45.
+
+| Orden | Qué hace |
+|-------|----------|
+| `POST /v1/connectors/{id}/session` | Enciende el conector para una sesión. 201 si lo encendió; 200 si ya estaba cargando esa misma sesión |
+| `DELETE /v1/connectors/{id}/session` | Lo apaga: 200 con lo entregado, o 204 si no estaba cargando |
+| `GET /v1/connectors/{id}` | En qué está: `AVAILABLE`, `CHARGING` o `FAULTED` |
+| `POST /v1/connectors/{id}/fault` | Lo rompe, para la demo: si estaba cargando, corta con una lectura de falla |
+| `DELETE /v1/connectors/{id}/fault` | Lo repara |
+
+Lo que conviene saber:
+
+- **Simula también el auto.** El pedido trae la potencia permitida (`powerLimitKw`) y, si se quiere, la
+  batería del auto y su potencia máxima; sin esos datos usa una batería de 60 kWh que llega con entre
+  el 15 y el 40 %. Carga a potencia plena hasta el 80 % y después baja, como una carga rápida de verdad.
+  Si la batería se llena, la sesión termina sola.
+- **El tiempo va acelerado:** cada 2 segundos reales carga 1 minuto, así una carga de 40 minutos dura
+  80 segundos. Se cambia con `ECOPEDIA_CHARGER_READING_INTERVAL` y `ECOPEDIA_CHARGER_MINUTES_PER_READING`.
+- **Sin broker no enciende:** contesta 503 `telemetry_unavailable`, porque una carga sin lecturas no se
+  puede cortar ni cobrar. Con `pnpm dev` lo levanta el proceso `docker`, igual que para los avisos.
+- **Cualquier id positivo es un conector:** el simulador no conoce la base de Ecopedia.
+- Escucha solo en `127.0.0.1` y pide la clave de `ECOPEDIA_CHARGER_ACCESS_TOKEN` en cada llamada
+  (`Authorization: Bearer`); con `pnpm dev`, una de desarrollo.
+
+Las lecturas se ven en la consola de Artemis (http://localhost:8161/console → *Addresses* →
+`telemetry.charging`) o a mano:
+
+```bash
+# Con `pnpm dev` la clave es la de desarrollo del perfil `local` (ver application.yml del simulador).
+TOKEN="${ECOPEDIA_CHARGER_ACCESS_TOKEN:?Exportá ECOPEDIA_CHARGER_ACCESS_TOKEN}"
+curl -X POST http://localhost:8088/v1/connectors/1/session \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"sessionId":"prueba-1","powerLimitKw":50}'
+curl http://localhost:8088/v1/connectors/1 -H "Authorization: Bearer $TOKEN"
+```
+
+**Para probarlo contra el proceso real**, con el simulador y el broker arriba:
+
+```bash
+mvn -pl backend/ecopedia-core test -Dtest=ChargerLiveTest -Dcharger.live=true -Dcharger.broker-password=<la del .env>
+```
+
+Enciende un conector con el cliente de core, escucha el tópico, lo apaga, y prueba un conector roto y
+la clave equivocada. CI no lo corre. Si el `.env` tiene `ECOPEDIA_CHARGER_ACCESS_TOKEN`, el simulador
+usa esa clave, y se agrega `-Dcharger.token=` con la misma.
+
 ### El asistente
 
 La burbuja de abajo a la derecha abre un chat con un agente que entiende pedidos como *"estoy en
@@ -347,16 +769,16 @@ sesión iniciada, también dice qué horarios tiene libres un conector. **Solo c
 ni confirma nada**, eso se hace desde el mapa.
 
 Es un proceso aparte en `agent/`, en TypeScript con [Strands Agents](https://strandsagents.com) y
-Gemini, en el 8085. `pnpm dev` lo levanta en el panel `agent`, y el proxy de Vite le manda
+Gemini, en el 8085. `pnpm dev` lo levanta en el panel `8085 agent`, y el proxy de Vite le manda
 `/api/agent`. Consulta a core y a Reservas **con el token del conductor que escribe**, así que ve
 lo mismo que él. Para ubicar lugares usa Photon, el mismo servicio que el mapa.
 
 **Necesita una clave de Gemini**, que es personal y gratis:
 
 1. Sacala en https://aistudio.google.com/apikey (con una cuenta de Google, sin tarjeta).
-2. Pegala en el `.env` de la raíz: `GEMINI_API_KEY=tu_clave`. **Nunca en otro archivo**: el `.env`
+2. Pegala en el `.env` de la raíz: `GEMINI_API_KEY=tu_clave` (en el `.env.example` va comentada). **Nunca en otro archivo**: el `.env`
    es el único que no se versiona.
-3. Reiniciá el panel `agent`.
+3. Reiniciá el panel `8085 agent`.
 
 Sin clave, el agente arranca igual y el chat dice que no está configurado.
 
@@ -367,13 +789,13 @@ Cinco cosas que conviene saber:
   `GEMINI_MODELS` en orden; si todos fallan, el chat dice que está saturado.
 - **Hay un tope de 10 preguntas por minuto por persona**, para no agotar el cupo gratis. La
   undécima recibe "Esperá N segundos". Se cuenta por la dirección del navegador, que el proxy de
-  Vite le pasa al agente, y se borra al reiniciar el panel `agent`.
-- **Reiniciar el panel `agent` le borra la memoria de las conversaciones abiertas.** Cada respuesta
+  Vite le pasa al agente, y se borra al reiniciar el panel `8085 agent`.
+- **Reiniciar el panel `8085 agent` le borra la memoria de las conversaciones abiertas.** Cada respuesta
   sale sellada y el asistente descarta las que vuelven sin sello válido (así se defiende de un
   historial inventado); el sello se hace con una clave que se genera al arrancar.
 - **Google puede usar lo que se le manda** en el plan gratis para mejorar sus modelos. No
   escribas datos personales en el chat.
-- **En el panel `agent` queda una línea por pregunta**, con el tiempo y las herramientas que usó:
+- **En el panel `8085 agent` queda una línea por pregunta**, con el tiempo y las herramientas que usó:
   `[agent] 200 en 12483 ms · con sesión · herramientas: find_place, search_stations`.
 
 Los tests no salen a la red: usan un modelo guionado.
@@ -415,12 +837,10 @@ Tres cosas que conviene saber:
   Eso hace que `pnpm dev:back` sirva ese frontend congelado en el 8081. No molesta —en
   desarrollo se navega por el 5173— pero si confunde, `mvn clean` lo borra.
 
-> **Pendiente conocido, desde ECO-26.** Este JAR único sirve el frontend y la API de
-> `ecopedia-core`, pero los medios de pago viven en `ecopedia-integration`, que es otro proceso.
-> Corriendo así, `/api/payment-methods` le pega a core y devuelve 404: en desarrollo lo resuelve
-> el proxy de Vite, y en producción hace falta que algo reparta por prefijo —un reverse proxy
-> delante de los dos, o que core haga de puerta—. Es una decisión de despliegue y no de este
-> ticket, pero hay que tomarla antes de la demo del ambiente compartido.
+> **Este JAR solo no alcanza para el sistema entero.** Sirve el frontend y la API de
+> `ecopedia-core`, pero Reservas, los medios de pago y los avisos viven en otros procesos:
+> corriendo así, `/api/bookings` o `/api/payment-methods` le pegan a core y devuelven 404. En
+> desarrollo reparte el proxy de Vite; para el despliegue, Caddy (ver "Todo con Docker").
 
 ### Módulo por módulo
 
@@ -432,6 +852,9 @@ Cada artefacto tiene su puerto fijo, así los cuatro pueden estar levantados a l
 | `ecopedia-charging` | 8082 | `mvn -pl backend/ecopedia-charging spring-boot:run` |
 | `ecopedia-integration` | 8083 | `mvn -pl backend/ecopedia-integration spring-boot:run` |
 | `ecopedia-async` | 8084 | `mvn -pl backend/ecopedia-async spring-boot:run` *(consume del broker; por HTTP solo sirve el historial de avisos)* |
+| `simulation/payment-gateway` | 8086 | `mvn -pl simulation/payment-gateway spring-boot:run` *(la pasarela simulada; no es Ecopedia)* |
+| `simulation/power-grid` | 8087 | `mvn -pl simulation/power-grid spring-boot:run` *(la distribuidora simulada, SOAP; no es Ecopedia)* |
+| `simulation/charger` | 8088 | `mvn -pl simulation/charger spring-boot:run` *(los cargadores simulados; no son Ecopedia)* |
 
 Sin perfil apuntan a PostgreSQL. Para el ambiente propio y persistente va
 `-Dspring-boot.run.profiles=local`, y para el descartable en memoria,
@@ -554,6 +977,10 @@ dai_2_tpo/
 │   ├── ecopedia-charging/    # Reservas · Sesiones de carga (stateful)
 │   ├── ecopedia-integration/ # Pagos (REST) · Red Eléctrica (SOAP)
 │   └── ecopedia-async/       # Notificaciones (consumidor JMS + historial por REST)
+├── simulation/                # Los sistemas externos simulados: no son Ecopedia
+│   ├── payment-gateway/       # La pasarela de pagos (REST/JSON, 8086)
+│   ├── power-grid/            # La distribuidora eléctrica (SOAP con WSDL, 8087)
+│   └── charger/               # Los cargadores (órdenes por REST, telemetría al tópico, 8088)
 ├── frontend/                  # React + TypeScript + Vite
 │   ├── vite.config.ts         # proxy a /api, alias @/, plugin de Tailwind
 │   ├── .prettierrc.json       # Formato compartido
@@ -568,13 +995,13 @@ estos módulos, cada uno con su interfaz explícita.
 
 | Módulo | Componentes | Estado |
 |--------|-------------|--------|
-| `ecopedia-core` | TerminalService · UserService · PricingService | 🚧 scaffold |
+| `ecopedia-core` | TerminalService · UserService · PricingService · VehicleService | 🚧 scaffold |
 | `ecopedia-charging` | BookingService · ChargingSessionService *(stateful)* | 🚧 scaffold |
 | `ecopedia-integration` | PaymentService (REST) · PowerGridService (SOAP) | 🚧 scaffold |
 | `ecopedia-async` | NotificationService | 🚧 scaffold |
-| `distribuidora-soap` | Simulador del sistema legado — publica el WSDL | ⬜ pendiente |
-| `pasarela-simulada` | Simulador del partner de pagos — expone la API REST | ⬜ pendiente |
-| `cargador-simulador` | Simulador de hardware — publica telemetría al tópico | ⬜ pendiente |
+| `simulation/payment-gateway` | La pasarela de pagos — expone la API REST | ✅ |
+| `simulation/power-grid` | La distribuidora, el sistema legado — publica el WSDL | ✅ |
+| `simulation/charger` | Los cargadores — reciben órdenes por REST y publican la telemetría al tópico | ✅ |
 
 ---
 
@@ -617,8 +1044,9 @@ Así el que clona el repo levanta el módulo sin configurar nada, y el ambiente 
 arma exportando variables, sin tocar el código.
 
 **Los secretos son la excepción: no tienen valor por defecto.** La firma del JWT
-(`ECOPEDIA_JWT_SECRET`) y las contraseñas de la base (`ECOPEDIA_DB_PASSWORD`) y del broker
-(`ECOPEDIA_BROKER_PASSWORD`) salen solo del entorno. Un valor escrito en el YAML sería
+(`ECOPEDIA_JWT_SECRET`), las contraseñas de la base (`ECOPEDIA_DB_PASSWORD`) y del broker
+(`ECOPEDIA_BROKER_PASSWORD`) y la clave de la pasarela (`ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN`)
+salen solo del entorno. Un valor escrito en el YAML sería
 público, porque el repo lo es, y con el secreto del JWT a la vista cualquiera se firma un token
 de `ADMIN`. Solo los perfiles `local` y `dev` traen un secreto de desarrollo, para que
 `pnpm dev` y los tests anden sin configurar nada.

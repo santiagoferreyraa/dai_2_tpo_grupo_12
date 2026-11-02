@@ -1,33 +1,46 @@
 # Procesos de desarrollo. Los levanta `pnpm dev`.
 #
-# mprocs muestra los cuatro en la misma terminal pero SEPARADOS: la lista de procesos queda a
+# mprocs muestra todos en la misma terminal pero SEPARADOS: la lista de procesos queda a
 # la izquierda y el log del que esté seleccionado ocupa el resto. Cada uno conserva su
 # propio scroll, así que el log del backend no se mezcla con el de Vite. Las teclas están
-# siempre a la vista, en el recuadro de ayuda de abajo a la izquierda.
-#
-# La ventaja sobre correr los cuatro con prefijos en la misma consola no es solo visual: desde
-# el TUI se reinicia UNO SOLO —el backend después de tocar una clase, por ejemplo— sin
-# bajar los demás ni perder el estado del navegador.
+# siempre a la vista, en el recuadro de ayuda de abajo a la izquierda. Desde ahí se reinicia
+# UNO SOLO —core después de tocar una clase, por ejemplo— sin bajar los demás.
 #
 # Los comandos son los mismos scripts del package.json, no comandos sueltos: así `pnpm dev`
 # y `pnpm dev:back` levantan exactamente lo mismo y no hay dos definiciones que mantener
 # sincronizadas.
 #
-# Son CUATRO, y cada uno es un artefacto desplegable distinto. `charging` es Reservas (8082) y
-# necesita a `back` arriba: antes de retener un slot le pregunta a core por el conector. `pay` es
-# Pagos, que vive en ecopedia-integration (8083). Ver ARQUITECTURA §6.4.
+# **Cómo se nombran (01/11):** el puerto adelante y, después, el mismo nombre del servicio en
+# `docker-compose.yml`. Así la lista sale ordenada por puerto y cada proceso se llama igual acá y
+# en el servidor (`docker compose logs -f core`). mprocs no tiene grupos: el orden de este archivo
+# es el de la lista.
 #
-# Para trabajar solo en el mapa o en el ABM alcanza con `back` y `front`; los otros dos hacen
-# falta para reservas y para la pantalla de medios de pago.
+#   5173 front            el front (Vite), por donde se navega
+#   8081 core             Usuarios, Terminales, Tarificación, Vehículos y el backoffice
+#   8082 charging         Reservas y el checkout. Necesita a core arriba
+#   8083 integration      Pagos y RedEléctrica
+#   8084 async            Notificaciones. Necesita el broker
+#   8085 agent            El asistente del chat (Node). Necesita core y charging
+#   8086 payment-gateway  NO es Ecopedia: la pasarela de pagos simulada (REST)
+#   8087 power-grid       NO es Ecopedia: la distribuidora eléctrica simulada (SOAP)
+#   8088 charger          NO es Ecopedia: los cargadores simulados. Necesita el broker
 #
-# `agent` es el asistente del chat (8085), en TypeScript y no en Java: consulta a `back` y a
+# Para trabajar solo en el mapa o en el ABM alcanza con core y front. Ver ARQUITECTURA §6.4.
+#
+# **`docker` levanta el broker y termina**, por eso queda en DOWN: no es un error. Existe porque
+# `async` y `charger` lo necesitan y sin él nada falla a la vista: las reservas se confirman y los
+# avisos se pierden (pasó el 01/11, con Artemis detenido desde el día anterior). Si el broker ya
+# estaba arriba, no hace nada. Si Docker no está abierto o Windows tiene tomado el 61616, el error
+# queda en ese panel, que es donde hay que mirar.
+#
+# `8085 agent` es el asistente del chat, en TypeScript y no en Java: consulta a `core` y a
 # `charging` con el token del conductor. Sin GEMINI_API_KEY en el .env arranca igual, y el chat
 # avisa que no está configurado. Ver README, "El asistente".
 #
 # ---
 #
 # Éste es el ambiente PROPIO Y PERSISTENTE: perfil `local`, H2 en archivo. Tus datos
-# sobreviven a bajar y volver a levantar, y no necesitás Docker ni instalar nada.
+# sobreviven a bajar y volver a levantar.
 #
 # Hay dos hermanos de este archivo, para los otros dos ambientes:
 #
@@ -36,13 +49,23 @@
 #
 # Cuándo usar cada uno está en el README, sección "Cómo levantar el proyecto".
 procs:
-  back:
-    shell: pnpm dev:back
-  charging:
-    shell: pnpm dev:charging
-  pay:
-    shell: pnpm dev:pay
-  agent:
-    shell: pnpm dev:agent
-  front:
+  5173 front:
     shell: pnpm dev:front
+  8081 core:
+    shell: pnpm dev:back
+  8082 charging:
+    shell: pnpm dev:charging
+  8083 integration:
+    shell: pnpm dev:pay
+  8084 async:
+    shell: pnpm dev:async
+  8085 agent:
+    shell: pnpm dev:agent
+  8086 payment-gateway:
+    shell: pnpm dev:gateway
+  8087 power-grid:
+    shell: pnpm dev:grid
+  8088 charger:
+    shell: pnpm dev:charger
+  docker:
+    shell: docker compose up -d activemq

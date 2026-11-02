@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router'
 
+import NotFoundPage from './NotFoundPage'
 import { useSession } from './session'
 import type { Role } from './types'
 
@@ -11,12 +12,13 @@ interface RequireSessionProps {
 }
 
 /**
- * Guard de las rutas privadas: sin sesión manda al login, y sin el rol a acceso denegado.
+ * Guard de las rutas privadas: sin sesión manda al login, y sin el rol muestra "no encontrada".
  *
  * <p><b>Esto es experiencia de usuario, no seguridad, y conviene tenerlo clarísimo para la
  * defensa.</b> Cualquiera puede saltear este componente tocando el estado del navegador. Lo
  * que protege de verdad son los `@PreAuthorize` del backend, que corren en el servidor y
- * responden 403 aunque el front diga que sí. Este guard existe para que el usuario vea una
+ * rechazan el pedido aunque el front diga que sí —401 sin sesión, 404 con el rol equivocado—.
+ * Este guard existe para que el usuario vea una
  * pantalla de login en vez de una aplicación donde cada botón falla sin explicación.
  */
 export default function RequireSession({ roles, children }: RequireSessionProps) {
@@ -34,13 +36,13 @@ export default function RequireSession({ roles, children }: RequireSessionProps)
   if (roles !== undefined && !roles.includes(session.role)) {
     /*
      * Con sesión pero sin el rol no se manda al login: pedirle que se autentique a alguien
-     * que ya está autenticado es un lazo que no lleva a ninguna parte. Va a la pantalla de
-     * acceso denegado, que además le da una salida.
+     * que ya está autenticado es un lazo que no lleva a ninguna parte.
      *
-     * `replace` para que el botón de atrás no lo devuelva a la ruta prohibida, que lo
-     * rebotaría acá de nuevo.
+     * Se dibuja la misma pantalla que una dirección inexistente, en el lugar y sin redirigir,
+     * igual que el backend responde 404 y no 403 (SEC-05): así no se confirma que la sección
+     * existe. Ver `NotFoundPage`.
      */
-    return <Navigate to="/forbidden" replace />
+    return <NotFoundPage />
   }
 
   return children
