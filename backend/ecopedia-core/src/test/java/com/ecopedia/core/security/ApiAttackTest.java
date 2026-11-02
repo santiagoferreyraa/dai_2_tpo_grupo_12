@@ -34,11 +34,8 @@ import org.springframework.test.web.servlet.MockMvc;
  * Pruebas de ataque sobre la API de core (QA-07, ECO-157): JWT hostil, mass assignment e
  * inyección SQL / XSS.
  *
- * <p><b>El rechazo hoy es 403, no 401.</b> Los criterios piden 401 ante un JWT vencido, alterado,
- * con {@code alg=none} o de otro emisor. Core contesta 403 a propósito (#40: el front detecta así
- * la sesión vencida). Está registrado como defecto (DEF-02, ver QA-33 / ECO-183). Cuando se
- * corrija, se cambia {@link #REJECTED_AS_ANONYMOUS} a 401 y estos tests pasan a exigir el código
- * nuevo: un solo lugar para tocar.
+ * <p><b>El rechazo es 401</b> ante un JWT vencido, alterado, con {@code alg=none} o de otro
+ * emisor, como piden los criterios (QA-33, ECO-183). Hasta el 02/11 era 403 (DEF-02).
  *
  * <p><b>Cada grupo tiene un caso de control</b> con el pedido legítimo, que tiene que andar. Sin
  * él, un endpoint roto para todos haría pasar en verde los rechazos.
@@ -48,8 +45,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @ActiveProfiles("dev")
 class ApiAttackTest {
 
-    /** Lo que recibe hoy un pedido sin sesión válida. Ver la nota de la clase y DEF-02. */
-    private static final int REJECTED_AS_ANONYMOUS = 403;
+    /** Lo que recibe un pedido sin sesión válida. Ver la nota de la clase. */
+    private static final int REJECTED_AS_ANONYMOUS = 401;
 
     private static final String PASSWORD = "unaClave123";
 

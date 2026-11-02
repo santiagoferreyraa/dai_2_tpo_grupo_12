@@ -13,10 +13,7 @@ import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -112,8 +109,5 @@ public class PricingController {
                 connectorId, estimatedKwh, pricingService.calculateDeposit(connectorId), estimate);
     }
 
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<String> handleIllegalArgument(IllegalArgumentException ex) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
-    }
+    /* Los errores (400 con el motivo, 404 si la estación o el conector no existen) los traduce ApiExceptionHandler. */
 }

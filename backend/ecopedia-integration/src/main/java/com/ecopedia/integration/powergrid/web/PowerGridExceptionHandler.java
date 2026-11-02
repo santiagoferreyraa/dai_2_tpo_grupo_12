@@ -2,9 +2,10 @@ package com.ecopedia.integration.powergrid.web;
 
 import com.ecopedia.integration.powergrid.domain.PowerGridRequestRejectedException;
 import com.ecopedia.integration.powergrid.domain.PowerGridUnavailableException;
-import java.util.Map;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -18,21 +19,28 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * y el detalle técnico queda en el log de acá.
  */
 @RestControllerAdvice(basePackageClasses = PowerGridExceptionHandler.class)
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class PowerGridExceptionHandler {
 
     @ExceptionHandler(PowerGridRequestRejectedException.class)
-    public ResponseEntity<Map<String, String>> handleRejected(PowerGridRequestRejectedException exception) {
-        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
-                .body(Map.of("code", exception.getReason().name()));
+    public ProblemDetail handleRejected(PowerGridRequestRejectedException exception) {
+        return code(HttpStatus.UNPROCESSABLE_ENTITY, exception.getReason().name());
     }
 
     @ExceptionHandler(PowerGridUnavailableException.class)
-    public ResponseEntity<Map<String, String>> handleUnavailable(PowerGridUnavailableException exception) {
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("code", "POWER_GRID_UNAVAILABLE"));
+    public ProblemDetail handleUnavailable(PowerGridUnavailableException exception) {
+        return code(HttpStatus.SERVICE_UNAVAILABLE, "POWER_GRID_UNAVAILABLE");
     }
 
     @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})
-    public ResponseEntity<Map<String, String>> handleInvalidBody(Exception exception) {
-        return ResponseEntity.badRequest().body(Map.of("code", "INVALID_REQUEST"));
+    public ProblemDetail handleInvalidBody(Exception exception) {
+        return code(HttpStatus.BAD_REQUEST, "INVALID_REQUEST");
+    }
+
+    /** Problem Details con el {@code code} estable que lee charging (QA-31). */
+    private static ProblemDetail code(HttpStatus status, String code) {
+        ProblemDetail problem = ProblemDetail.forStatus(status);
+        problem.setProperty("code", code);
+        return problem;
     }
 }

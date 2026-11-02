@@ -94,7 +94,7 @@ class UserAuthorizationTest {
     @DisplayName("Sin token, las tres operaciones de backoffice son rechazadas")
     void rejectsBackOfficeForAnonymousCallers() throws Exception {
         for (MockHttpServletRequestBuilder request : backOfficeRequests()) {
-            mockMvc.perform(request).andExpect(status().isForbidden());
+            mockMvc.perform(request).andExpect(status().isUnauthorized());
         }
     }
 
@@ -211,12 +211,12 @@ class UserAuthorizationTest {
     /*
      * El perfil propio es la única operación autenticada que no pide un rol: la responde
      * cualquiera que haya entrado, con sus propios datos. La regla sigue estando declarada
-     * —`isAuthenticated()`— y por eso el rechazo es un 403 como el de todas las demás.
+     * —`isAuthenticated()`— y por eso el rechazo es un 401 como el de todas las demás.
      */
     @Test
     @DisplayName("El perfil propio exige token, pero no exige un rol en particular")
     void keepsOwnProfileOpenToEveryAuthenticatedRole() throws Exception {
-        mockMvc.perform(get("/api/users/profile")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/users/profile")).andExpect(status().isUnauthorized());
 
         for (Role role : Role.values()) {
             givenUser(role.name().toLowerCase() + "@ecopedia.test", role);
@@ -242,7 +242,7 @@ class UserAuthorizationTest {
         mockMvc.perform(put("/api/users/profile")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
 
         User other = givenUser("otro@ecopedia.test", Role.CONDUCTOR);
         User owner = givenUser("duenio@ecopedia.test", Role.CONDUCTOR);
@@ -304,7 +304,7 @@ class UserAuthorizationTest {
         mockMvc.perform(put("/api/users/profile/password")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"currentPassword\":\"unaClave123\",\"newPassword\":\"claveNueva456\"}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     /*

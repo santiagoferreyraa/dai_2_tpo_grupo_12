@@ -8,8 +8,8 @@ Todo lo que el QA necesita para correr las pruebas de los criterios de la Clase 
 | --- | --- | --- |
 | `backend/*/src/test/.../security/ApiAttackTest.java` | QA-07 | JWT hostil, mass assignment e inyección, en los 4 módulos |
 | `backend/*/src/test/.../security/HostileTokens.java` | QA-07 | Tokens vencidos, alterados, `alg=none` y de otro emisor |
-| `backend/ecopedia-core/.../admin/AdminErrorResponseTest.java` | QA-04 | Regresión de DEF-05, deshabilitada hasta la corrección |
-| `qa/postman/` | QA-05 | Colección (90 casos) y su generador |
+| `backend/ecopedia-core/.../admin/AdminErrorResponseTest.java` | QA-04 | Regresión de DEF-05 (corregido el 02/11) |
+| `qa/postman/` | QA-05 | Colección (99 casos) y su generador |
 | `qa/k6/load-critical.js` | QA-06 | 50 usuarios, 5 minutos, 3 endpoints críticos |
 | `qa/zap/zap-plan.yaml` | QA-08 | Escaneo pasivo + activo autenticado |
 | `qa/ci/start-stack.sh`, `stop-stack.sh` | QA-05/06/08 | Levanta los 4 backends y los 3 simuladores, con usuarios ADMIN y CPO de prueba |
@@ -43,11 +43,13 @@ bash qa/ci/stop-stack.sh
 Para cambiar la colección se edita `qa/postman/build_collection.py` y se regenera con
 `python3 qa/postman/build_collection.py`. El JSON no se toca a mano.
 
-## El 403 que los criterios piden como 401
+## Sin sesión válida, 401
 
-Los `ApiAttackTest` afirman el código de HOY (403) en una sola constante,
-`REJECTED_AS_ANONYMOUS`, y la colección hace lo mismo en los casos marcados con DEF-02. Cuando se
-resuelva QA-33, se cambia esa constante a 401 en los 4 módulos y los casos de la colección.
+Resuelto el 02/11 (QA-33, DEF-02): los `ApiAttackTest` afirman 401 en la constante
+`REJECTED_AS_ANONYMOUS` de cada módulo, y la colección, en los casos "sin token". Con el mismo
+cambio se corrigieron DEF-03, DEF-05, DEF-07, DEF-08, DEF-10 y DEF-12; la colección ya no los marca como
+defectos. DEF-06 (login fallido en 400) queda así a propósito: ver `ApiExceptionHandler` y
+`AuthExceptionHandler`.
 
 ## Antes de commitear
 

@@ -9,7 +9,10 @@ import com.ecopedia.charging.booking.domain.HoldExpiredException;
 import com.ecopedia.charging.booking.domain.HoldNotFoundException;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
+import com.ecopedia.charging.web.ApiProblems;
 import java.util.stream.Collectors;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -30,6 +33,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * 410 es "se te venció el tiempo para confirmar" y 503 es "probá de nuevo en un rato".
  */
 @RestControllerAdvice(basePackageClasses = BookingExceptionHandler.class)
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class BookingExceptionHandler {
 
     @ExceptionHandler(InvalidBookingRequestException.class)
@@ -39,7 +43,8 @@ public class BookingExceptionHandler {
 
     @ExceptionHandler({ConnectorNotFoundException.class, HoldNotFoundException.class, BookingNotFoundException.class})
     public ProblemDetail handleNotFound(RuntimeException exception) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, exception.getMessage());
+        // El mismo 404 que una ruta inexistente: el id y el motivo no salen en la respuesta.
+        return ApiProblems.notFound();
     }
 
     /**

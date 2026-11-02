@@ -1,6 +1,7 @@
 package com.ecopedia.core.user.service;
 
 import com.ecopedia.core.security.JwtTokenProvider;
+import com.ecopedia.core.shared.ResourceNotFoundException;
 import com.ecopedia.core.user.domain.*;
 import com.ecopedia.core.vehicle.domain.VehicleService;
 import java.util.List;
@@ -92,7 +93,7 @@ public class UserServiceImpl implements UserService {
     public User getProfile(Long userId) {
         return userRepository
                 .findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado con ID: " + userId));
+                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado con ID: " + userId));
     }
 
     @Override
@@ -100,7 +101,7 @@ public class UserServiceImpl implements UserService {
     public User getProfileByEmail(String email) {
         return userRepository
                 .findByEmail(email)
-                .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado: " + email));
+                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado: " + email));
     }
 
     /**

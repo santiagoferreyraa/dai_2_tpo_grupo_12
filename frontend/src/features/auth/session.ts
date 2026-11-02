@@ -190,9 +190,9 @@ export function getSession(): Session | null {
  * distinguía "token vencido" de "rol equivocado"**: la cadena de seguridad deja pasar todas las
  * URL y quien rechaza es la anotación sobre el método. Si se cerrara la sesión ante cualquier
  * 403, un conductor que tocara una pantalla de operador quedaría deslogueado sin motivo.
- * Desde SEC-05 el rol equivocado recibe un 404 y el 403 queda para el pedido que el backend
- * trató como anónimo, pero el vencimiento se sigue mirando: es la condición que no depende de
- * qué código elija cada módulo.
+ * Desde SEC-05 el rol equivocado recibe un 404, y desde QA-33 (02/11) el pedido que el backend
+ * trató como anónimo recibe 401 y no 403; pero el vencimiento se sigue mirando: es la condición
+ * que no depende de qué código elija cada módulo.
  */
 export function clearSessionIfExpired(): void {
   if (session !== null && isExpired(session)) clearSession()

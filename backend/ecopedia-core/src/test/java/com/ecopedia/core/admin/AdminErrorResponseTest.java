@@ -10,7 +10,6 @@ import com.ecopedia.core.user.domain.Role;
 import com.ecopedia.core.user.domain.User;
 import com.ecopedia.core.user.domain.UserService;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,22 +20,16 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Regresión del defecto DEF-05: el backoffice responde 500 ante un id que no existe.
+ * Regresión del defecto DEF-05: el backoffice respondía 500 ante un id que no existe.
  *
- * <p>{@code AdminController} no tiene manejador de errores propio, y el de core
- * ({@code AuthExceptionHandler}) se limita al paquete {@code user.web}. La
- * {@link IllegalArgumentException} que tira el servicio llega sin traducir y el servidor contesta
- * 500, cuando el recurso simplemente no existe.
- *
- * <p><b>Deshabilitado a propósito</b> mientras el defecto esté abierto, y así figura en el informe
- * de ejecución (QA-11): con el código de hoy, MockMvc ve la excepción y el test falla, lo que
- * pondría el CI en rojo (G3). Se habilita en el mismo PR que lo corrige; desde ahí cuida que no
- * vuelva.
+ * <p>{@code AdminController} no tenía manejador de errores propio, y el de core
+ * ({@code AuthExceptionHandler}) se limita al paquete {@code user.web}: la excepción del servicio
+ * llegaba sin traducir. Desde el 02/11 la traduce {@code ApiExceptionHandler}, con el mismo 404
+ * que una ruta inexistente.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("dev")
-@Disabled("DEF-05 abierto: el backoffice responde 500 ante un id inexistente. Se habilita con la corrección.")
 class AdminErrorResponseTest {
 
     @Autowired

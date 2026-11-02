@@ -13,7 +13,10 @@ import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodRequiredException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import com.ecopedia.charging.checkout.domain.PricingUnavailableException;
+import com.ecopedia.charging.web.ApiProblems;
 import java.util.stream.Collectors;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -28,6 +31,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * para el log, no para el conductor: el front elige sus propias palabras según el código.
  */
 @RestControllerAdvice(basePackageClasses = CheckoutExceptionHandler.class)
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class CheckoutExceptionHandler {
 
     @ExceptionHandler(GracePeriodNotAcceptedException.class)
@@ -87,7 +91,8 @@ public class CheckoutExceptionHandler {
 
     @ExceptionHandler(HoldNotFoundException.class)
     public ProblemDetail handleHoldNotFound(HoldNotFoundException exception) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, exception.getMessage());
+        // El mismo 404 que una ruta inexistente: el id y el motivo no salen en la respuesta.
+        return ApiProblems.notFound();
     }
 
     @ExceptionHandler(HoldExpiredException.class)

@@ -90,7 +90,7 @@ class BookingAuthorizationTest {
         mockMvc.perform(post("/api/bookings/holds")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(holdJson()))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     /* Reservar es cosa del conductor: un operador logueado no retiene slots. */
@@ -118,7 +118,7 @@ class BookingAuthorizationTest {
                         .header(HttpHeaders.AUTHORIZATION, forged)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(holdJson()))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -185,7 +185,7 @@ class BookingAuthorizationTest {
                                 {"holdId":"%s","acceptGracePeriod":true}
                                 """
                                         .formatted(UUID.randomUUID())))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -213,7 +213,7 @@ class BookingAuthorizationTest {
     @Test
     @DisplayName("Sin token, cancelar una reserva se rechaza")
     void rejectsAnonymousCancel() throws Exception {
-        mockMvc.perform(delete("/api/bookings/1")).andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/bookings/1")).andExpect(status().isUnauthorized());
     }
 
     /*
@@ -233,7 +233,7 @@ class BookingAuthorizationTest {
     @Test
     @DisplayName("Sin token, consultar la disponibilidad se rechaza")
     void rejectsAnonymousAvailability() throws Exception {
-        mockMvc.perform(availabilityRequest()).andExpect(status().isForbidden());
+        mockMvc.perform(availabilityRequest()).andExpect(status().isUnauthorized());
     }
 
     @Test

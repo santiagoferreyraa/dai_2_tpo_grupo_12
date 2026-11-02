@@ -95,7 +95,7 @@ class SessionHardeningTest {
         users.save(user);
 
         mockMvc.perform(get("/api/users/profile").header(HttpHeaders.AUTHORIZATION, token))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -121,7 +121,7 @@ class SessionHardeningTest {
         String token = bearer(987_654L, "fantasma@ecopedia.test", Role.ADMIN);
 
         mockMvc.perform(get("/api/users").header(HttpHeaders.AUTHORIZATION, token))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

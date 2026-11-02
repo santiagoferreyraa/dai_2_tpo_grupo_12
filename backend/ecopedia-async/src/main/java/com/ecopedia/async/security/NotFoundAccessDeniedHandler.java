@@ -1,5 +1,7 @@
 package com.ecopedia.async.security;
 
+import com.ecopedia.async.web.ApiProblems;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -19,28 +21,38 @@ import org.springframework.stereotype.Component;
  * solo le falta el rol: es el mapa de lo que conviene atacar. Con un 404 no puede separar "no
  * tenés permiso" de "eso no está". El que tiene el rol correcto no nota nada.
  *
- * <p><b>Solo con sesión.</b> El pedido anónimo —sin token, o con uno vencido o alterado— no pasa
- * por acá, sino por el punto de entrada de Spring, y sigue contestando 403: el front lo usa para
- * darse cuenta de que la sesión venció. Con un 404 no tendría cómo.
+ * <p><b>Solo con sesión.</b> El pedido sin sesión válida no pasa por acá, sino por
+ * {@link UnauthorizedEntryPoint}, que contesta 401.
  *
- * <p><b>El cuerpo es el de cualquier 404</b> porque no se arma acá: {@code sendError} manda el
- * pedido al mismo {@code /error} que contesta una ruta inexistente.
+ * <p><b>El cuerpo es el de cualquier 404, byte por byte</b>: lo arma {@link ApiProblems}, el mismo
+ * que usa {@code ApiExceptionHandler} para una ruta inexistente.
+ *
+ * <p><b>El log lleva el id del usuario, no el email</b> (DEF-03): el email es un dato personal y el
+ * id alcanza para seguir el rastro en la base.
  */
 @Component
 public class NotFoundAccessDeniedHandler implements AccessDeniedHandler {
 
     private static final Logger log = LoggerFactory.getLogger(NotFoundAccessDeniedHandler.class);
 
+    private final ObjectMapper objectMapper;
+
+    public NotFoundAccessDeniedHandler(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
+
     @Override
     public void handle(HttpServletRequest request, HttpServletResponse response, AccessDeniedException exception)
             throws IOException {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        // Acá el nombre de la autenticación es el id del usuario (el "sub" del token), nunca el email.
+        Object userId = authentication == null ? null : authentication.getName();
         log.warn(
                 "Acceso denegado (403, respondido como 404): usuario {} con {} en {} {}",
-                authentication == null ? "?" : authentication.getName(),
+                userId == null ? "?" : userId,
                 authentication == null ? "[]" : authentication.getAuthorities(),
                 request.getMethod(),
                 request.getRequestURI());
-        response.sendError(HttpServletResponse.SC_NOT_FOUND);
+        ApiProblems.write(request, response, ApiProblems.notFound(), objectMapper);
     }
 }

@@ -2,6 +2,7 @@ package com.ecopedia.async.config;
 
 import com.ecopedia.async.security.JwtAuthenticationFilter;
 import com.ecopedia.async.security.NotFoundAccessDeniedHandler;
+import com.ecopedia.async.security.UnauthorizedEntryPoint;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -9,6 +10,9 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.DelegatingRequestMatcherHeaderWriter;
+import org.springframework.security.web.header.writers.StaticHeadersWriter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 /**
  * Seguridad del artefacto {@code ecopedia-async}.
@@ -24,13 +28,20 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
 
+    static final String API_CONTENT_SECURITY_POLICY =
+            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final NotFoundAccessDeniedHandler accessDeniedHandler;
+    private final UnauthorizedEntryPoint unauthorizedEntryPoint;
 
     public SecurityConfig(
-            JwtAuthenticationFilter jwtAuthenticationFilter, NotFoundAccessDeniedHandler accessDeniedHandler) {
+            JwtAuthenticationFilter jwtAuthenticationFilter,
+            NotFoundAccessDeniedHandler accessDeniedHandler,
+            UnauthorizedEntryPoint unauthorizedEntryPoint) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.accessDeniedHandler = accessDeniedHandler;
+        this.unauthorizedEntryPoint = unauthorizedEntryPoint;
     }
 
     @Bean
@@ -39,7 +50,13 @@ public class SecurityConfig {
         // propia página y sigue andando, pero ningún sitio ajeno puede embeber la aplicación para
         // engañar clics. La consola en sí existe solo en los perfiles dev y local.
         return http.csrf(csrf -> csrf.disable())
-                .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
+                .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin())
+                        // QA-32: la API no devuelve nada que un navegador tenga que ejecutar, así
+                        // que su CSP no permite nada. Solo en /api: una política así rompería la
+                        // consola H2 de los perfiles dev y local.
+                        .addHeaderWriter(new DelegatingRequestMatcherHeaderWriter(
+                                PathPatternRequestMatcher.withDefaults().matcher("/api/**"),
+                                new StaticHeadersWriter("Content-Security-Policy", API_CONTENT_SECURITY_POLICY))))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(requests -> requests.requestMatchers("/h2-console/**")
                         .permitAll()
@@ -47,7 +64,10 @@ public class SecurityConfig {
                         .permitAll())
                 // Con sesión y sin el rol, un 404 como el de una ruta que no existe; el 403 va
                 // al log. Ver NotFoundAccessDeniedHandler.
-                .exceptionHandling(errors -> errors.accessDeniedHandler(accessDeniedHandler))
+                // Sin sesión válida, 401 (UnauthorizedEntryPoint). Con sesión y sin el rol, un 404
+                // como el de una ruta que no existe; el 403 va al log (NotFoundAccessDeniedHandler).
+                .exceptionHandling(errors -> errors.authenticationEntryPoint(unauthorizedEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }

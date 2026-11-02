@@ -7,7 +7,6 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -16,6 +15,7 @@ import com.ecopedia.integration.payment.domain.CardBrand;
 import com.ecopedia.integration.payment.domain.PaymentGatewayPort;
 import com.ecopedia.integration.payment.domain.PaymentGatewayUnavailableException;
 import com.ecopedia.integration.payment.domain.TokenizedCard;
+import com.ecopedia.integration.web.ApiProblems;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
@@ -158,7 +158,7 @@ class PaymentMethodApiTest {
     @Test
     @DisplayName("Sin token no se puede ni listar")
     void deniesTheAnonymous() throws Exception {
-        mockMvc.perform(get("/api/payment-methods")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/payment-methods")).andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -175,7 +175,7 @@ class PaymentMethodApiTest {
                 .compact();
 
         mockMvc.perform(get("/api/payment-methods").header(HttpHeaders.AUTHORIZATION, "Bearer " + forged))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -204,10 +204,10 @@ class PaymentMethodApiTest {
 
         mockMvc.perform(delete("/api/payment-methods/" + cardId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(2L, "CONDUCTOR")))
-                // 400 y no 403: contestar 403 desconectaría la sesión del frontend y además
+                // 404 y no 403: contestar 403 desconectaría la sesión del frontend y además
                 // confirmaría que ese id existe. Ver PaymentExceptionHandler.
-                .andExpect(status().isBadRequest())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("No se encontró")));
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value(ApiProblems.NOT_FOUND_DETAIL));
         // La respuesta no lo dice; el log sí (SEC-06).
         assertThat(output).contains("Acceso denegado: el conductor 2 quiso dar de baja la tarjeta " + cardId);
 

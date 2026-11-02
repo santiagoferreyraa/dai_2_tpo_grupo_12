@@ -17,7 +17,7 @@ interface RequireSessionProps {
  * <p><b>Esto es experiencia de usuario, no seguridad, y conviene tenerlo clarísimo para la
  * defensa.</b> Cualquiera puede saltear este componente tocando el estado del navegador. Lo
  * que protege de verdad son los `@PreAuthorize` del backend, que corren en el servidor y
- * rechazan el pedido aunque el front diga que sí —403 sin sesión, 404 con el rol equivocado—.
+ * rechazan el pedido aunque el front diga que sí —401 sin sesión, 404 con el rol equivocado—.
  * Este guard existe para que el usuario vea una
  * pantalla de login en vez de una aplicación donde cada botón falla sin explicación.
  */

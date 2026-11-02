@@ -143,7 +143,7 @@ async function request<T>(
   }
 
   /*
-   * Un 401 o un 403 pueden significar que el token venció. Se avisa antes de tirar el error
+   * Un 401 (o un 403, que el backend ya no manda desde QA-33) pueden significar que el token venció. Se avisa antes de tirar el error
    * para que la sesión se cierre sola en vez de dejar al usuario en una pantalla que falla
    * sin decir por qué. Quién decide si de verdad hay que cerrarla no es asunto de este
    * archivo: acá solo se reporta el rechazo.

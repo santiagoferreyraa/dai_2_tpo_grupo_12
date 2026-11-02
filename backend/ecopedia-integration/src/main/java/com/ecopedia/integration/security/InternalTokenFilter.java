@@ -1,5 +1,7 @@
 package com.ecopedia.integration.security;
 
+import com.ecopedia.integration.web.ApiProblems;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -11,7 +13,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -37,9 +40,11 @@ public class InternalTokenFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final byte[] expected;
+    private final ObjectMapper objectMapper;
 
-    public InternalTokenFilter(@Value("${ecopedia.internal.token}") String token) {
+    public InternalTokenFilter(@Value("${ecopedia.internal.token}") String token, ObjectMapper objectMapper) {
         this.expected = token.getBytes(StandardCharsets.UTF_8);
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -57,9 +62,10 @@ public class InternalTokenFilter extends OncePerRequestFilter {
 
         if (!MessageDigest.isEqual(expected, received)) {
             log.warn("Llamada interna sin la clave de servicio: {} {}", request.getMethod(), request.getRequestURI());
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-            response.getWriter().write("{\"code\":\"INVALID_SERVICE_TOKEN\"}");
+            // Problem Details con el code estable, como el resto de los errores (QA-31).
+            ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
+            problem.setProperty("code", "INVALID_SERVICE_TOKEN");
+            ApiProblems.write(request, response, problem, objectMapper);
             return;
         }
         chain.doFilter(request, response);

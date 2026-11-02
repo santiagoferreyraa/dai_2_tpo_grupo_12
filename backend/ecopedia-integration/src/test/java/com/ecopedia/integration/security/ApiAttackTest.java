@@ -40,7 +40,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * <p>Es el artefacto con los datos más sensibles del sistema: una sesión falsificada acá deja ver o
  * borrar tarjetas ajenas. Por eso el caso alterado es cambiar el {@code sub} al de otro conductor.
  *
- * <p><b>El rechazo hoy es 403, no 401</b>: ver DEF-02 y {@link #REJECTED_AS_ANONYMOUS}.
+ * <p><b>El rechazo es 401</b> (QA-33); hasta el 02/11 era 403 (DEF-02).
  *
  * <p><b>La pasarela se reemplaza por un mock</b>, como en {@code PaymentMethodApiTest}: es otro
  * proceso (simulation/payment-gateway). El mock contesta lo que contesta la de verdad para lo que
@@ -53,8 +53,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @ActiveProfiles("dev")
 class ApiAttackTest {
 
-    /** Lo que recibe hoy un pedido sin sesión válida. Los criterios piden 401: DEF-02 / ECO-183. */
-    private static final int REJECTED_AS_ANONYMOUS = 403;
+    /** Lo que recibe un pedido sin sesión válida (QA-33). */
+    private static final int REJECTED_AS_ANONYMOUS = 401;
 
     private static final String VISA = "4111111111111111";
 
