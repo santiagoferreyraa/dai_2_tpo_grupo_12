@@ -29,15 +29,15 @@ import org.springframework.test.web.servlet.MockMvc;
  * <p>Sin mass assignment: este artefacto no recibe cuerpos JSON del cliente. Los avisos se crean
  * solo desde la cola, nunca por HTTP.
  *
- * <p><b>El rechazo hoy es 403, no 401</b>: ver DEF-02 y {@link #REJECTED_AS_ANONYMOUS}.
+ * <p><b>El rechazo es 401</b> (QA-33); hasta el 02/11 era 403 (DEF-02).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("dev")
 class ApiAttackTest {
 
-    /** Lo que recibe hoy un pedido sin sesión válida. Los criterios piden 401: DEF-02 / ECO-183. */
-    private static final int REJECTED_AS_ANONYMOUS = 403;
+    /** Lo que recibe un pedido sin sesión válida (QA-33). */
+    private static final int REJECTED_AS_ANONYMOUS = 401;
 
     /** Ids de reserva propios de esta clase, lejos de los que usa {@code NotificationApiTest}. */
     private static final AtomicLong NEXT_BOOKING = new AtomicLong(90_000);

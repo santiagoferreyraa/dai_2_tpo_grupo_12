@@ -185,14 +185,14 @@ class CheckoutApiTest {
     }
 
     @Test
-    @DisplayName("POST /api/checkout/booking rechaza con 403 si se invoca sin token de autenticación")
+    @DisplayName("POST /api/checkout/booking rechaza con 401 si se invoca sin token de autenticación")
     void rejectsAnonymous() throws Exception {
         CheckoutBookingHttpRequest request = new CheckoutBookingHttpRequest(UUID.randomUUID(), 1L, true);
 
         mockMvc.perform(post("/api/checkout/booking")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

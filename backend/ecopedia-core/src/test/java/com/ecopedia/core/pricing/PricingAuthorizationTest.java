@@ -210,11 +210,11 @@ class PricingAuthorizationTest {
     }
 
     @Test
-    @DisplayName("Sin sesión no se cambia nada: 403")
+    @DisplayName("Sin sesión no se cambia nada: 401")
     void anonymousCannotChangeAnything() throws Exception {
         mockMvc.perform(put("/api/pricing/rates")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(RATES))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 }

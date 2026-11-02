@@ -56,10 +56,9 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * que es justo la pieza que puede romperse en silencio; además evita sumar
  * {@code spring-security-test} al POM a una semana de la entrega.
  *
- * <p><b>El anónimo recibe 403 y no 401</b>, porque la cadena de {@code SecurityConfig} deja
- * pasar todas las URL ({@code anyRequest().permitAll()}) y quien rechaza es la anotación sobre
- * el método, ya dentro del controlador. Es correcto, y conviene saberlo antes de la demo: acá
- * el 403 significa "no autenticado", no "autenticado sin permiso".
+ * <p><b>El anónimo recibe 401</b> (QA-33): la cadena de {@code SecurityConfig} deja pasar todas
+ * las URL ({@code anyRequest().permitAll()}), quien rechaza es la anotación sobre el método y
+ * Spring Security contesta por {@code UnauthorizedEntryPoint}. Hasta el 02/11 era 403.
  *
  * <p><b>Con sesión y sin el rol, la respuesta es un 404</b> igual al de una ruta que no existe
  * (SEC-05), y el 403 queda solo en el log. Ver {@code NotFoundAccessDeniedHandler}.
@@ -167,7 +166,7 @@ class TerminalAuthorizationTest {
     @DisplayName("Sin token, las siete operaciones de ABM son rechazadas")
     void rejectsTheWholeAbmForAnonymousCallers() throws Exception {
         for (MockHttpServletRequestBuilder request : abmRequests()) {
-            mockMvc.perform(request).andExpect(status().isForbidden());
+            mockMvc.perform(request).andExpect(status().isUnauthorized());
         }
     }
 
@@ -194,6 +193,10 @@ class TerminalAuthorizationTest {
             "Un conductor que da de alta una estación recibe lo mismo que en una ruta inexistente, y queda en el log")
     void hidesOperatorOperationsFromDrivers(CapturedOutput output) throws Exception {
         String driver = bearer(Role.CONDUCTOR);
+        Long driverId = userRepository
+                .findByEmail("conductor@ecopedia.test")
+                .orElseThrow()
+                .getId();
 
         MvcResult denied = mockMvc.perform(post("/api/stations")
                         .header(HttpHeaders.AUTHORIZATION, driver)
@@ -209,12 +212,32 @@ class TerminalAuthorizationTest {
         assertThat(denied.getResponse().getStatus()).isEqualTo(404);
         assertThat(denied.getResponse().getStatus())
                 .isEqualTo(missing.getResponse().getStatus());
-        assertThat(denied.getResponse().getContentAsString())
+        assertThat(denied.getResponse().getContentType())
+                .isEqualTo(missing.getResponse().getContentType());
+        // Lo único que cambia es "instance", la ruta pedida, que quien llama ya conoce.
+        assertThat(denied.getResponse().getContentAsString().replace("/api/stations", "/api/no-existe"))
                 .isEqualTo(missing.getResponse().getContentAsString());
+        // Y lo mismo cuando el cliente pide JSON, como hacen el front y la colección de Postman.
+        MvcResult deniedJson = mockMvc.perform(post("/api/stations")
+                        .header(HttpHeaders.AUTHORIZATION, driver)
+                        .accept(MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(STATION_JSON))
+                .andReturn();
+        MvcResult missingJson = mockMvc.perform(post("/api/no-existe")
+                        .header(HttpHeaders.AUTHORIZATION, driver)
+                        .accept(MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(STATION_JSON))
+                .andReturn();
+        assertThat(deniedJson.getResponse().getContentType())
+                .isEqualTo(missingJson.getResponse().getContentType());
         assertThat(stationRepository.count()).isZero();
+        // DEF-03: el log dice el id del usuario, nunca el email.
         assertThat(output)
-                .contains(
-                        "Acceso denegado (403, respondido como 404): usuario conductor@ecopedia.test con [ROLE_CONDUCTOR] en POST /api/stations");
+                .contains("Acceso denegado (403, respondido como 404): usuario " + driverId
+                        + " con [ROLE_CONDUCTOR] en POST /api/stations")
+                .doesNotContain("usuario conductor@ecopedia.test");
     }
 
     /*

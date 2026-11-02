@@ -1,7 +1,9 @@
 package com.ecopedia.async.notification.web;
 
 import com.ecopedia.async.notification.domain.NotificationNotFoundException;
-import org.springframework.http.HttpStatus;
+import com.ecopedia.async.web.ApiProblems;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -13,10 +15,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * acotar, atraparía también las excepciones de cualquier controlador que se sume al artefacto.
  */
 @RestControllerAdvice(basePackageClasses = NotificationExceptionHandler.class)
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class NotificationExceptionHandler {
 
     @ExceptionHandler(NotificationNotFoundException.class)
     public ProblemDetail handleNotFound(NotificationNotFoundException exception) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, exception.getMessage());
+        // El mismo 404 que una ruta inexistente: el id y el motivo no salen en la respuesta.
+        return ApiProblems.notFound();
     }
 }

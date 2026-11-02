@@ -17,8 +17,11 @@ export function adminErrorMessage(error: unknown, whatFailed: string): string {
     if (problemCode(error) === 'ADMIN_PROTECTED') {
       return `${whatFailed} Un administrador no se puede dar de baja ni cambiar de rol desde acá.`
     }
-    // En /admin un 404 es algo que otro borró o dio de baja mientras esta lista estaba abierta.
-    if (error.status === 404) return `${whatFailed} Ya no existe: recargá la lista.`
+    /*
+     * En /admin un 404 suele ser algo que otro borró mientras la lista estaba abierta, pero no se
+     * dice: el mensaje no da pistas sobre el estado real (Manuel, 02/11). Solo qué hacer.
+     */
+    if (error.status === 404) return `${whatFailed} Recargá la lista y probá de nuevo.`
     if (error.status === 400 || error.status === 422) {
       return `${whatFailed} Revisá los datos que cargaste.`
     }

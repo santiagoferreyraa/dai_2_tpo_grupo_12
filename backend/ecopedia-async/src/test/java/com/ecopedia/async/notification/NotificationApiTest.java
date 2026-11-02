@@ -8,10 +8,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ecopedia.async.notification.domain.Notification;
-import com.ecopedia.async.notification.domain.NotificationNotFoundException;
 import com.ecopedia.async.notification.domain.NotificationRepository;
 import com.ecopedia.async.notification.domain.NotificationToDispatch;
 import com.ecopedia.async.notification.domain.NotificationType;
+import com.ecopedia.async.web.ApiProblems;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.DisplayName;
@@ -78,7 +78,7 @@ class NotificationApiTest {
     @Test
     @DisplayName("Sin sesión no se ven avisos")
     void anonymousIsRejected() throws Exception {
-        mockMvc.perform(get("/api/notifications")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/notifications")).andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -138,8 +138,7 @@ class NotificationApiTest {
         mockMvc.perform(post("/api/notifications/{id}/read", notification.getId())
                         .header(HttpHeaders.AUTHORIZATION, driver(1006L)))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.detail")
-                        .value(new NotificationNotFoundException(notification.getId()).getMessage()));
+                .andExpect(jsonPath("$.detail").value(ApiProblems.NOT_FOUND_DETAIL));
         assertThat(output).contains("Acceso denegado: el conductor 1006 quiso tocar el aviso " + notification.getId());
 
         mockMvc.perform(get("/api/notifications").header(HttpHeaders.AUTHORIZATION, driver(1005L)))
@@ -212,8 +211,7 @@ class NotificationApiTest {
         mockMvc.perform(delete("/api/notifications/{id}", notification.getId())
                         .header(HttpHeaders.AUTHORIZATION, driver(1013L)))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.detail")
-                        .value(new NotificationNotFoundException(notification.getId()).getMessage()));
+                .andExpect(jsonPath("$.detail").value(ApiProblems.NOT_FOUND_DETAIL));
         assertThat(output).contains("Acceso denegado: el conductor 1013 quiso tocar el aviso " + notification.getId());
 
         mockMvc.perform(get("/api/notifications").header(HttpHeaders.AUTHORIZATION, driver(1012L)))
@@ -285,7 +283,7 @@ class NotificationApiTest {
     @Test
     @DisplayName("Sin sesión no se borran avisos")
     void anonymousCannotDelete() throws Exception {
-        mockMvc.perform(delete("/api/notifications/{id}", 1L)).andExpect(status().isForbidden());
-        mockMvc.perform(delete("/api/notifications")).andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/notifications/{id}", 1L)).andExpect(status().isUnauthorized());
+        mockMvc.perform(delete("/api/notifications")).andExpect(status().isUnauthorized());
     }
 }

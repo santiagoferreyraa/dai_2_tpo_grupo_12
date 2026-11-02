@@ -1,10 +1,15 @@
 package com.ecopedia.core.user.web;
 
+import com.ecopedia.core.shared.ResourceNotFoundException;
 import com.ecopedia.core.user.domain.AdminAccountProtectedException;
 import com.ecopedia.core.user.domain.AdminPasswordRejectedException;
 import com.ecopedia.core.user.domain.TooManyLoginAttemptsException;
 import com.ecopedia.core.vehicle.domain.VehicleModelNotFoundException;
+import com.ecopedia.core.web.ApiProblems;
 import java.util.stream.Collectors;
+import org.springframework.beans.TypeMismatchException;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -34,11 +39,35 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  *
  * <p>La respuesta es un {@link ProblemDetail} (RFC 7807) porque es el formato que el cliente
  * del frontend lee primero, por su campo {@code detail}.
+ *
+ * <p><b>Va antes que {@code ApiExceptionHandler}</b> ({@code HIGHEST_PRECEDENCE}): los dos saben
+ * manejar {@code IllegalArgumentException} y los errores de validación, y Spring usa el primero
+ * que encuentra. Lo que este no atiende cae en aquel.
  */
 @RestControllerAdvice(basePackageClasses = AuthExceptionHandler.class)
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class AuthExceptionHandler {
 
-    /** Credenciales inválidas (también la cuenta dada de baja), email ya registrado, id inexistente. */
+    /**
+     * Usuario inexistente: el mismo 404 que una ruta que no existe (DEF-07). El id va al log, no a
+     * la respuesta.
+     */
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ProblemDetail handleNotFound(ResourceNotFoundException exception) {
+        return ApiProblems.notFound();
+    }
+
+    /**
+     * Un parámetro con formato inválido, como un id que no es número (DEF-12). Tiene que estar acá:
+     * Spring busca también en la causa, que es una {@code NumberFormatException}, y sin esto la
+     * atraparía el manejador de {@code IllegalArgumentException} de abajo, con el mensaje de Java.
+     */
+    @ExceptionHandler(TypeMismatchException.class)
+    public ProblemDetail handleTypeMismatch(TypeMismatchException exception) {
+        return ApiProblems.invalidRequest();
+    }
+
+    /** Credenciales inválidas (también la cuenta dada de baja) o email ya registrado. */
     @ExceptionHandler(IllegalArgumentException.class)
     public ProblemDetail handleInvalidRequest(IllegalArgumentException exception) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());

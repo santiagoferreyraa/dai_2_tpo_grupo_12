@@ -1,7 +1,12 @@
 package com.ecopedia.integration.payment.web;
 
 import com.ecopedia.integration.payment.domain.PaymentGatewayUnavailableException;
+import com.ecopedia.integration.payment.domain.PaymentMethodNotFoundException;
+import com.ecopedia.integration.web.ApiProblems;
 import java.util.stream.Collectors;
+import org.springframework.beans.TypeMismatchException;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -17,20 +22,33 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * Spring la trata como una falla del servidor. El conductor que se equivoca un dígito recibiría un
  * 500 y el motivo real quedaría en el log.
  *
- * <p><b>400 y no 401 ni 403</b>, incluso cuando la tarjeta es de otro. El cliente HTTP del frontend
- * cierra la sesión ante cualquier 401 o 403, porque ahí no puede distinguir un token vencido de un
- * permiso que falta. Contestar 403 al intento de borrar una tarjeta ajena desconectaría al usuario
- * en vez de mostrarle el error — y de paso le confirmaría que ese id existe, que es justo lo que el
- * servicio evita contestando "no se encontró".
+ * <p><b>La tarjeta inexistente, dada de baja o ajena da 404</b>, el mismo de cualquier ruta que no
+ * existe (DEF-07). No 401 ni 403: el cliente HTTP del frontend cierra la sesión ante cualquiera de
+ * los dos, y un 403 le confirmaría a quien prueba que ese id es una tarjeta real (SEC-06).
  *
- * <p><b>El alcance está acotado a este paquete</b> por {@code basePackageClasses}: un
- * {@code @RestControllerAdvice} global se aplicaría también a los controladores del cliente SOAP que
- * van a vivir en este mismo artefacto, y les impondría una traducción de errores que no es la suya.
+ * <p><b>El alcance está acotado a este paquete</b> por {@code basePackageClasses}, y va antes que
+ * {@code ApiExceptionHandler}, que recibe lo que este no atiende.
  */
 @RestControllerAdvice(basePackageClasses = PaymentExceptionHandler.class)
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class PaymentExceptionHandler {
 
-    /** Tarjeta rechazada por la pasarela, duplicada, ajena, inexistente o tope alcanzado. */
+    @ExceptionHandler(PaymentMethodNotFoundException.class)
+    public ProblemDetail handleNotFound(PaymentMethodNotFoundException exception) {
+        return ApiProblems.notFound();
+    }
+
+    /**
+     * Un parámetro con formato inválido, como un id que no es número (DEF-12). Tiene que estar acá:
+     * Spring busca también en la causa, que es una {@code NumberFormatException}, y sin esto la
+     * atraparía el manejador de {@code IllegalArgumentException} de abajo, con el mensaje de Java.
+     */
+    @ExceptionHandler(TypeMismatchException.class)
+    public ProblemDetail handleTypeMismatch(TypeMismatchException exception) {
+        return ApiProblems.invalidRequest();
+    }
+
+    /** Tarjeta rechazada por la pasarela, duplicada o tope alcanzado. */
     @ExceptionHandler(IllegalArgumentException.class)
     public ProblemDetail handleInvalidRequest(IllegalArgumentException exception) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());

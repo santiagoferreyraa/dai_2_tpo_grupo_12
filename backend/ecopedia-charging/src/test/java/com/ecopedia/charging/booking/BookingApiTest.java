@@ -11,12 +11,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.ConnectorCatalog;
 import com.ecopedia.charging.booking.domain.ConnectorSnapshot;
-import com.ecopedia.charging.booking.domain.HoldNotFoundException;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
 import com.ecopedia.charging.checkout.domain.TariffDirectory;
+import com.ecopedia.charging.web.ApiProblems;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
@@ -298,7 +297,7 @@ class BookingApiTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(confirmBody(holdId)))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.detail").value(new HoldNotFoundException(UUID.fromString(holdId)).getMessage()));
+                .andExpect(jsonPath("$.detail").value(ApiProblems.NOT_FOUND_DETAIL));
 
         assertThat(output)
                 .contains("Acceso denegado: el conductor " + OTHER_DRIVER + " quiso confirmar la retención " + holdId);
@@ -313,7 +312,7 @@ class BookingApiTest {
 
         mockMvc.perform(delete("/api/bookings/{id}", bookingId).header(HttpHeaders.AUTHORIZATION, driver(OTHER_DRIVER)))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.detail").value(new BookingNotFoundException(bookingId).getMessage()));
+                .andExpect(jsonPath("$.detail").value(ApiProblems.NOT_FOUND_DETAIL));
         assertThat(output)
                 .contains("Acceso denegado: el conductor " + OTHER_DRIVER + " quiso cancelar la reserva " + bookingId);
 

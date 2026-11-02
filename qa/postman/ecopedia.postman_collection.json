@@ -369,7 +369,7 @@
           }
         },
         {
-          "name": "Ver mi perfil sin token → 403",
+          "name": "Ver mi perfil sin token → 401",
           "event": [
             {
               "listen": "test",
@@ -378,9 +378,9 @@
                 "exec": [
                   "let json = {};",
                   "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
-                  "pm.test('responde 403', () => pm.response.to.have.status(403));",
+                  "pm.test('responde 401', () => pm.response.to.have.status(401));",
                   "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));",
-                  "// Defecto conocido: DEF-02: los criterios piden 401 sin sesión válida"
+                  "pm.test(\"pm.expect(pm.response.headers.get('WWW-Authenticate')).to.include('Bearer')\", () => { pm.expect(pm.response.headers.get('WWW-Authenticate')).to.include('Bearer'); });"
                 ]
               }
             }
@@ -394,8 +394,7 @@
               }
             ],
             "url": "{{coreUrl}}/api/users/profile"
-          },
-          "description": "DEF-02: los criterios piden 401 sin sesión válida"
+          }
         },
         {
           "name": "Editar mi perfil → 200",
@@ -829,7 +828,7 @@
           }
         },
         {
-          "name": "Listado de conectores con stationId no numérico → 404",
+          "name": "Listado de conectores con stationId no numérico → 400",
           "event": [
             {
               "listen": "test",
@@ -838,9 +837,9 @@
                 "exec": [
                   "let json = {};",
                   "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
-                  "pm.test('responde 404', () => pm.response.to.have.status(404));",
+                  "pm.test('responde 400', () => pm.response.to.have.status(400));",
                   "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));",
-                  "// Defecto conocido: DEF-12: un parámetro con formato inválido responde 404 y no 400"
+                  "pm.test(\"pm.expect(json.detail).to.not.include('For input string')\", () => { pm.expect(json.detail).to.not.include('For input string'); });"
                 ]
               }
             }
@@ -854,8 +853,7 @@
               }
             ],
             "url": "{{coreUrl}}/api/connectors?stationId=abc"
-          },
-          "description": "DEF-12: un parámetro con formato inválido responde 404 y no 400"
+          }
         },
         {
           "name": "Conector por id → 200",
@@ -1562,7 +1560,7 @@
           }
         },
         {
-          "name": "Consultar una estación inexistente → 400",
+          "name": "Consultar una estación inexistente → 404",
           "event": [
             {
               "listen": "test",
@@ -1571,9 +1569,8 @@
                 "exec": [
                   "let json = {};",
                   "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
-                  "pm.test('responde 400', () => pm.response.to.have.status(400));",
-                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));",
-                  "// Defecto conocido: DEF-07: un recurso inexistente responde 400 y no 404"
+                  "pm.test('responde 404', () => pm.response.to.have.status(404));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));"
                 ]
               }
             }
@@ -1587,8 +1584,7 @@
               }
             ],
             "url": "{{coreUrl}}/api/pricing/stations/999999"
-          },
-          "description": "DEF-07: un recurso inexistente responde 400 y no 404"
+          }
         },
         {
           "name": "Seña de un conector → 200",
@@ -1830,7 +1826,7 @@
           }
         },
         {
-          "name": "Usuario inexistente → 400",
+          "name": "Usuario inexistente → 404",
           "event": [
             {
               "listen": "test",
@@ -1839,9 +1835,9 @@
                 "exec": [
                   "let json = {};",
                   "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
-                  "pm.test('responde 400', () => pm.response.to.have.status(400));",
+                  "pm.test('responde 404', () => pm.response.to.have.status(404));",
                   "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));",
-                  "// Defecto conocido: DEF-07: un recurso inexistente responde 400 y no 404"
+                  "pm.test(\"pm.expect(json.detail).to.eql('No se encontr\\u00f3 el recurso pedido.')\", () => { pm.expect(json.detail).to.eql('No se encontró el recurso pedido.'); });"
                 ]
               }
             }
@@ -1859,8 +1855,7 @@
               }
             ],
             "url": "{{coreUrl}}/api/users/999999"
-          },
-          "description": "DEF-07: un recurso inexistente responde 400 y no 404"
+          }
         },
         {
           "name": "Cambio de rol con la contraseña equivocada → 400",
@@ -2461,7 +2456,7 @@
           }
         },
         {
-          "name": "Listado de tarjetas sin token → 403",
+          "name": "Listado de tarjetas sin token → 401",
           "event": [
             {
               "listen": "test",
@@ -2470,9 +2465,8 @@
                 "exec": [
                   "let json = {};",
                   "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
-                  "pm.test('responde 403', () => pm.response.to.have.status(403));",
-                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));",
-                  "// Defecto conocido: DEF-02: los criterios piden 401 sin sesión válida"
+                  "pm.test('responde 401', () => pm.response.to.have.status(401));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));"
                 ]
               }
             }
@@ -2486,8 +2480,7 @@
               }
             ],
             "url": "{{integrationUrl}}/api/payment-methods"
-          },
-          "description": "DEF-02: los criterios piden 401 sin sesión válida"
+          }
         }
       ]
     },
@@ -2946,7 +2939,7 @@
           }
         },
         {
-          "name": "Mis avisos sin token → 403",
+          "name": "Mis avisos sin token → 401",
           "event": [
             {
               "listen": "test",
@@ -2955,9 +2948,8 @@
                 "exec": [
                   "let json = {};",
                   "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
-                  "pm.test('responde 403', () => pm.response.to.have.status(403));",
-                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));",
-                  "// Defecto conocido: DEF-02: los criterios piden 401 sin sesión válida"
+                  "pm.test('responde 401', () => pm.response.to.have.status(401));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));"
                 ]
               }
             }
@@ -2971,8 +2963,7 @@
               }
             ],
             "url": "{{asyncUrl}}/api/notifications"
-          },
-          "description": "DEF-02: los criterios piden 401 sin sesión válida"
+          }
         },
         {
           "name": "Marcar un aviso como leído → 204",
@@ -3066,7 +3057,7 @@
           }
         },
         {
-          "name": "Marcar todos sin token → 403",
+          "name": "Marcar todos sin token → 401",
           "event": [
             {
               "listen": "test",
@@ -3075,9 +3066,8 @@
                 "exec": [
                   "let json = {};",
                   "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
-                  "pm.test('responde 403', () => pm.response.to.have.status(403));",
-                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));",
-                  "// Defecto conocido: DEF-02: los criterios piden 401 sin sesión válida"
+                  "pm.test('responde 401', () => pm.response.to.have.status(401));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));"
                 ]
               }
             }
@@ -3091,8 +3081,7 @@
               }
             ],
             "url": "{{asyncUrl}}/api/notifications/read-all"
-          },
-          "description": "DEF-02: los criterios piden 401 sin sesión válida"
+          }
         },
         {
           "name": "Borrar un aviso → 204",
@@ -3186,7 +3175,7 @@
           }
         },
         {
-          "name": "Borrar todos sin token → 403",
+          "name": "Borrar todos sin token → 401",
           "event": [
             {
               "listen": "test",
@@ -3195,9 +3184,8 @@
                 "exec": [
                   "let json = {};",
                   "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
-                  "pm.test('responde 403', () => pm.response.to.have.status(403));",
-                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));",
-                  "// Defecto conocido: DEF-02: los criterios piden 401 sin sesión válida"
+                  "pm.test('responde 401', () => pm.response.to.have.status(401));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));"
                 ]
               }
             }
@@ -3211,8 +3199,7 @@
               }
             ],
             "url": "{{asyncUrl}}/api/notifications"
-          },
-          "description": "DEF-02: los criterios piden 401 sin sesión válida"
+          }
         }
       ]
     },
@@ -3403,7 +3390,7 @@
           }
         },
         {
-          "name": "Baja de una tarjeta inexistente → 400",
+          "name": "Baja de una tarjeta inexistente → 404",
           "event": [
             {
               "listen": "test",
@@ -3412,9 +3399,8 @@
                 "exec": [
                   "let json = {};",
                   "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
-                  "pm.test('responde 400', () => pm.response.to.have.status(400));",
-                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));",
-                  "// Defecto conocido: DEF-07: un recurso inexistente responde 400 y no 404"
+                  "pm.test('responde 404', () => pm.response.to.have.status(404));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));"
                 ]
               }
             }
@@ -3432,8 +3418,7 @@
               }
             ],
             "url": "{{integrationUrl}}/api/payment-methods/999999"
-          },
-          "description": "DEF-07: un recurso inexistente responde 400 y no 404"
+          }
         },
         {
           "name": "Baja de mi tarjeta → 204",

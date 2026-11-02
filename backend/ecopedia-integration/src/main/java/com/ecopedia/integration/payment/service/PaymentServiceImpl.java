@@ -12,6 +12,7 @@ import com.ecopedia.integration.payment.domain.IdempotencyKeyReusedException;
 import com.ecopedia.integration.payment.domain.NoUsablePaymentMethodException;
 import com.ecopedia.integration.payment.domain.PaymentGatewayPort;
 import com.ecopedia.integration.payment.domain.PaymentMethod;
+import com.ecopedia.integration.payment.domain.PaymentMethodNotFoundException;
 import com.ecopedia.integration.payment.domain.PaymentMethodRepository;
 import com.ecopedia.integration.payment.domain.PaymentService;
 import com.ecopedia.integration.payment.domain.TokenizedCard;
@@ -125,7 +126,7 @@ public class PaymentServiceImpl implements PaymentService {
                  * cuántas tarjetas tiene la plataforma. Como no hay nada que el dueño legítimo
                  * pueda hacer distinto según el caso, las dos situaciones se contestan igual.
                  */
-                .orElseThrow(() -> new IllegalArgumentException("No se encontró la tarjeta con ID: " + cardId));
+                .orElseThrow(() -> new PaymentMethodNotFoundException(cardId));
 
         // Baja lógica: los cobros y las deudas que cuelgan del token tienen que seguir existiendo.
         card.setActive(false);

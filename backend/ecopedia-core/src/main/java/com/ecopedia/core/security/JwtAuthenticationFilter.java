@@ -32,6 +32,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+    /**
+     * El id del usuario autenticado, guardado en el pedido para los logs de seguridad. El nombre
+     * de la autenticación es el email, que no tiene que llegar al log (DEF-03).
+     */
+    public static final String USER_ID_ATTRIBUTE = JwtAuthenticationFilter.class.getName() + ".userId";
+
     private final JwtTokenProvider tokenProvider;
     private final UserRepository userRepository;
 
@@ -58,6 +64,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+                request.setAttribute(USER_ID_ATTRIBUTE, user.getId());
             });
         }
 

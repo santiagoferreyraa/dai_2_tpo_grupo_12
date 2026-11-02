@@ -127,9 +127,9 @@ class PricingDepositApiTest {
     }
 
     @Test
-    @DisplayName("Un conector inexistente contesta 400: quien llama lo lee como sin seña")
-    void unknownConnectorIsBadRequest() throws Exception {
+    @DisplayName("Un conector inexistente contesta 404: quien llama lo lee como sin seña")
+    void unknownConnectorIsNotFound() throws Exception {
         mockMvc.perform(get("/api/pricing/deposit").param("connectorId", "999999"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isNotFound());
     }
 }

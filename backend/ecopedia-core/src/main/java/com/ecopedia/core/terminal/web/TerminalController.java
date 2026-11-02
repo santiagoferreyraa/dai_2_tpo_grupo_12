@@ -166,8 +166,5 @@ public class TerminalController {
         return ResponseEntity.noContent().build();
     }
 
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<String> handleIllegalArgument(IllegalArgumentException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ex.getMessage());
-    }
+    /* Los errores (un id inexistente, un parámetro mal escrito) los traduce ApiExceptionHandler. */
 }
