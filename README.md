@@ -487,6 +487,28 @@ Dos cosas que conviene reconocer:
 - **Sin el broker, Reservas reserva igual**, y en su panel aparece en WARN
   `No se pudo publicar el aviso`, con el aviso entero. Ese aviso no se reenvía solo.
 
+#### Mensajes que no se pudieron procesar
+
+Si `async` no puede procesar un mensaje —la base no responde, o el mensaje no se puede leer—, no
+lo da por consumido y Artemis se lo vuelve a entregar: **cinco intentos**, con 2, 4, 8 y 16
+segundos de espera entre uno y otro. Al quinto fallo lo aparta en la cola de mensajes muertos
+**`DLQ.notifications.dispatch`** (en la dirección `DLA`, no en la `DLQ` común: el porqué está en el
+archivo) y sigue con los demás. La regla está en `docker/artemis/broker.properties` y vale para
+todos los destinos.
+
+En el panel `8084 async` queda un WARN por cada intento (`El mensaje booking-N-... falló en el
+intento 2 de 5`) y un ERROR en el último (`... y pasa a la cola de mensajes muertos`). Un mensaje
+que no se pudo leer aparece como `El mensaje ilegible ID:...`.
+
+**Para reprocesarlos**, una vez resuelto lo que fallaba: consola de Artemis
+(http://localhost:8161/console) → `DLA` → *Queues* → `DLQ.notifications.dispatch` → *Operations* →
+**`retryMessages()`** → *Execute*. Los manda de vuelta a `notifications.dispatch` y `async` los
+vuelve a procesar. Un aviso que ya se había guardado no se duplica: se descarta por su `eventId`.
+
+> **El número de intentos está en dos lugares:** en `broker.properties`, que es el que manda, y en
+> `ecopedia.notifications.max-delivery-attempts` de `ecopedia-async`, que solo sirve para que el
+> log diga "intento 2 de 5". `DeadLetterQueueTest` falla si no coinciden.
+
 ### La pasarela de pagos simulada
 
 Pagos no valida ni cobra tarjetas por su cuenta: le habla por REST a la pasarela, un proceso
