@@ -136,7 +136,11 @@ class UserAuthorizationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("CONDUCTOR"));
 
-        mockMvc.perform(delete("/api/users/" + driver.getId()).header(HttpHeaders.AUTHORIZATION, admin))
+        // La baja pide la contraseña del ADMIN (02/11): la de givenUser.
+        mockMvc.perform(delete("/api/users/" + driver.getId())
+                        .header(HttpHeaders.AUTHORIZATION, admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"unaClave123\"}"))
                 .andExpect(status().isNoContent());
 
         /*

@@ -95,12 +95,6 @@ class AdminServiceTest {
     }
 
     @Test
-    void testDeactivateUser() {
-        adminService.deactivateUser(1L);
-        verify(userService, times(1)).deactivateUser(1L);
-    }
-
-    @Test
     void testDeactivateStation() {
         adminService.deactivateStation(10L);
         verify(terminalService, times(1)).deactivateStation(10L);

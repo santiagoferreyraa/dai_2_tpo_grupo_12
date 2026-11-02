@@ -81,11 +81,6 @@ public class AdminServiceImpl implements AdminService {
     }
 
     @Override
-    public void deactivateUser(Long userId) {
-        userService.deactivateUser(userId);
-    }
-
-    @Override
     public void activateUser(Long userId) {
         userService.activateUser(userId);
     }

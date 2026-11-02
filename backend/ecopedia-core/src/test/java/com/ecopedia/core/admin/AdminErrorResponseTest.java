@@ -62,12 +62,7 @@ class AdminErrorResponseTest {
         return "Bearer " + tokenProvider.generateToken(admin.getId(), admin.getEmail(), Role.ADMIN);
     }
 
-    @Test
-    @DisplayName("DEF-05 · Dar de baja desde el backoffice un usuario inexistente responde 404, no 500")
-    void deactivatingAnUnknownUserIsNotFound() throws Exception {
-        mockMvc.perform(delete("/api/admin/users/999999").header(HttpHeaders.AUTHORIZATION, adminBearer()))
-                .andExpect(status().isNotFound());
-    }
+    /* La baja de usuarios del backoffice se sacó el 02/11: la de /api/users pide la contraseña. */
 
     @Test
     @DisplayName("DEF-05 · Dar de baja desde el backoffice una estación inexistente responde 404, no 500")
