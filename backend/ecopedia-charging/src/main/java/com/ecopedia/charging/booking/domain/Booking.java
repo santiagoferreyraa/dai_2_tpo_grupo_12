@@ -195,7 +195,7 @@ public class Booking {
      * una reserva confirmada.
      */
     public void failActivation() {
-        requireConfirmed("la liberación por falla de habilitación");
+        requireConfirmedOrInProgress("la liberación por falla de habilitación");
         this.status = BookingStatus.CANCELLED;
         if (depositStatus == DepositStatus.CHARGED) {
             this.depositStatus = DepositStatus.REFUND_PENDING;
@@ -206,10 +206,10 @@ public class Booking {
     /**
      * La carga en curso se interrumpió por una falla ajena al conductor (RF13, ECO-59): se liquida
      * el consumo real sin aplicar el piso de la seña y, si el consumo real fue menor que la seña,
-     * se reintegra la diferencia. Solo sobre una reserva confirmada.
+     * se reintegra la diferencia. Solo sobre una reserva confirmada o en curso.
      */
     public void settleFaultedCharge(BigDecimal realCost, Instant now) {
-        requireConfirmed("la liquidación por falla");
+        requireConfirmedOrInProgress("la liquidación por falla");
         if (realCost == null || realCost.signum() < 0) {
             throw new InvalidBookingRequestException("El consumo real no puede ser negativo");
         }
@@ -254,13 +254,34 @@ public class Booking {
         }
     }
 
+    private void requireConfirmedOrInProgress(String transition) {
+        if (status != BookingStatus.CONFIRMED && status != BookingStatus.IN_PROGRESS) {
+            throw new BookingStateConflictException(id, "en " + status, transition);
+        }
+    }
+
     /** Pagos confirmó la devolución. */
     public void markDepositRefunded() {
         this.depositStatus = DepositStatus.REFUNDED;
     }
 
+    /**
+     * Consume la reserva al iniciar la sesión de carga (RF11, ECO-60).
+     * Transición a IN_PROGRESS bajo la transacción declarativa de habilitación.
+     */
+    public void startCharging(Instant now) {
+        if (this.status != BookingStatus.CONFIRMED) {
+            throw new InvalidBookingRequestException("Solo se puede iniciar una reserva en estado CONFIRMED");
+        }
+        this.status = BookingStatus.IN_PROGRESS;
+    }
+
     public boolean isConfirmed() {
         return status == BookingStatus.CONFIRMED;
+    }
+
+    public boolean isInProgress() {
+        return status == BookingStatus.IN_PROGRESS;
     }
 
     public boolean isCancelled() {

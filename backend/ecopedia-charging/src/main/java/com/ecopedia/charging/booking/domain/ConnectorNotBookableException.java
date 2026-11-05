@@ -11,4 +11,8 @@ public class ConnectorNotBookableException extends RuntimeException {
     public ConnectorNotBookableException(Long connectorId) {
         super("El conector " + connectorId + " está fuera de servicio y no se puede reservar");
     }
+
+    public ConnectorNotBookableException(Long connectorId, String message) {
+        super(message);
+    }
 }

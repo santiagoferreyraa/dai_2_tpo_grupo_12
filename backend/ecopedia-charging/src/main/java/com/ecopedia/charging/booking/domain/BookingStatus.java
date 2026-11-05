@@ -14,5 +14,10 @@ public enum BookingStatus {
      * El conductor no se presentó: pasó la tolerancia desde el inicio y la reserva seguía
      * confirmada (RF09, ECO-57). Libera el conector por el resto de la ventana y al conductor.
      */
-    NO_SHOW
+    NO_SHOW,
+    /**
+     * La reserva fue consumida al iniciar la sesión de carga (RF11, ECO-44, ECO-60).
+     * Pasa a este estado dentro de la transacción declarativa de habilitación.
+     */
+    IN_PROGRESS
 }

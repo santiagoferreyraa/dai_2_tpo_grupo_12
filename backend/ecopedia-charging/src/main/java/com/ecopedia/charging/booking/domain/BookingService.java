@@ -127,6 +127,18 @@ public interface BookingService {
     void markDepositRefunded(Long bookingId);
 
     /**
+     * Consume la reserva al iniciar la carga física en el conector (RF11, ECO-60).
+     * Transiciona su estado a {@link BookingStatus#IN_PROGRESS} bajo la transacción declarativa.
+     *
+     * @throws BookingNotFoundException si la reserva no existe
+     * @throws InvalidBookingRequestException si la reserva no está en estado CONFIRMED
+     */
+    Booking startBookingCharging(Long bookingId);
+
+    /** Obtiene una reserva por su identificador o lanza BookingNotFoundException. */
+    Booking getBooking(Long bookingId);
+
+    /**
      * Libera una reserva sin penalización y encola el reintegro total de la seña cuando la carga no
      * pudo iniciarse por causas ajenas al conductor —conector fuera de servicio, cargador que no
      * responde o rechazo de la distribuidora (RF13, ECO-59)—.

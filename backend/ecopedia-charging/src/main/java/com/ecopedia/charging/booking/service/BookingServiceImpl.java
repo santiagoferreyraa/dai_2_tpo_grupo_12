@@ -312,9 +312,11 @@ public class BookingServiceImpl implements BookingService {
             throw new SlotUnavailableException(connectorId);
         }
 
-        // Y lo que hace cumplir RF08: una reserva confirmada bloquea el conector por su ventana.
+        // Y lo que hace cumplir RF08: una reserva confirmada o en curso bloquea el conector por su ventana.
         boolean booked =
-                bookingRepository.existsOverlapping(connectorId, BookingStatus.CONFIRMED, window.start(), window.end());
+                bookingRepository.existsOverlapping(connectorId, BookingStatus.CONFIRMED, window.start(), window.end())
+                        || bookingRepository.existsOverlapping(
+                                connectorId, BookingStatus.IN_PROGRESS, window.start(), window.end());
         if (booked) {
             throw new SlotUnavailableException(connectorId);
         }
@@ -325,7 +327,7 @@ public class BookingServiceImpl implements BookingService {
      * <b>Se invoca con {@link #holdLock} tomado</b>, igual que {@link #requireFreeSlot}, para que
      * dos pedidos del mismo conductor no puedan pasar los dos por acá a la vez.
      *
-     * <p>Mira solo las reservas CONFIRMADAS y no las retenciones: la retención del conductor no
+     * <p>Mira solo las reservas CONFIRMADAS o IN_PROGRESS y no las retenciones: la retención del conductor no
      * necesita chequeo porque tiene a lo sumo una y el pedido nuevo la reemplaza (ver
      * {@link #releaseHoldsOf}). Una reserva cancelada no cuenta, por lo mismo que no cuenta para el
      * conector: al cancelar queda libre el conector y queda libre él.
@@ -339,8 +341,22 @@ public class BookingServiceImpl implements BookingService {
                     throw DriverAlreadyBookedException.charging(inProgress.getId(), driverId);
                 });
 
+        bookingRepository.findInProgressForDriver(driverId, BookingStatus.IN_PROGRESS, now).stream()
+                .findFirst()
+                .ifPresent(inProgress -> {
+                    throw DriverAlreadyBookedException.charging(inProgress.getId(), driverId);
+                });
+
         bookingRepository
                 .findOverlappingForDriver(driverId, BookingStatus.CONFIRMED, window.start(), window.end())
+                .stream()
+                .findFirst()
+                .ifPresent(clashing -> {
+                    throw DriverAlreadyBookedException.overlapping(clashing.getId(), driverId);
+                });
+
+        bookingRepository
+                .findOverlappingForDriver(driverId, BookingStatus.IN_PROGRESS, window.start(), window.end())
                 .stream()
                 .findFirst()
                 .ifPresent(clashing -> {
@@ -583,6 +599,25 @@ public class BookingServiceImpl implements BookingService {
     }
 
     @Override
+    public Booking getBooking(Long bookingId) {
+        return bookingRepository.findById(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
+    }
+
+    @Override
+    public Booking startBookingCharging(Long bookingId) {
+        Booking booking = getBooking(bookingId);
+        Instant now = clock.instant();
+        booking.startCharging(now);
+        Booking saved = bookingRepository.save(booking);
+        log.info(
+                "Reserva {} del conductor {} sobre conector {} pasa a IN_PROGRESS",
+                saved.getId(),
+                saved.getDriverId(),
+                saved.getConnectorId());
+        return saved;
+    }
+
+    @Override
     public Booking releaseForActivationFailure(Long bookingId) {
         Booking booking =
                 bookingRepository.findById(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
@@ -610,7 +645,7 @@ public class BookingServiceImpl implements BookingService {
         Booking booking =
                 bookingRepository.findById(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
         Instant now = clock.instant();
-        // Una reserva que no está CONFIRMED la rechaza la reserva misma (409, QA-26).
+        // Una reserva que no está CONFIRMED ni IN_PROGRESS la rechaza la reserva misma (409, QA-26).
         booking.settleFaultedCharge(realCost, now);
         Booking saved = bookingRepository.save(booking);
         log.info(

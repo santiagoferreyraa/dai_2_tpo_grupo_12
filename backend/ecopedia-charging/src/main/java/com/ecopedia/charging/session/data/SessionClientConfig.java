@@ -46,6 +46,21 @@ public class SessionClientConfig {
                 .build();
     }
 
+    /** Hacia la API REST del cargador físico / simulador (puerto 8088). */
+    @Bean
+    public RestClient chargerHttpClient(
+            RestClient.Builder builder,
+            @Value("${ecopedia.charger.url:http://localhost:8088}") String chargerUrl,
+            @Value("${ecopedia.charger.access-token:}") String accessToken) {
+        var clientBuilder = builder.clone()
+                .baseUrl(chargerUrl)
+                .requestFactory(timeouts(Duration.ofSeconds(2), Duration.ofSeconds(4)));
+        if (accessToken != null && !accessToken.isBlank()) {
+            clientBuilder.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken);
+        }
+        return clientBuilder.build();
+    }
+
     private static SimpleClientHttpRequestFactory timeouts(Duration connect, Duration read) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(connect);
