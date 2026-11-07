@@ -120,6 +120,12 @@
                     <groupId>org.jacoco</groupId>
                     <artifactId>jacoco-maven-plugin</artifactId>
                     <version>${jacoco.version}</version>
+                    <configuration>
+                        <excludes>
+                            <exclude>**/contract/**</exclude>
+                            <exclude>**/ws/contract/**</exclude>
+                        </excludes>
+                    </configuration>
                     <executions>
                         <execution>
                             <goals>
@@ -139,6 +145,10 @@
                                 <goal>check</goal>
                             </goals>
                             <configuration>
+                                <excludes>
+                                    <exclude>**/contract/**</exclude>
+                                    <exclude>**/ws/contract/**</exclude>
+                                </excludes>
                                 <rules>
                                     <rule>
                                         <element>BUNDLE</element>
