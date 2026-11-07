@@ -6,14 +6,18 @@ import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
+import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import com.ecopedia.charging.session.domain.PhysicalChargerRejectedException;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice(basePackageClasses = SessionController.class)
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class SessionExceptionHandler {
 
     @ExceptionHandler(SlotUnavailableException.class)
@@ -39,6 +43,11 @@ public class SessionExceptionHandler {
     @ExceptionHandler(PaymentMethodInvalidException.class)
     public ProblemDetail handlePaymentInvalid(PaymentMethodInvalidException ex) {
         return withCode(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), "PAYMENT_METHOD_INVALID");
+    }
+
+    @ExceptionHandler(PaymentMethodsUnavailableException.class)
+    public ProblemDetail handlePaymentMethodsUnavailable(PaymentMethodsUnavailableException ex) {
+        return withCode(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), "PAYMENT_CHECK_UNAVAILABLE");
     }
 
     @ExceptionHandler(PhysicalChargerRejectedException.class)

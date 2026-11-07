@@ -3,7 +3,6 @@ package com.ecopedia.charging.session.service;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
-import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.session.domain.ActivationFailureReason;
 import com.ecopedia.charging.session.domain.ActivationRequest;
 import com.ecopedia.charging.session.domain.ActivationResult;
@@ -86,11 +85,8 @@ public class ChargingActivationService {
                     request.connectorId(), "La distribuidora eléctrica rechazó la habilitación de la demanda");
         }
 
-        boolean paymentUsable = paymentDirectory.hasUsablePaymentMethod(request.driverId(), authToken);
-        if (!paymentUsable) {
-            throw new PaymentMethodInvalidException(
-                    "El conductor no posee un medio de pago válido o arrastra deuda pendiente");
-        }
+        // Validación síncrona completa contra la pasarela y deudas (RF11, RF14, ECO-54)
+        paymentDirectory.validatePaymentMethodForCharging(request.driverId(), null);
 
         // 2. Transacción declarativa local (RNF06): reserva + conector + sesión bajo la misma tx
         String sessionId = UUID.randomUUID().toString();

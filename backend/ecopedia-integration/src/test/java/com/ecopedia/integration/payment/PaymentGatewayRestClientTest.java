@@ -231,4 +231,41 @@ class PaymentGatewayRestClientTest {
                         .body(error("card_token_not_found")));
         assertThat(client.validate("tok_old")).isEqualTo(new CardValidation(false, "card_token_not_found"));
     }
+
+    @Test
+    @DisplayName("Valida sin cobrar con rechazo explícito y sin código legible")
+    void validateRejections() {
+        gateway.expect(requestTo("http://gateway.test/v1/card_tokens/tok_declined/validations"))
+                .andRespond(withSuccess(
+                        "{\"status\":\"rejected\",\"status_detail\":\"card_declined\"}", MediaType.APPLICATION_JSON));
+        assertThat(client.validate("tok_declined")).isEqualTo(new CardValidation(false, "card_declined"));
+
+        gateway.reset();
+        gateway.expect(requestTo("http://gateway.test/v1/card_tokens/tok_unreadable/validations"))
+                .andRespond(withBadRequest().contentType(MediaType.TEXT_PLAIN).body("no-json"));
+        assertThat(client.validate("tok_unreadable")).isEqualTo(new CardValidation(false, "unknown"));
+    }
+
+    @Test
+    @DisplayName("Sin respuesta al validar, no está disponible")
+    void validateWithoutAnswer() {
+        gateway.expect(requestTo("http://gateway.test/v1/card_tokens/tok_timeout/validations"))
+                .andRespond(withException(new java.net.http.HttpTimeoutException("request timed out")));
+
+        assertThatThrownBy(() -> client.validate("tok_timeout")).isInstanceOf(PaymentGatewayUnavailableException.class);
+    }
+
+    @Test
+    @DisplayName("Validar con error de servidor o problema de autenticación lanza pasarela no disponible")
+    void validateServerErrorAndAuth() {
+        gateway.expect(requestTo("http://gateway.test/v1/card_tokens/tok_server_err/validations"))
+                .andRespond(withServerError());
+        assertThatThrownBy(() -> client.validate("tok_server_err"))
+                .isInstanceOf(PaymentGatewayUnavailableException.class);
+
+        gateway.reset();
+        gateway.expect(requestTo("http://gateway.test/v1/card_tokens/tok_auth/validations"))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
+        assertThatThrownBy(() -> client.validate("tok_auth")).isInstanceOf(PaymentGatewayUnavailableException.class);
+    }
 }

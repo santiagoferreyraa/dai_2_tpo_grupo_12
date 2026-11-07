@@ -1,6 +1,7 @@
 package com.ecopedia.integration.payment.service;
 
 import com.ecopedia.integration.payment.domain.CardData;
+import com.ecopedia.integration.payment.domain.CardValidation;
 import com.ecopedia.integration.payment.domain.DepositCharge;
 import com.ecopedia.integration.payment.domain.DepositChargeNotFoundException;
 import com.ecopedia.integration.payment.domain.DepositChargeRepository;
@@ -15,6 +16,10 @@ import com.ecopedia.integration.payment.domain.PaymentMethod;
 import com.ecopedia.integration.payment.domain.PaymentMethodNotFoundException;
 import com.ecopedia.integration.payment.domain.PaymentMethodRepository;
 import com.ecopedia.integration.payment.domain.PaymentService;
+import com.ecopedia.integration.payment.domain.PaymentValidationResult;
+import com.ecopedia.integration.payment.domain.PaymentValidationResult.ValidationErrorCode;
+import com.ecopedia.integration.payment.domain.PendingPaymentRepository;
+import com.ecopedia.integration.payment.domain.PendingPaymentStatus;
 import com.ecopedia.integration.payment.domain.TokenizedCard;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -48,16 +53,19 @@ public class PaymentServiceImpl implements PaymentService {
 
     private final PaymentMethodRepository paymentMethodRepository;
     private final DepositChargeRepository depositChargeRepository;
+    private final PendingPaymentRepository pendingPaymentRepository;
     private final PaymentGatewayPort paymentGateway;
     private final Clock clock;
 
     public PaymentServiceImpl(
             PaymentMethodRepository paymentMethodRepository,
             DepositChargeRepository depositChargeRepository,
+            PendingPaymentRepository pendingPaymentRepository,
             PaymentGatewayPort paymentGateway,
             Clock clock) {
         this.paymentMethodRepository = paymentMethodRepository;
         this.depositChargeRepository = depositChargeRepository;
+        this.pendingPaymentRepository = pendingPaymentRepository;
         this.paymentGateway = paymentGateway;
         this.clock = clock;
     }
@@ -238,6 +246,69 @@ public class PaymentServiceImpl implements PaymentService {
                 charge.getAmount(),
                 charge.getDriverId());
         return depositChargeRepository.save(charge);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public PaymentValidationResult validatePaymentMethod(Long driverId, Long paymentMethodId) {
+        YearMonth today = YearMonth.now(clock);
+        PaymentMethod card;
+        if (paymentMethodId != null) {
+            Optional<PaymentMethod> found = paymentMethodRepository
+                    .findById(paymentMethodId)
+                    .filter(c -> {
+                        boolean mine = c.getDriverId().equals(driverId);
+                        if (!mine) {
+                            log.warn(
+                                    "Acceso denegado: se intentó validar la tarjeta {} con el conductor {}, que es de otro",
+                                    paymentMethodId,
+                                    driverId);
+                        }
+                        return mine;
+                    });
+            if (found.isEmpty() || !found.get().isActive()) {
+                return PaymentValidationResult.rejected(
+                        "El conductor no posee tarjetas de pago registradas", ValidationErrorCode.NO_PAYMENT_METHOD);
+            }
+            if (found.get().isExpired(today)) {
+                return PaymentValidationResult.rejected(
+                        "La tarjeta registrada se encuentra vencida", ValidationErrorCode.CARD_EXPIRED);
+            }
+            card = found.get();
+        } else {
+            List<PaymentMethod> activeCards =
+                    paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(driverId);
+            if (activeCards.isEmpty()) {
+                return PaymentValidationResult.rejected(
+                        "El conductor no posee tarjetas de pago registradas", ValidationErrorCode.NO_PAYMENT_METHOD);
+            }
+            Optional<PaymentMethod> usable =
+                    activeCards.stream().filter(c -> c.isUsable(today)).findFirst();
+            if (usable.isEmpty()) {
+                return PaymentValidationResult.rejected(
+                        "La tarjeta registrada se encuentra vencida", ValidationErrorCode.CARD_EXPIRED);
+            }
+            card = usable.get();
+        }
+
+        if (hasOutstandingDebt(driverId)) {
+            return PaymentValidationResult.rejected(
+                    "El conductor posee cobros pendientes de pago", ValidationErrorCode.DRIVER_HAS_DEBT);
+        }
+
+        CardValidation validation = paymentGateway.validate(card.getGatewayToken());
+        if (!validation.chargeable()) {
+            return PaymentValidationResult.rejected(
+                    "La pasarela de pagos rechazó la tarjeta del conductor", ValidationErrorCode.CARD_DECLINED);
+        }
+
+        return PaymentValidationResult.ok();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean hasOutstandingDebt(Long driverId) {
+        return pendingPaymentRepository.existsByDriverIdAndStatus(driverId, PendingPaymentStatus.PENDING);
     }
 
     private static DepositCharge repeated(DepositCharge previous, DepositChargeRequest request) {

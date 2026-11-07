@@ -16,4 +16,15 @@ public interface PaymentDirectory {
      * @throws PaymentMethodsUnavailableException si Pagos no contestó: no se sabe, y no saber no habilita
      */
     boolean hasUsablePaymentMethod(Long driverId, String authToken);
+
+    /**
+     * Validación completa sin mover dinero (RF11, RF14, ECO-54):
+     * Comprueba que la tarjeta sea cobrable ante la pasarela y que el conductor no tenga deuda.
+     *
+     * @param driverId Identificador del conductor.
+     * @param paymentMethodId Identificador opcional de la tarjeta elegida.
+     * @throws PaymentMethodInvalidException si la tarjeta fue declinada, no existe o el conductor arrastra deuda.
+     * @throws PaymentMethodsUnavailableException si Pagos o la pasarela no responden (503).
+     */
+    void validatePaymentMethodForCharging(Long driverId, Long paymentMethodId);
 }
