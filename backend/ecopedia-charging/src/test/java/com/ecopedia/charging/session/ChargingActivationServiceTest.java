@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -15,6 +16,7 @@ import static org.mockito.Mockito.when;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
+import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import com.ecopedia.charging.session.domain.ActivationFailureReason;
 import com.ecopedia.charging.session.domain.ActivationRequest;
 import com.ecopedia.charging.session.domain.ActivationResult;
@@ -72,7 +74,6 @@ class ChargingActivationServiceTest {
             when(catalog.find(CONNECTOR_ID)).thenReturn(Optional.of(point));
             when(powerPolicy.decide(point))
                     .thenReturn(new PowerDecision(new BigDecimal("150.00"), PowerDecision.Outcome.FAST_AUTHORIZED));
-            when(paymentDirectory.hasUsablePaymentMethod(eq(DRIVER_ID), any())).thenReturn(true);
 
             when(coordinator.persistLocalActivation(
                             any(), eq(BOOKING_ID), eq(CONNECTOR_ID), eq(DRIVER_ID), eq(80), any(), any()))
@@ -92,6 +93,7 @@ class ChargingActivationServiceTest {
             assertThat(result.status()).isEqualTo(SessionStatus.ACTIVE);
             assertThat(result.powerLimitKw()).isEqualByComparingTo("150.00");
 
+            verify(paymentDirectory).validatePaymentMethodForCharging(eq(DRIVER_ID), isNull());
             verify(chargerPort).activate(eq(CONNECTOR_ID), eq(result.sessionId()), eq(new BigDecimal("150.00")));
             verify(settlementPolicy, never()).failActivation(any(), any());
         }
@@ -122,12 +124,34 @@ class ChargingActivationServiceTest {
             when(catalog.find(CONNECTOR_ID)).thenReturn(Optional.of(point));
             when(powerPolicy.decide(point))
                     .thenReturn(new PowerDecision(new BigDecimal("22.00"), PowerDecision.Outcome.STANDARD_CHARGE));
-            when(paymentDirectory.hasUsablePaymentMethod(eq(DRIVER_ID), any())).thenReturn(false);
+            doThrow(new PaymentMethodInvalidException("Tarjeta rechazada"))
+                    .when(paymentDirectory)
+                    .validatePaymentMethodForCharging(eq(DRIVER_ID), any());
 
             ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(PaymentMethodInvalidException.class);
+
+            verify(coordinator, never()).persistLocalActivation(any(), any(), any(), any(), anyInt(), any(), any());
+            verify(chargerPort, never()).activate(anyLong(), any(), any());
+        }
+
+        @Test
+        @DisplayName("Pasarela de pagos o integration no disponible: propaga 503 sin tocar hardware ni DB")
+        void paymentServiceUnavailableRejectsBeforeTransaction() {
+            ChargingPoint point = new ChargingPoint(CONNECTOR_ID, 1L, new BigDecimal("22.00"), null);
+            when(catalog.find(CONNECTOR_ID)).thenReturn(Optional.of(point));
+            when(powerPolicy.decide(point))
+                    .thenReturn(new PowerDecision(new BigDecimal("22.00"), PowerDecision.Outcome.STANDARD_CHARGE));
+            doThrow(new PaymentMethodsUnavailableException(new RuntimeException("timeout")))
+                    .when(paymentDirectory)
+                    .validatePaymentMethodForCharging(eq(DRIVER_ID), any());
+
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+
+            assertThatThrownBy(() -> activationService.activate(request, "token"))
+                    .isInstanceOf(PaymentMethodsUnavailableException.class);
 
             verify(coordinator, never()).persistLocalActivation(any(), any(), any(), any(), anyInt(), any(), any());
             verify(chargerPort, never()).activate(anyLong(), any(), any());
@@ -140,7 +164,6 @@ class ChargingActivationServiceTest {
             when(catalog.find(CONNECTOR_ID)).thenReturn(Optional.of(point));
             when(powerPolicy.decide(point))
                     .thenReturn(new PowerDecision(new BigDecimal("22.00"), PowerDecision.Outcome.STANDARD_CHARGE));
-            when(paymentDirectory.hasUsablePaymentMethod(eq(DRIVER_ID), any())).thenReturn(true);
 
             when(coordinator.persistLocalActivation(
                             any(), eq(BOOKING_ID), eq(CONNECTOR_ID), eq(DRIVER_ID), eq(80), any(), any()))

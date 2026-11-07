@@ -1,20 +1,27 @@
 package com.ecopedia.charging.checkout.data;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import java.io.IOException;
 import java.net.ServerSocket;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 /**
- * El adaptador hacia Pagos cuando Pagos no está.
- *
- * <p>Sin Spring y sin servidor de mentira: se le da una dirección donde no escucha nadie, que es exactamente
- * lo que pasa con el 8083 apagado.
+ * Pruebas unitarias para el adaptador hacia Pagos en ecopedia-integration (ECO-54).
  */
 class IntegrationPaymentDirectoryTest {
 
@@ -35,6 +42,85 @@ class IntegrationPaymentDirectoryTest {
                 new IntegrationPaymentDirectory(RestClient.builder(), "http://localhost:1");
 
         assertThat(directory.hasUsablePaymentMethod(7L, null)).isFalse();
+    }
+
+    @Test
+    @DisplayName("Validación para carga exitosa: no lanza excepción ante 200 OK")
+    void validateForCharging_success() {
+        RestClient.Builder builder = RestClient.builder().baseUrl("http://integration");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        RestClient client = builder.build();
+
+        server.expect(requestTo("http://integration/internal/payments/validations"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(
+                        "{\"valid\":true,\"reason\":\"Tarjeta ok\",\"code\":\"NONE\"}", MediaType.APPLICATION_JSON));
+
+        IntegrationPaymentDirectory directory = new IntegrationPaymentDirectory(client, client);
+
+        assertThatCode(() -> directory.validatePaymentMethodForCharging(10L, 5L))
+                .doesNotThrowAnyException();
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("Validación para carga: conductor con deuda lanza PaymentMethodInvalidException")
+    void validateForCharging_driverWithDebt() {
+        RestClient.Builder builder = RestClient.builder().baseUrl("http://integration");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        RestClient client = builder.build();
+
+        server.expect(requestTo("http://integration/internal/payments/validations"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"code\":\"DRIVER_HAS_DEBT\",\"detail\":\"Posee deudas\"}"));
+
+        IntegrationPaymentDirectory directory = new IntegrationPaymentDirectory(client, client);
+
+        assertThatThrownBy(() -> directory.validatePaymentMethodForCharging(10L, null))
+                .isInstanceOf(PaymentMethodInvalidException.class)
+                .hasMessageContaining("deuda");
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("Validación para carga: tarjeta declinada lanza PaymentMethodInvalidException")
+    void validateForCharging_cardDeclined() {
+        RestClient.Builder builder = RestClient.builder().baseUrl("http://integration");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        RestClient client = builder.build();
+
+        server.expect(requestTo("http://integration/internal/payments/validations"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"code\":\"CARD_DECLINED\",\"detail\":\"Rechazada\"}"));
+
+        IntegrationPaymentDirectory directory = new IntegrationPaymentDirectory(client, client);
+
+        assertThatThrownBy(() -> directory.validatePaymentMethodForCharging(10L, 2L))
+                .isInstanceOf(PaymentMethodInvalidException.class)
+                .hasMessageContaining("rechazada");
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("Validación para carga: pasarela caída o 503 lanza PaymentMethodsUnavailableException")
+    void validateForCharging_gatewayUnavailable() {
+        RestClient.Builder builder = RestClient.builder().baseUrl("http://integration");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        RestClient client = builder.build();
+
+        server.expect(requestTo("http://integration/internal/payments/validations"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+
+        IntegrationPaymentDirectory directory = new IntegrationPaymentDirectory(client, client);
+
+        assertThatThrownBy(() -> directory.validatePaymentMethodForCharging(10L, null))
+                .isInstanceOf(PaymentMethodsUnavailableException.class);
+        server.verify();
     }
 
     /** Un puerto que estuvo libre hace un instante: se abre, se anota y se cierra. */

@@ -11,13 +11,23 @@ import static org.mockito.Mockito.when;
 
 import com.ecopedia.integration.payment.domain.CardBrand;
 import com.ecopedia.integration.payment.domain.CardData;
+import com.ecopedia.integration.payment.domain.CardValidation;
+import com.ecopedia.integration.payment.domain.DepositChargeRepository;
 import com.ecopedia.integration.payment.domain.PaymentGatewayPort;
+import com.ecopedia.integration.payment.domain.PaymentGatewayUnavailableException;
 import com.ecopedia.integration.payment.domain.PaymentMethod;
 import com.ecopedia.integration.payment.domain.PaymentMethodNotFoundException;
 import com.ecopedia.integration.payment.domain.PaymentMethodRepository;
+import com.ecopedia.integration.payment.domain.PaymentValidationResult;
+import com.ecopedia.integration.payment.domain.PaymentValidationResult.ValidationErrorCode;
+import com.ecopedia.integration.payment.domain.PendingPaymentRepository;
+import com.ecopedia.integration.payment.domain.PendingPaymentStatus;
 import com.ecopedia.integration.payment.domain.TokenizedCard;
 import com.ecopedia.integration.payment.service.PaymentServiceImpl;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -28,7 +38,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -43,18 +52,27 @@ class PaymentServiceTest {
     private PaymentMethodRepository paymentMethodRepository;
 
     @Mock
+    private DepositChargeRepository depositChargeRepository;
+
+    @Mock
+    private PendingPaymentRepository pendingPaymentRepository;
+
+    @Mock
     private PaymentGatewayPort paymentGateway;
 
-    @InjectMocks
     private PaymentServiceImpl paymentService;
 
     @Captor
     private ArgumentCaptor<PaymentMethod> savedCard;
 
     private CardData input;
+    private Clock fixedClock;
 
     @BeforeEach
     void setUp() {
+        fixedClock = Clock.fixed(Instant.parse("2026-11-06T12:00:00Z"), ZoneOffset.UTC);
+        paymentService = new PaymentServiceImpl(
+                paymentMethodRepository, depositChargeRepository, pendingPaymentRepository, paymentGateway, fixedClock);
         input = new CardData("4111111111111111", 9, 2029, "SANTIAGO R", "  La del laburo  ");
     }
 
@@ -244,5 +262,140 @@ class PaymentServiceTest {
 
         // Es la condición que Reservas va a exigir en ECO-32 para la precondición de RF02.
         assertTrue(card.isUsable(YearMonth.of(2026, 1)));
+    }
+
+    @Test
+    @DisplayName("validatePaymentMethod: aprueba si la tarjeta es cobrable y el conductor no arrastra deuda")
+    void validatePaymentMethod_shouldApprove_whenCardIsChargeableAndNoDebt() {
+        PaymentMethod card = existing(DRIVER, CardBrand.VISA, "1111", 12, 2029);
+        when(paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(DRIVER))
+                .thenReturn(List.of(card));
+        when(pendingPaymentRepository.existsByDriverIdAndStatus(DRIVER, PendingPaymentStatus.PENDING))
+                .thenReturn(false);
+        when(paymentGateway.validate("tok_previo")).thenReturn(new CardValidation(true, "chargeable"));
+
+        PaymentValidationResult result = paymentService.validatePaymentMethod(DRIVER, null);
+
+        assertTrue(result.valid());
+        assertEquals(ValidationErrorCode.NONE, result.errorCode());
+        verify(paymentGateway).validate("tok_previo");
+    }
+
+    @Test
+    @DisplayName("validatePaymentMethod: rechaza si el conductor arrastra deudas impagas y no consulta pasarela")
+    void validatePaymentMethod_shouldReject_whenDriverHasOutstandingDebt() {
+        PaymentMethod card = existing(DRIVER, CardBrand.VISA, "1111", 12, 2029);
+        when(paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(DRIVER))
+                .thenReturn(List.of(card));
+        when(pendingPaymentRepository.existsByDriverIdAndStatus(DRIVER, PendingPaymentStatus.PENDING))
+                .thenReturn(true);
+
+        PaymentValidationResult result = paymentService.validatePaymentMethod(DRIVER, null);
+
+        assertFalse(result.valid());
+        assertEquals(ValidationErrorCode.DRIVER_HAS_DEBT, result.errorCode());
+        verify(paymentGateway, never()).validate(any());
+    }
+
+    @Test
+    @DisplayName("validatePaymentMethod: rechaza si la pasarela declina la tarjeta")
+    void validatePaymentMethod_shouldReject_whenGatewayDeclinesCard() {
+        PaymentMethod card = existing(DRIVER, CardBrand.VISA, "1111", 12, 2029);
+        when(paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(DRIVER))
+                .thenReturn(List.of(card));
+        when(pendingPaymentRepository.existsByDriverIdAndStatus(DRIVER, PendingPaymentStatus.PENDING))
+                .thenReturn(false);
+        when(paymentGateway.validate("tok_previo"))
+                .thenReturn(new CardValidation(false, "cc_rejected_insufficient_amount"));
+
+        PaymentValidationResult result = paymentService.validatePaymentMethod(DRIVER, null);
+
+        assertFalse(result.valid());
+        assertEquals(ValidationErrorCode.CARD_DECLINED, result.errorCode());
+    }
+
+    @Test
+    @DisplayName("validatePaymentMethod: propaga PaymentGatewayUnavailableException si la pasarela falla")
+    void validatePaymentMethod_shouldThrowUnavailable_whenGatewayFails() {
+        PaymentMethod card = existing(DRIVER, CardBrand.VISA, "1111", 12, 2029);
+        when(paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(DRIVER))
+                .thenReturn(List.of(card));
+        when(pendingPaymentRepository.existsByDriverIdAndStatus(DRIVER, PendingPaymentStatus.PENDING))
+                .thenReturn(false);
+        when(paymentGateway.validate("tok_previo"))
+                .thenThrow(new PaymentGatewayUnavailableException(new RuntimeException("timeout")));
+
+        assertThrows(
+                PaymentGatewayUnavailableException.class, () -> paymentService.validatePaymentMethod(DRIVER, null));
+    }
+
+    @Test
+    @DisplayName("validatePaymentMethod: rechaza con CARD_EXPIRED si la tarjeta del conductor está vencida")
+    void validatePaymentMethod_shouldReject_whenCardIsExpired() {
+        PaymentMethod expiredCard = existing(DRIVER, CardBrand.VISA, "1111", 10, 2026); // fixedClock está en 11/2026
+        when(paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(DRIVER))
+                .thenReturn(List.of(expiredCard));
+
+        PaymentValidationResult result = paymentService.validatePaymentMethod(DRIVER, null);
+
+        assertFalse(result.valid());
+        assertEquals(ValidationErrorCode.CARD_EXPIRED, result.errorCode());
+        verify(paymentGateway, never()).validate(any());
+    }
+
+    @Test
+    @DisplayName("validatePaymentMethod: rechaza con NO_PAYMENT_METHOD si no tiene tarjetas registradas")
+    void validatePaymentMethod_shouldReject_whenDriverHasNoCards() {
+        when(paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(DRIVER))
+                .thenReturn(List.of());
+
+        PaymentValidationResult result = paymentService.validatePaymentMethod(DRIVER, null);
+
+        assertFalse(result.valid());
+        assertEquals(ValidationErrorCode.NO_PAYMENT_METHOD, result.errorCode());
+        verify(paymentGateway, never()).validate(any());
+    }
+
+    @Test
+    @DisplayName("validatePaymentMethod: busca tarjeta específica si se indica paymentMethodId")
+    void validatePaymentMethod_shouldUseExplicitPaymentMethodId_whenProvided() {
+        PaymentMethod card = existing(DRIVER, CardBrand.VISA, "1111", 12, 2029);
+        when(paymentMethodRepository.findById(1L)).thenReturn(Optional.of(card));
+        when(pendingPaymentRepository.existsByDriverIdAndStatus(DRIVER, PendingPaymentStatus.PENDING))
+                .thenReturn(false);
+        when(paymentGateway.validate("tok_previo")).thenReturn(new CardValidation(true, "chargeable"));
+
+        PaymentValidationResult result = paymentService.validatePaymentMethod(DRIVER, 1L);
+
+        assertTrue(result.valid());
+        assertEquals(ValidationErrorCode.NONE, result.errorCode());
+        verify(paymentMethodRepository).findById(1L);
+        verify(paymentGateway).validate("tok_previo");
+    }
+
+    @Test
+    @DisplayName("validatePaymentMethod: rechaza con NO_PAYMENT_METHOD si paymentMethodId es de otro conductor")
+    void validatePaymentMethod_shouldReject_whenExplicitPaymentMethodIdBelongsToAnotherDriver() {
+        PaymentMethod cardOfOther = existing(ANOTHER_DRIVER, CardBrand.VISA, "1111", 12, 2029);
+        when(paymentMethodRepository.findById(1L)).thenReturn(Optional.of(cardOfOther));
+
+        PaymentValidationResult result = paymentService.validatePaymentMethod(DRIVER, 1L);
+
+        assertFalse(result.valid());
+        assertEquals(ValidationErrorCode.NO_PAYMENT_METHOD, result.errorCode());
+        verify(paymentGateway, never()).validate(any());
+    }
+
+    @Test
+    @DisplayName("validatePaymentMethod: rechaza con CARD_EXPIRED si la tarjeta específica indicada está vencida")
+    void validatePaymentMethod_shouldReject_whenExplicitPaymentMethodIdIsExpired() {
+        PaymentMethod expired = existing(DRIVER, CardBrand.VISA, "1111", 10, 2026);
+        when(paymentMethodRepository.findById(1L)).thenReturn(Optional.of(expired));
+
+        PaymentValidationResult result = paymentService.validatePaymentMethod(DRIVER, 1L);
+
+        assertFalse(result.valid());
+        assertEquals(ValidationErrorCode.CARD_EXPIRED, result.errorCode());
+        verify(paymentGateway, never()).validate(any());
     }
 }

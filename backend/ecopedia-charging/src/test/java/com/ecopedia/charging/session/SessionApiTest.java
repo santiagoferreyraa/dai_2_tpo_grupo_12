@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.ecopedia.charging.booking.TestTokens;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
+import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import com.ecopedia.charging.session.domain.ActivationRequest;
 import com.ecopedia.charging.session.domain.ActivationResult;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
@@ -129,5 +130,21 @@ class SessionApiTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value("CHARGER_UNAVAILABLE"));
+    }
+
+    @Test
+    @DisplayName("Pagos o pasarela no disponible responde 503 con code PAYMENT_CHECK_UNAVAILABLE")
+    void paymentMethodsUnavailableReturnsServiceUnavailable() throws Exception {
+        when(activationService.activate(any(ActivationRequest.class), any()))
+                .thenThrow(new PaymentMethodsUnavailableException(new RuntimeException("timeout")));
+
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, null, 80, null);
+
+        mockMvc.perform(post("/api/sessions/activation")
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("PAYMENT_CHECK_UNAVAILABLE"));
     }
 }
