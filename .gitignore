@@ -46,3 +46,6 @@ build/
 # --- SO ---
 .DS_Store
 Thumbs.db
+
+# --- Docs ---
+docs/
