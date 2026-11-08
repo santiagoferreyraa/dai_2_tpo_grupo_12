@@ -30,6 +30,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -38,6 +39,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
@@ -107,6 +109,7 @@ public class BookingServiceImpl implements BookingService {
     private final Duration maxHorizon;
     private final Duration depositRefundNotice;
     private final Duration noShowGrace;
+    private final Duration walkInBuffer;
 
     /** El estado conversacional del componente: las retenciones vigentes, por id. */
     private final Map<UUID, Hold> holds = new ConcurrentHashMap<>();
@@ -134,6 +137,7 @@ public class BookingServiceImpl implements BookingService {
     /** El reloj que vence las retenciones. Lo crea {@link #start()} y lo apaga {@link #stop()}. */
     private ScheduledExecutorService expirations;
 
+    @Autowired
     public BookingServiceImpl(
             ConnectorCatalog connectorCatalog,
             BookingRepository bookingRepository,
@@ -143,7 +147,8 @@ public class BookingServiceImpl implements BookingService {
             @Value("${ecopedia.booking.max-window}") Duration maxWindow,
             @Value("${ecopedia.booking.max-horizon}") Duration maxHorizon,
             @Value("${ecopedia.booking.deposit-refund-notice}") Duration depositRefundNotice,
-            @Value("${ecopedia.booking.no-show-grace}") Duration noShowGrace) {
+            @Value("${ecopedia.booking.no-show-grace}") Duration noShowGrace,
+            @Value("${ecopedia.booking.walk-in-buffer:PT15M}") Duration walkInBuffer) {
         this.connectorCatalog = connectorCatalog;
         this.bookingRepository = bookingRepository;
         this.eventPublisher = eventPublisher;
@@ -153,6 +158,30 @@ public class BookingServiceImpl implements BookingService {
         this.maxHorizon = maxHorizon;
         this.depositRefundNotice = depositRefundNotice;
         this.noShowGrace = noShowGrace;
+        this.walkInBuffer = walkInBuffer;
+    }
+
+    public BookingServiceImpl(
+            ConnectorCatalog connectorCatalog,
+            BookingRepository bookingRepository,
+            BookingEventPublisher eventPublisher,
+            Clock clock,
+            Duration holdTtl,
+            Duration maxWindow,
+            Duration maxHorizon,
+            Duration depositRefundNotice,
+            Duration noShowGrace) {
+        this(
+                connectorCatalog,
+                bookingRepository,
+                eventPublisher,
+                clock,
+                holdTtl,
+                maxWindow,
+                maxHorizon,
+                depositRefundNotice,
+                noShowGrace,
+                Duration.ofMinutes(15));
     }
 
     /**
@@ -682,12 +711,105 @@ public class BookingServiceImpl implements BookingService {
         bookingRepository
                 .findOverlapping(connectorId, BookingStatus.CONFIRMED, range.start(), range.end())
                 .forEach(booking -> occupied.add(booking.getWindow()));
+        bookingRepository
+                .findOverlapping(connectorId, BookingStatus.IN_PROGRESS, range.start(), range.end())
+                .forEach(booking -> occupied.add(booking.getWindow()));
         // La misma regla que requireFreeSlot: una retención vencida no ocupa aunque siga en el mapa.
         holds.values().stream()
                 .filter(hold -> hold.connectorId().equals(connectorId) && !hold.isExpiredAt(now))
                 .forEach(hold -> occupied.add(hold.window()));
 
         return FreeWindows.within(range, occupied);
+    }
+
+    @Override
+    public TimeWindow calculateWalkInWindow(Long connectorId, Instant from) {
+        Objects.requireNonNull(from, "from no puede ser null");
+        requireBookableConnector(connectorId);
+        synchronized (holdLock) {
+            return calculateWalkInWindow(connectorId, from, null);
+        }
+    }
+
+    private TimeWindow calculateWalkInWindow(Long connectorId, Instant from, Long driverId) {
+        Instant maxEnd = from.plus(maxWindow);
+        Instant minRequiredEnd = from.plus(walkInBuffer);
+
+        // 1. Buscar reservas CONFIRMED o IN_PROGRESS en [from, maxEnd)
+        List<Booking> overlappingBookings = new ArrayList<>();
+        overlappingBookings.addAll(
+                bookingRepository.findOverlapping(connectorId, BookingStatus.CONFIRMED, from, maxEnd));
+        overlappingBookings.addAll(
+                bookingRepository.findOverlapping(connectorId, BookingStatus.IN_PROGRESS, from, maxEnd));
+
+        // 2. Buscar retenciones (Holds) vigentes en memoria de OTROS conductores que se solapen con [from, maxEnd)
+        TimeWindow evalWindow = new TimeWindow(from, maxEnd);
+        List<Hold> activeHolds = holds.values().stream()
+                .filter(hold -> hold.connectorId().equals(connectorId))
+                .filter(hold -> driverId == null || !hold.driverId().equals(driverId))
+                .filter(hold -> !hold.isExpiredAt(from))
+                .filter(hold -> hold.window().overlaps(evalWindow))
+                .toList();
+
+        // 3. Determinar el límite superior (el inicio más próximo de cualquier ocupación)
+        Instant effectiveEnd = maxEnd;
+        for (Booking booking : overlappingBookings) {
+            Instant bookingStart = booking.getWindow().start();
+            if (!bookingStart.isAfter(from)) {
+                // Ya hay una reserva corriendo en este instante
+                throw new SlotUnavailableException(connectorId);
+            }
+            if (bookingStart.isBefore(effectiveEnd)) {
+                effectiveEnd = bookingStart;
+            }
+        }
+
+        for (Hold hold : activeHolds) {
+            Instant holdStart = hold.window().start();
+            if (!holdStart.isAfter(from)) {
+                // Ya hay una retención corriendo en este instante
+                throw new SlotUnavailableException(connectorId);
+            }
+            if (holdStart.isBefore(effectiveEnd)) {
+                effectiveEnd = holdStart;
+            }
+        }
+
+        // 4. Validar buffer de 15 minutos previos a la próxima reserva
+        if (effectiveEnd.isBefore(minRequiredEnd)) {
+            throw new SlotUnavailableException(connectorId);
+        }
+
+        return new TimeWindow(from, effectiveEnd);
+    }
+
+    @Override
+    public Booking registerWalkIn(Long connectorId, Long driverId) {
+        Objects.requireNonNull(connectorId, "connectorId no puede ser null");
+        Objects.requireNonNull(driverId, "driverId no puede ser null");
+        requireBookableConnector(connectorId);
+
+        Instant now = clock.instant();
+        Booking booking;
+        synchronized (holdLock) {
+            TimeWindow window = calculateWalkInWindow(connectorId, now, driverId);
+            requireDriverFree(driverId, window, now);
+            releaseHoldsOf(driverId);
+
+            booking = new Booking(connectorId, driverId, window, now);
+            booking = bookingRepository.save(booking);
+        }
+
+        log.info(
+                "Reserva walk-in {} registrada para el conductor {} en el conector {}: ventana [{} - {})",
+                booking.getId(),
+                driverId,
+                connectorId,
+                booking.getWindow().start(),
+                booking.getWindow().end());
+
+        eventPublisher.publish(BookingEvent.confirmed(booking, now));
+        return booking;
     }
 
     /**

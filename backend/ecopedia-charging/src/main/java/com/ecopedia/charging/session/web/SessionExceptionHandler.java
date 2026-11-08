@@ -3,6 +3,7 @@ package com.ecopedia.charging.session.web;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
+import com.ecopedia.charging.booking.domain.DriverAlreadyBookedException;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
@@ -23,6 +24,11 @@ public class SessionExceptionHandler {
     @ExceptionHandler(SlotUnavailableException.class)
     public ProblemDetail handleSlotUnavailable(SlotUnavailableException ex) {
         return withCode(HttpStatus.CONFLICT, ex.getMessage(), "SLOT_UNAVAILABLE");
+    }
+
+    @ExceptionHandler(DriverAlreadyBookedException.class)
+    public ProblemDetail handleDriverAlreadyBooked(DriverAlreadyBookedException ex) {
+        return withCode(HttpStatus.CONFLICT, ex.getMessage(), "DRIVER_ALREADY_BOOKED");
     }
 
     @ExceptionHandler(ConnectorNotBookableException.class)

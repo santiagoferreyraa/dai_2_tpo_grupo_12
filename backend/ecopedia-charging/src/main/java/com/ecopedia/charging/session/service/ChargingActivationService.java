@@ -1,5 +1,7 @@
 package com.ecopedia.charging.session.service;
 
+import com.ecopedia.charging.booking.domain.Booking;
+import com.ecopedia.charging.booking.domain.BookingService;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
@@ -45,6 +47,7 @@ public class ChargingActivationService {
     private final ChargingPointCatalog chargingPointCatalog;
     private final ChargingPowerPolicy chargingPowerPolicy;
     private final PaymentDirectory paymentDirectory;
+    private final BookingService bookingService;
     private final ChargingSettlementPolicy settlementPolicy;
     private final ChargingTransactionalCoordinator transactionalCoordinator;
     private final PhysicalChargerPort physicalChargerPort;
@@ -54,6 +57,7 @@ public class ChargingActivationService {
             ChargingPointCatalog chargingPointCatalog,
             ChargingPowerPolicy chargingPowerPolicy,
             PaymentDirectory paymentDirectory,
+            BookingService bookingService,
             ChargingSettlementPolicy settlementPolicy,
             ChargingTransactionalCoordinator transactionalCoordinator,
             PhysicalChargerPort physicalChargerPort,
@@ -61,6 +65,7 @@ public class ChargingActivationService {
         this.chargingPointCatalog = chargingPointCatalog;
         this.chargingPowerPolicy = chargingPowerPolicy;
         this.paymentDirectory = paymentDirectory;
+        this.bookingService = bookingService;
         this.settlementPolicy = settlementPolicy;
         this.transactionalCoordinator = transactionalCoordinator;
         this.physicalChargerPort = physicalChargerPort;
@@ -88,16 +93,31 @@ public class ChargingActivationService {
         // Validación síncrona completa contra la pasarela y deudas (RF11, RF14, ECO-54)
         paymentDirectory.validatePaymentMethodForCharging(request.driverId(), null);
 
+        // Registro de reserva instantánea si es carga sin reserva previa (RF10, ECO-58)
+        Long effectiveBookingId = request.bookingId();
+        if (effectiveBookingId == null) {
+            Booking walkInBooking = bookingService.registerWalkIn(request.connectorId(), request.driverId());
+            effectiveBookingId = walkInBooking.getId();
+        }
+
         // 2. Transacción declarativa local (RNF06): reserva + conector + sesión bajo la misma tx
         String sessionId = UUID.randomUUID().toString();
-        ChargingSession session = transactionalCoordinator.persistLocalActivation(
-                sessionId,
-                request.bookingId(),
-                request.connectorId(),
-                request.driverId(),
-                request.targetBatteryPercent(),
-                powerDecision.powerKw(),
-                now);
+        ChargingSession session;
+        try {
+            session = transactionalCoordinator.persistLocalActivation(
+                    sessionId,
+                    effectiveBookingId,
+                    request.connectorId(),
+                    request.driverId(),
+                    request.targetBatteryPercent(),
+                    powerDecision.powerKw(),
+                    now);
+        } catch (RuntimeException persistFailure) {
+            if (request.bookingId() == null && effectiveBookingId != null) {
+                settlementPolicy.failActivation(effectiveBookingId, ActivationFailureReason.CHARGER_UNAVAILABLE);
+            }
+            throw persistFailure;
+        }
 
         // 3. Activación física del hardware externo (NO participa del rollback de base de datos)
         try {
@@ -111,9 +131,9 @@ public class ChargingActivationService {
             // Compensación local: marcar sesión FAULTED y liberar conector local
             transactionalCoordinator.compensateLocalFailure(request.connectorId(), sessionId, clock.instant());
 
-            // Compensación de seña (RF13, ECO-59): reintegro íntegro sin penalización
-            if (request.bookingId() != null) {
-                settlementPolicy.failActivation(request.bookingId(), ActivationFailureReason.CHARGER_UNAVAILABLE);
+            // Compensación de seña (RF13, ECO-59) o liberación de reserva walk-in (ECO-58)
+            if (effectiveBookingId != null) {
+                settlementPolicy.failActivation(effectiveBookingId, ActivationFailureReason.CHARGER_UNAVAILABLE);
             }
 
             throw chargerFailure;

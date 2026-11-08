@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ecopedia.charging.booking.TestTokens;
+import com.ecopedia.charging.booking.domain.DriverAlreadyBookedException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
@@ -146,5 +147,50 @@ class SessionApiTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value("PAYMENT_CHECK_UNAVAILABLE"));
+    }
+
+    @Test
+    @DisplayName("POST /api/sessions/activation walk-in (bookingId = null): responde 201 Created y activa sesión")
+    void activateWalkInSuccessfully() throws Exception {
+        Instant now = Instant.parse("2026-11-02T15:00:00Z");
+        ActivationResult result = new ActivationResult(
+                "session-walkin-1",
+                55L,
+                CONNECTOR_ID,
+                DRIVER_ID,
+                80,
+                new BigDecimal("50.00"),
+                SessionStatus.ACTIVE,
+                now);
+
+        when(activationService.activate(any(ActivationRequest.class), any())).thenReturn(result);
+
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, null, 80, "QR-WALKIN");
+
+        mockMvc.perform(post("/api/sessions/activation")
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.sessionId").value("session-walkin-1"))
+                .andExpect(jsonPath("$.bookingId").value(55))
+                .andExpect(jsonPath("$.connectorId").value(CONNECTOR_ID))
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
+    }
+
+    @Test
+    @DisplayName("Conductor con otra carga activa responde 409 Conflict con code DRIVER_ALREADY_BOOKED")
+    void driverAlreadyBookedReturnsConflict() throws Exception {
+        when(activationService.activate(any(ActivationRequest.class), any()))
+                .thenThrow(DriverAlreadyBookedException.charging(10L, DRIVER_ID));
+
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, null, 80, null);
+
+        mockMvc.perform(post("/api/sessions/activation")
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DRIVER_ALREADY_BOOKED"));
     }
 }
