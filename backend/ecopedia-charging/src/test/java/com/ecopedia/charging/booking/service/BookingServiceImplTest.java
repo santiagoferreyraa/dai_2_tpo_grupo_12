@@ -1178,6 +1178,26 @@ class BookingServiceImplTest {
 
         @Test
         @DisplayName(
+                "Si el conductor ya está cargando en este mismo conector: prioriza el rechazo del conductor (DRIVER_CHARGING) sobre el del conector")
+        void walkIn_whenDriverAlreadyChargingOnSameConnector_prioritizesDriverAlreadyBooked() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Instant now = clock.instant();
+            Booking inProgress = new Booking(
+                    CONNECTOR,
+                    DRIVER,
+                    new TimeWindow(now.minus(Duration.ofMinutes(10)), now.plus(Duration.ofMinutes(50))),
+                    now.minus(Duration.ofMinutes(10)));
+            inProgress.startCharging(now.minus(Duration.ofMinutes(5)));
+            repository.save(inProgress);
+
+            assertThatThrownBy(() -> service.registerWalkIn(CONNECTOR, DRIVER))
+                    .isInstanceOf(DriverAlreadyBookedException.class)
+                    .extracting(ex -> ((DriverAlreadyBookedException) ex).code())
+                    .isEqualTo("DRIVER_CHARGING");
+        }
+
+        @Test
+        @DisplayName(
                 "Si el conector ya tiene una carga en curso en el instante actual: rechaza con SlotUnavailableException")
         void walkIn_whenConnectorCurrentlyOccupied_throwsSlotUnavailable() {
             started(AVAILABLE, Duration.ofMinutes(10));

@@ -363,7 +363,10 @@ public class BookingServiceImpl implements BookingService {
      *
      * @throws DriverAlreadyBookedException si tiene una reserva en curso o una que se cruza
      */
-    private void requireDriverFree(Long driverId, TimeWindow window, Instant now) {
+    /**
+     * Que el CONDUCTOR no tenga una sesión de carga en curso en este instante.
+     */
+    private void requireDriverNotCharging(Long driverId, Instant now) {
         bookingRepository.findInProgressForDriver(driverId, BookingStatus.CONFIRMED, now).stream()
                 .findFirst()
                 .ifPresent(inProgress -> {
@@ -375,6 +378,10 @@ public class BookingServiceImpl implements BookingService {
                 .ifPresent(inProgress -> {
                     throw DriverAlreadyBookedException.charging(inProgress.getId(), driverId);
                 });
+    }
+
+    private void requireDriverFree(Long driverId, TimeWindow window, Instant now) {
+        requireDriverNotCharging(driverId, now);
 
         bookingRepository
                 .findOverlappingForDriver(driverId, BookingStatus.CONFIRMED, window.start(), window.end())
@@ -655,7 +662,7 @@ public class BookingServiceImpl implements BookingService {
             return booking;
         }
         Instant now = clock.instant();
-        // Cualquier otro estado que no sea CONFIRMED lo rechaza la reserva (409, QA-26).
+        // Cualquier otro estado que no sea CONFIRMED ni IN_PROGRESS lo rechaza la reserva (409, QA-26).
         booking.failActivation();
         Booking saved = bookingRepository.save(booking);
         log.info(
@@ -792,6 +799,11 @@ public class BookingServiceImpl implements BookingService {
         Instant now = clock.instant();
         Booking booking;
         synchronized (holdLock) {
+            /*
+             * El conductor antes que el conector: si el conductor ya tiene una sesión de carga en
+             * curso (incluso sobre este mismo conector), el rechazo que le sirve es el suyo.
+             */
+            requireDriverNotCharging(driverId, now);
             TimeWindow window = calculateWalkInWindow(connectorId, now, driverId);
             requireDriverFree(driverId, window, now);
             releaseHoldsOf(driverId);

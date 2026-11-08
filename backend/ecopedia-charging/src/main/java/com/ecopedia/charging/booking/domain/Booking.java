@@ -192,7 +192,7 @@ public class Booking {
      * La carga no pudo iniciarse por causas ajenas al conductor —conector fuera de servicio,
      * cargador que no responde o rechazo de la distribuidora (RF13, ECO-59)—: la reserva se libera
      * sin penalización y la seña se reintegra entera, sin importar el plazo de preaviso. Solo sobre
-     * una reserva confirmada.
+     * una reserva confirmada o en curso.
      */
     public void failActivation() {
         requireConfirmedOrInProgress("la liberación por falla de habilitación");
