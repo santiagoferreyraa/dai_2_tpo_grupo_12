@@ -119,6 +119,9 @@ ecopedia:
     # Cada cuánto se buscan incomparecencias.
     no-show-sweep-interval: ${ECOPEDIA_BOOKING_NO_SHOW_SWEEP:PT1M}
 
+    # Buffer mínimo previo a una reserva existente para permitir iniciar una carga sin reserva (RF10, ECO-58).
+    walk-in-buffer: ${ECOPEDIA_BOOKING_WALK_IN_BUFFER:PT15M}
+
 ---
 # Perfil de desarrollo: base en memoria, para levantar el módulo sin PostgreSQL instalado.
 # Las demos de las entregas corren sobre PostgreSQL, no sobre H2.
