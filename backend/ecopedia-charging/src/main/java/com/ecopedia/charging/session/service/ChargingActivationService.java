@@ -4,6 +4,7 @@ import com.ecopedia.charging.booking.domain.Booking;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.BookingRepository;
 import com.ecopedia.charging.booking.domain.BookingService;
+import com.ecopedia.charging.booking.domain.BookingStateConflictException;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
@@ -116,7 +117,9 @@ public class ChargingActivationService {
                 throw new InvalidBookingRequestException("La reserva es de otro conector");
             }
             if (!booking.isConfirmed()) {
-                throw new InvalidBookingRequestException("La reserva " + request.bookingId() + " no está confirmada");
+                // Antes de llamar a nadie, el mismo 409 que daría la propia reserva (patrón State).
+                throw new BookingStateConflictException(
+                        request.bookingId(), "en " + booking.getStatus(), "la habilitación de la carga");
             }
         }
 

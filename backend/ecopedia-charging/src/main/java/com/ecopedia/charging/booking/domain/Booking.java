@@ -27,6 +27,12 @@ import java.util.UUID;
  * <p><b>La seña viaja con la reserva desde ECO-53.</b> Se cobra antes de confirmar y la reserva
  * anota lo cobrado; lo que pasa después con esa plata —devolverla o quedársela el operador— lo
  * deciden los cambios de estado de acá, que son los que saben por qué terminó la reserva.
+ *
+ * <p><b>Patrón State.</b> Cada transición (cancelar, la incomparecencia, habilitar, liberar o
+ * liquidar por falla, cerrar la carga) se la pasa al estado en que está la reserva
+ * ({@link BookingState}); si ese estado no la admite, la rechaza con
+ * {@link BookingStateConflictException}, que la API responde con 409. La reserva no tiene un solo
+ * {@code if} sobre su estado: solo los métodos de paquete que los estados usan para cambiarla.
  */
 @Entity
 @Table(name = "bookings")
@@ -173,19 +179,7 @@ public class Booking {
      * una ya cancelada no llega acá: el servicio lo resuelve antes, porque es idempotente.
      */
     public void cancel(Instant now) {
-        requireConfirmed("la cancelación");
-        if (!windowEnd.isAfter(now)) {
-            throw new BookingStateConflictException(id, "terminada", "la cancelación");
-        }
-        this.status = BookingStatus.CANCELLED;
-        if (depositStatus == DepositStatus.CHARGED) {
-            if (now.isAfter(depositRefundableUntil)) {
-                this.depositStatus = DepositStatus.FORFEITED;
-            } else {
-                this.depositStatus = DepositStatus.REFUND_PENDING;
-                this.depositRefundAmount = this.depositAmount;
-            }
-        }
+        state().cancel(this, now);
     }
 
     /**
@@ -195,12 +189,7 @@ public class Booking {
      * una reserva confirmada o en curso.
      */
     public void failActivation() {
-        requireConfirmedOrInProgress("la liberación por falla de habilitación");
-        this.status = BookingStatus.CANCELLED;
-        if (depositStatus == DepositStatus.CHARGED) {
-            this.depositStatus = DepositStatus.REFUND_PENDING;
-            this.depositRefundAmount = this.depositAmount;
-        }
+        state().failActivation(this);
     }
 
     /**
@@ -209,26 +198,7 @@ public class Booking {
      * se reintegra la diferencia. Solo sobre una reserva confirmada o en curso.
      */
     public void settleFaultedCharge(BigDecimal realCost, Instant now) {
-        requireConfirmedOrInProgress("la liquidación por falla");
-        if (realCost == null || realCost.signum() < 0) {
-            throw new InvalidBookingRequestException("El consumo real no puede ser negativo");
-        }
-        if (realCost.signum() == 0) {
-            failActivation();
-            return;
-        }
-        Instant instant = now.truncatedTo(ChronoUnit.MICROS);
-        if (instant.isAfter(this.windowStart) && instant.isBefore(this.windowEnd)) {
-            this.windowEnd = instant;
-        }
-        if (depositStatus == DepositStatus.CHARGED) {
-            if (realCost.compareTo(this.depositAmount) < 0) {
-                this.depositStatus = DepositStatus.REFUND_PENDING;
-                this.depositRefundAmount = this.depositAmount.subtract(realCost);
-            } else {
-                this.depositRefundAmount = BigDecimal.ZERO;
-            }
-        }
+        state().settleFaultedCharge(this, realCost, now);
     }
 
     /**
@@ -237,27 +207,7 @@ public class Booking {
      * reserva confirmada: el barrido ya las filtra así, y esto lo asegura para cualquier otro.
      */
     public void markNoShow() {
-        requireConfirmed("la incomparecencia");
-        this.status = BookingStatus.NO_SHOW;
-        if (depositStatus == DepositStatus.CHARGED) {
-            this.depositStatus = DepositStatus.FORFEITED;
-        }
-    }
-
-    /**
-     * Todos los cambios de estado parten de {@code CONFIRMED}: {@code CANCELLED} y {@code NO_SHOW}
-     * son finales (QA-26).
-     */
-    private void requireConfirmed(String transition) {
-        if (status != BookingStatus.CONFIRMED) {
-            throw new BookingStateConflictException(id, "en " + status, transition);
-        }
-    }
-
-    private void requireConfirmedOrInProgress(String transition) {
-        if (status != BookingStatus.CONFIRMED && status != BookingStatus.IN_PROGRESS) {
-            throw new BookingStateConflictException(id, "en " + status, transition);
-        }
+        state().markNoShow(this);
     }
 
     /** Pagos confirmó la devolución. */
@@ -267,13 +217,11 @@ public class Booking {
 
     /**
      * Consume la reserva al iniciar la sesión de carga (RF11, ECO-60).
-     * Transición a IN_PROGRESS bajo la transacción declarativa de habilitación.
+     * Transición a IN_PROGRESS bajo la transacción declarativa de habilitación. Solo desde
+     * {@code CONFIRMED}: lo demás es 409, como cualquier transición inválida.
      */
     public void startCharging(Instant now) {
-        if (this.status != BookingStatus.CONFIRMED) {
-            throw new InvalidBookingRequestException("Solo se puede iniciar una reserva en estado CONFIRMED");
-        }
-        this.status = BookingStatus.IN_PROGRESS;
+        state().startCharging(this, now);
     }
 
     /**
@@ -281,14 +229,65 @@ public class Booking {
      * si concluyó antes del fin programado para liberar el tiempo remanente.
      */
     public void completeCharging(Instant stoppedAt) {
-        requireConfirmedOrInProgress("el cierre de la carga");
-        if (stoppedAt != null) {
-            Instant instant = stoppedAt.truncatedTo(ChronoUnit.MICROS);
-            if (instant.isAfter(this.windowStart) && instant.isBefore(this.windowEnd)) {
-                this.windowEnd = instant;
-            }
+        state().completeCharging(this, stoppedAt);
+    }
+
+    // ---- Lo que usan los estados para cambiar la reserva (patrón State). De paquete: desde afuera
+    // ---- la reserva solo cambia por las transiciones de arriba.
+
+    private BookingState state() {
+        return status.behavior();
+    }
+
+    void moveTo(BookingStatus next) {
+        this.status = next;
+    }
+
+    /** Si la carga o la liquidación terminan dentro de la ventana, el resto se libera. */
+    void trimWindowAt(Instant at) {
+        // A microsegundos, como guarda la base (ver el constructor).
+        Instant instant = at.truncatedTo(ChronoUnit.MICROS);
+        if (instant.isAfter(this.windowStart) && instant.isBefore(this.windowEnd)) {
+            this.windowEnd = instant;
         }
-        this.status = BookingStatus.COMPLETED;
+    }
+
+    /** Cancelar hasta el plazo de preaviso inclusive devuelve la seña; después, queda para el operador. */
+    void settleDepositOnCancellation(Instant now) {
+        if (depositStatus != DepositStatus.CHARGED) {
+            return;
+        }
+        if (now.isAfter(depositRefundableUntil)) {
+            this.depositStatus = DepositStatus.FORFEITED;
+        } else {
+            refundWholeDeposit();
+        }
+    }
+
+    void refundWholeDeposit() {
+        if (depositStatus == DepositStatus.CHARGED) {
+            this.depositStatus = DepositStatus.REFUND_PENDING;
+            this.depositRefundAmount = this.depositAmount;
+        }
+    }
+
+    void forfeitDeposit() {
+        if (depositStatus == DepositStatus.CHARGED) {
+            this.depositStatus = DepositStatus.FORFEITED;
+        }
+    }
+
+    /** Sin el piso de la seña (RF13): si el consumo fue menor, se reintegra la diferencia. */
+    void settleDepositAgainst(BigDecimal realCost) {
+        if (depositStatus != DepositStatus.CHARGED) {
+            return;
+        }
+        if (realCost.compareTo(this.depositAmount) < 0) {
+            this.depositStatus = DepositStatus.REFUND_PENDING;
+            this.depositRefundAmount = this.depositAmount.subtract(realCost);
+        } else {
+            this.depositRefundAmount = BigDecimal.ZERO;
+        }
     }
 
     public boolean isConfirmed() {

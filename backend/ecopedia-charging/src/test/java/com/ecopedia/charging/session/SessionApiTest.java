@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.ecopedia.charging.booking.TestTokens;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
+import com.ecopedia.charging.booking.domain.BookingStateConflictException;
 import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
 import com.ecopedia.charging.booking.domain.DriverAlreadyBookedException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
@@ -318,6 +319,44 @@ class SessionApiTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.detail").value(ApiProblems.NOT_FOUND_DETAIL))
                 .andExpect(jsonPath("$.code").doesNotExist());
+    }
+
+    /**
+     * Patrón State: habilitar una reserva que ya no está confirmada es una transición inválida. 409
+     * {@code BOOKING_STATE_CONFLICT}, el mismo texto que en Reservas, y ni el id ni el estado de la
+     * reserva en la respuesta (directiva 7). Hasta el 10/11 era un 400 con "La reserva N no está
+     * confirmada".
+     */
+    @Test
+    @DisplayName("Habilitar una reserva que ya no está confirmada responde 409 BOOKING_STATE_CONFLICT sin pistas")
+    void activatingUnconfirmedBookingReturnsStateConflict() throws Exception {
+        when(activationService.activate(any(ActivationRequest.class), any()))
+                .thenThrow(new BookingStateConflictException(10L, "en CANCELLED", "la habilitación de la carga"));
+
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, 10L, 80, null);
+
+        mockMvc.perform(post("/api/sessions/activation")
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(BookingStateConflictException.CODE))
+                .andExpect(jsonPath("$.detail").value(ApiProblems.STATE_CONFLICT_DETAIL))
+                .andExpect(content().string(not(containsString("CANCELLED"))));
+    }
+
+    /** Cerrar la carga de una reserva que ya se cerró: antes del 10/11 caía en el manejador general (500). */
+    @Test
+    @DisplayName("Cerrar la carga de una reserva ya cerrada responde 409 BOOKING_STATE_CONFLICT, no 500")
+    void stoppingOnClosedBookingReturnsStateConflict() throws Exception {
+        when(activationService.stopSession("session-closed", DRIVER_ID, null))
+                .thenThrow(new BookingStateConflictException(10L, "en COMPLETED", "el cierre de la carga"));
+
+        mockMvc.perform(post("/api/sessions/session-closed/stop")
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(BookingStateConflictException.CODE))
+                .andExpect(jsonPath("$.detail").value(ApiProblems.STATE_CONFLICT_DETAIL));
     }
 
     @Test

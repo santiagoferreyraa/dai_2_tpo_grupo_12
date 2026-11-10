@@ -36,6 +36,12 @@ public final class ApiProblems {
     /** Lo que ve el cliente de un error inesperado; el detalle queda en el log. */
     public static final String UNEXPECTED_DETAIL = "Ocurrió un error inesperado. Probá de nuevo en unos minutos.";
 
+    /**
+     * Una transición de la reserva que su estado no admite (409 {@code BOOKING_STATE_CONFLICT}, QA-26):
+     * el mismo texto desde Reservas y desde SesionesDeCarga.
+     */
+    public static final String STATE_CONFLICT_DETAIL = "La reserva no admite ese cambio en su estado actual.";
+
     /** El cargador contestó que no a la orden de encendido. */
     public static final String CHARGER_REJECTED_DETAIL =
             "El cargador no aceptó la orden de encendido. Probá con otro conector o avisale al operador.";
