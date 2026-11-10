@@ -5,13 +5,19 @@ import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.BookingRepository;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
+import com.ecopedia.charging.session.domain.ChargeSettlement;
+import com.ecopedia.charging.session.domain.ChargerReading;
 import com.ecopedia.charging.session.domain.ChargingSession;
+import com.ecopedia.charging.session.domain.ChargingSessionNotFoundException;
 import com.ecopedia.charging.session.domain.ChargingSessionRepository;
 import com.ecopedia.charging.session.domain.ConnectorState;
 import com.ecopedia.charging.session.domain.ConnectorStateRepository;
+import com.ecopedia.charging.session.domain.SessionEndReason;
+import com.ecopedia.charging.session.domain.SessionPaymentStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -145,5 +151,76 @@ public class ChargingTransactionalCoordinator {
         });
 
         log.info("Compensación local ejecutada para conector {} y sesión {}", connectorId, sessionId);
+    }
+
+    /**
+     * Cierra la sesión en la transacción local (RF11, RNF06, ECO-44): la sesión pasa a
+     * {@code COMPLETED} con lo que entregó el cargador, el conector vuelve a {@code AVAILABLE} y la
+     * reserva a {@code COMPLETED}, con la ventana recortada al instante del cierre.
+     *
+     * <p>Las tres escrituras juntas o ninguna, igual que al habilitar. Lo externo —apagar el cargador,
+     * calcular el importe, cobrarlo— queda afuera: el cargador se apaga antes y el cobro va después,
+     * para que la liberación del conector nunca dependa de un tercero.
+     *
+     * <p>El bloqueo optimista de la sesión es el que decide si dos cierres llegan a la vez —el del
+     * conductor y el corte automático de ECO-45—: uno confirma y el otro falla con
+     * {@code OptimisticLockingFailureException}, sin liquidar dos veces.
+     *
+     * @return la sesión cerrada por este pedido, o vacío si ya estaba cerrada: quien llama no tiene
+     *     que volver a liquidarla
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Optional<ChargingSession> persistLocalCompletion(
+            String sessionId, ChargerReading reading, SessionEndReason reason, Instant now) {
+        ChargingSession session = chargingSessionRepository
+                .findBySessionId(sessionId)
+                .orElseThrow(() -> new ChargingSessionNotFoundException(sessionId));
+        if (!session.isActive()) {
+            return Optional.empty();
+        }
+
+        session.complete(now, reading, reason);
+        ChargingSession saved = chargingSessionRepository.save(session);
+
+        connectorStateRepository.findById(session.getConnectorId()).ifPresent(state -> {
+            if (sessionId.equals(state.getCurrentSessionId())) {
+                state.release(now);
+                connectorStateRepository.save(state);
+            }
+        });
+
+        if (session.getBookingId() != null) {
+            bookingRepository.findById(session.getBookingId()).ifPresent(booking -> {
+                if (booking.isInProgress()) {
+                    booking.completeCharging(now);
+                    bookingRepository.save(booking);
+                }
+            });
+        }
+
+        log.info(
+                "Transacción local de cierre confirmada: sesión={} ({}), conector={} (AVAILABLE), reserva={}, {} kWh",
+                sessionId,
+                reason,
+                session.getConnectorId(),
+                session.getBookingId(),
+                saved.getKwhDelivered());
+        return Optional.of(saved);
+    }
+
+    /** Anota la liquidación y el resultado del cobro de una sesión ya cerrada (RF14). */
+    @Transactional(rollbackFor = Exception.class)
+    public ChargingSession recordSettlement(
+            String sessionId, ChargeSettlement settlement, SessionPaymentStatus paymentStatus) {
+        ChargingSession session = chargingSessionRepository
+                .findBySessionId(sessionId)
+                .orElseThrow(() -> new ChargingSessionNotFoundException(sessionId));
+        if (settlement != null) {
+            session.recordSettlement(settlement);
+        }
+        if (paymentStatus != null) {
+            session.recordPayment(paymentStatus);
+        }
+        return chargingSessionRepository.save(session);
     }
 }

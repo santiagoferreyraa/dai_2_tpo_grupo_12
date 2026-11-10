@@ -4,6 +4,7 @@ import com.ecopedia.integration.payment.domain.PendingPayment;
 import com.ecopedia.integration.payment.domain.PendingPaymentRepository;
 import com.ecopedia.integration.payment.domain.PendingPaymentStatus;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -18,4 +19,7 @@ public interface JpaPendingPaymentRepository extends JpaRepository<PendingPaymen
 
     @Override
     boolean existsByDriverIdAndStatus(Long driverId, PendingPaymentStatus status);
+
+    @Override
+    Optional<PendingPayment> findFirstByReference(String reference);
 }

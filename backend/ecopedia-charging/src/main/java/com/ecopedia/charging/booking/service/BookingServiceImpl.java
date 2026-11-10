@@ -640,6 +640,13 @@ public class BookingServiceImpl implements BookingService {
     }
 
     @Override
+    public Optional<Booking> findChargeableBooking(Long driverId, Long connectorId, Instant at) {
+        return bookingRepository.findInProgressForDriver(driverId, BookingStatus.CONFIRMED, at).stream()
+                .filter(booking -> booking.getConnectorId().equals(connectorId))
+                .findFirst();
+    }
+
+    @Override
     public Booking startBookingCharging(Long bookingId) {
         Booking booking = getBooking(bookingId);
         Instant now = clock.instant();

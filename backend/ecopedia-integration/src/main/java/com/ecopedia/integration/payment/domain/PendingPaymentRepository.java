@@ -15,4 +15,7 @@ public interface PendingPaymentRepository {
     List<PendingPayment> findByDriverIdAndStatus(Long driverId, PendingPaymentStatus status);
 
     boolean existsByDriverIdAndStatus(Long driverId, PendingPaymentStatus status);
+
+    /** La deuda anotada por esa referencia —la sesión de carga—, para no anotarla dos veces (ECO-44). */
+    Optional<PendingPayment> findFirstByReference(String reference);
 }

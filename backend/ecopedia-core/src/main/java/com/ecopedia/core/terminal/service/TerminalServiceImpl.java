@@ -102,6 +102,7 @@ public class TerminalServiceImpl implements TerminalService {
         connector.setMaxPowerKw(maxPowerKw);
         // Nace disponible: el operador lo saca de servicio después si hace falta.
         connector.setOperationalStatus(OperationalStatus.AVAILABLE);
+        connector.setAccessCode(unusedAccessCode());
         return connectorRepository.save(connector);
     }
 
@@ -260,5 +261,39 @@ public class TerminalServiceImpl implements TerminalService {
                         * Math.sin(dLon / 2);
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return R * c;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Connector getConnectorByAccessCode(String rawCode) {
+        // El mismo 404 para un código mal escrito que para uno que nadie tiene: distinguirlos le
+        // diría a quien prueba códigos cuáles tienen la forma correcta, y no le sirve a nadie más.
+        return ConnectorAccessCode.parse(rawCode)
+                .flatMap(connectorRepository::findByAccessCode)
+                .orElseThrow(() -> new ResourceNotFoundException("Ningún conector tiene ese código de acceso"));
+    }
+
+    @Override
+    public Connector regenerateAccessCode(Long connectorId) {
+        Connector connector = connectorRepository
+                .findById(connectorId)
+                .orElseThrow(() -> new ResourceNotFoundException("Conector no encontrado con ID: " + connectorId));
+        connector.setAccessCode(unusedAccessCode());
+        return connectorRepository.save(connector);
+    }
+
+    /**
+     * Un código que ningún conector tiene. Con un millón de combinaciones y unas decenas de
+     * conectores, el primer intento casi siempre sirve; el límite es para no quedar en un bucle si
+     * algún día la tabla se llena, y en ese caso el índice único es el que avisa.
+     */
+    private String unusedAccessCode() {
+        for (int attempt = 0; attempt < 20; attempt++) {
+            String candidate = ConnectorAccessCode.random();
+            if (!connectorRepository.existsByAccessCode(candidate)) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException("No se encontró un código de acceso libre para el conector");
     }
 }

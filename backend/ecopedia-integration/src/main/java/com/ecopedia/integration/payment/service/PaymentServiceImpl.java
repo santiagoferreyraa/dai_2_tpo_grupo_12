@@ -2,6 +2,8 @@ package com.ecopedia.integration.payment.service;
 
 import com.ecopedia.integration.payment.domain.CardData;
 import com.ecopedia.integration.payment.domain.CardValidation;
+import com.ecopedia.integration.payment.domain.ConsumptionCharge;
+import com.ecopedia.integration.payment.domain.ConsumptionChargeRequest;
 import com.ecopedia.integration.payment.domain.DepositCharge;
 import com.ecopedia.integration.payment.domain.DepositChargeNotFoundException;
 import com.ecopedia.integration.payment.domain.DepositChargeRepository;
@@ -12,12 +14,14 @@ import com.ecopedia.integration.payment.domain.GatewayRefund;
 import com.ecopedia.integration.payment.domain.IdempotencyKeyReusedException;
 import com.ecopedia.integration.payment.domain.NoUsablePaymentMethodException;
 import com.ecopedia.integration.payment.domain.PaymentGatewayPort;
+import com.ecopedia.integration.payment.domain.PaymentGatewayUnavailableException;
 import com.ecopedia.integration.payment.domain.PaymentMethod;
 import com.ecopedia.integration.payment.domain.PaymentMethodNotFoundException;
 import com.ecopedia.integration.payment.domain.PaymentMethodRepository;
 import com.ecopedia.integration.payment.domain.PaymentService;
 import com.ecopedia.integration.payment.domain.PaymentValidationResult;
 import com.ecopedia.integration.payment.domain.PaymentValidationResult.ValidationErrorCode;
+import com.ecopedia.integration.payment.domain.PendingPayment;
 import com.ecopedia.integration.payment.domain.PendingPaymentRepository;
 import com.ecopedia.integration.payment.domain.PendingPaymentStatus;
 import com.ecopedia.integration.payment.domain.TokenizedCard;
@@ -309,6 +313,77 @@ public class PaymentServiceImpl implements PaymentService {
     @Transactional(readOnly = true)
     public boolean hasOutstandingDebt(Long driverId) {
         return pendingPaymentRepository.existsByDriverIdAndStatus(driverId, PendingPaymentStatus.PENDING);
+    }
+
+    /*
+     * Sin transacción propia, como el cobro de la seña: la conexión a la base no queda tomada mientras
+     * se espera a la pasarela.
+     */
+    @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public ConsumptionCharge chargeConsumption(ConsumptionChargeRequest request) {
+        Optional<PendingPayment> alreadyOwed = pendingPaymentRepository.findFirstByReference(request.reference());
+        if (alreadyOwed.isPresent()) {
+            return new ConsumptionCharge(
+                    ConsumptionCharge.Status.DEBT_REGISTERED,
+                    alreadyOwed.get().getAmount(),
+                    alreadyOwed.get().getId());
+        }
+
+        PaymentMethod card;
+        try {
+            card = cardToCharge(request.driverId(), null);
+        } catch (NoUsablePaymentMethodException noCard) {
+            // Dio de baja la tarjeta (o se le venció) con la carga en curso: la energía se entregó igual.
+            return registerDebt(request, null, "Consumo sin tarjeta con la que cobrar");
+        }
+
+        GatewayCharge answer;
+        try {
+            answer = paymentGateway.charge(
+                    card.getGatewayToken(),
+                    request.amount(),
+                    "Consumo de la sesión de carga",
+                    request.reference(),
+                    "consumption-" + request.reference());
+        } catch (PaymentGatewayUnavailableException gatewayDown) {
+            /*
+             * No se sabe si cobró. Se anota como deuda igual (RNF06), y el reintento con la misma clave
+             * es el que lo aclara: si la pasarela ya lo había cobrado, devuelve ese cobro y la deuda se
+             * salda sin volver a cobrar.
+             */
+            return registerDebt(request, card.getId(), "Consumo sin respuesta de la pasarela");
+        }
+
+        if (!answer.approved()) {
+            return registerDebt(request, card.getId(), "Consumo rechazado: " + answer.statusDetail());
+        }
+        log.info(
+                "Consumo cobrado: ${} al conductor {} ({}), cobro {} en la pasarela",
+                request.amount(),
+                request.driverId(),
+                request.reference(),
+                answer.paymentId());
+        return new ConsumptionCharge(ConsumptionCharge.Status.CHARGED, request.amount(), null);
+    }
+
+    private ConsumptionCharge registerDebt(ConsumptionChargeRequest request, Long paymentMethodId, String reason) {
+        String trimmedReason = reason.length() > 120 ? reason.substring(0, 120) : reason;
+        PendingPayment debt = pendingPaymentRepository.save(new PendingPayment(
+                request.driverId(),
+                paymentMethodId,
+                request.amount(),
+                trimmedReason,
+                request.reference(),
+                clock.instant()));
+        log.warn(
+                "No se pudo cobrar el consumo de ${} al conductor {} ({}): queda como deuda {} — {}",
+                request.amount(),
+                request.driverId(),
+                request.reference(),
+                debt.getId(),
+                reason);
+        return new ConsumptionCharge(ConsumptionCharge.Status.DEBT_REGISTERED, request.amount(), debt.getId());
     }
 
     private static DepositCharge repeated(DepositCharge previous, DepositChargeRequest request) {

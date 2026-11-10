@@ -1,13 +1,16 @@
 package com.ecopedia.charging.session.data;
 
+import com.ecopedia.charging.session.domain.ChargerReading;
 import com.ecopedia.charging.session.domain.PhysicalChargerPort;
 import com.ecopedia.charging.session.domain.PhysicalChargerRejectedException;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
 import java.math.BigDecimal;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -59,14 +62,20 @@ public class ChargerSimulatorAdapter implements PhysicalChargerPort {
     }
 
     @Override
-    public void deactivate(long connectorId) {
+    public Optional<ChargerReading> deactivate(long connectorId) {
         try {
-            restClient
+            ResponseEntity<StopSessionBody> answer = restClient
                     .delete()
                     .uri("/v1/connectors/{id}/session", connectorId)
                     .retrieve()
-                    .toBodilessEntity();
-            log.info("Cargador físico desactivado en conector {}", connectorId);
+                    .toEntity(StopSessionBody.class);
+            log.info("Cargador físico desactivado en conector {} (HTTP {})", connectorId, answer.getStatusCode());
+            // 204: el conector no estaba cargando. Apagar dos veces es lo mismo que una.
+            StopSessionBody body = answer.getBody();
+            if (body == null) {
+                return Optional.empty();
+            }
+            return Optional.of(new ChargerReading(body.energyKwh(), body.batteryPercent()));
         } catch (RestClientException ex) {
             log.warn("Error al desactivar el cargador físico en conector {}: {}", connectorId, ex.getMessage());
             throw new PhysicalChargerUnavailableException("No se pudo desactivar el cargador físico", ex);
@@ -74,4 +83,7 @@ public class ChargerSimulatorAdapter implements PhysicalChargerPort {
     }
 
     record StartSessionBody(String sessionId, BigDecimal powerLimitKw) {}
+
+    /** Lo que contesta el simulador al apagar: {@code SessionView}, de la que solo interesan dos campos. */
+    record StopSessionBody(String sessionId, BigDecimal energyKwh, BigDecimal batteryPercent) {}
 }

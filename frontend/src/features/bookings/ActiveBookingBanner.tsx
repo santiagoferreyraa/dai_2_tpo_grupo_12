@@ -178,12 +178,30 @@ export default function ActiveBookingBanner() {
                 Cómo llegar
               </a>
             )}
-            <Link
-              to="/profile/reservations"
-              className="brand-fill text-on-primary focus-visible:outline-primary rounded-xl px-4 py-2 text-sm font-bold focus-visible:outline-2 focus-visible:outline-offset-2"
-            >
-              Ver reserva
-            </Link>
+            {/*
+              Con la ventana corriendo, lo que el conductor quiere es cargar: el botón lo lleva a
+              escanear la terminal con esta reserva ya elegida (ECO-44). Si la carga ya arrancó,
+              a verla.
+            */}
+            {inProgress ? (
+              <Link
+                to={
+                  booking.status === 'IN_PROGRESS'
+                    ? '/charge'
+                    : `/charge?bookingId=${String(booking.id)}`
+                }
+                className="brand-fill text-on-primary focus-visible:outline-primary rounded-xl px-4 py-2 text-sm font-bold focus-visible:outline-2 focus-visible:outline-offset-2"
+              >
+                {booking.status === 'IN_PROGRESS' ? 'Ver carga' : 'Iniciar carga'}
+              </Link>
+            ) : (
+              <Link
+                to="/profile/reservations"
+                className="brand-fill text-on-primary focus-visible:outline-primary rounded-xl px-4 py-2 text-sm font-bold focus-visible:outline-2 focus-visible:outline-offset-2"
+              >
+                Ver reserva
+              </Link>
+            )}
           </div>
 
           {inProgress && (

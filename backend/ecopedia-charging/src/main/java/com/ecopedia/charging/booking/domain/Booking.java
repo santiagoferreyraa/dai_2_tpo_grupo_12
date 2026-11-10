@@ -276,6 +276,29 @@ public class Booking {
         this.status = BookingStatus.IN_PROGRESS;
     }
 
+    /**
+     * Cierra la reserva cuando termina la carga (RF11, ECO-44). La ventana se recorta al instante del
+     * cierre: lo que quedaba deja de bloquear el conector, y otro conductor lo puede tomar. Recortar
+     * el remanente con la regla del buffer de 15 minutos es RF12 y lo resuelve la disponibilidad,
+     * que ya no ve esta reserva más allá de {@code now}.
+     *
+     * <p>Solo desde {@code IN_PROGRESS}: una reserva que nunca arrancó no tiene carga que cerrar.
+     */
+    public void completeCharging(Instant now) {
+        if (status != BookingStatus.IN_PROGRESS) {
+            throw new BookingStateConflictException(id, "en " + status, "el cierre de la carga");
+        }
+        Instant instant = now.truncatedTo(ChronoUnit.MICROS);
+        if (instant.isAfter(this.windowStart) && instant.isBefore(this.windowEnd)) {
+            this.windowEnd = instant;
+        }
+        this.status = BookingStatus.COMPLETED;
+    }
+
+    public boolean isCompleted() {
+        return status == BookingStatus.COMPLETED;
+    }
+
     public boolean isConfirmed() {
         return status == BookingStatus.CONFIRMED;
     }

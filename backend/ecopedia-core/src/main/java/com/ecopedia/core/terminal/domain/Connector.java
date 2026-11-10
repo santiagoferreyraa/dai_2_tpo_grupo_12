@@ -10,6 +10,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 
@@ -46,6 +47,26 @@ public class Connector {
     @Enumerated(EnumType.STRING)
     @Column(name = "operational_status", nullable = false, length = 20)
     private OperationalStatus operationalStatus = OperationalStatus.AVAILABLE;
+
+    /**
+     * El PIN de 6 dígitos impreso en la terminal, que también va en su QR (RF11, ECO-44). Acredita
+     * que el conductor está frente a este conector. No sale por la API pública: lo ve el operador
+     * dueño y lo resuelve SesionesDeCarga por una ruta interna. Ver {@link ConnectorAccessCode}.
+     */
+    @Column(name = "access_code", nullable = false, unique = true, length = ConnectorAccessCode.LENGTH)
+    private String accessCode;
+
+    /**
+     * Red de seguridad: un conector que se guarda sin código recibe uno al azar. El camino normal es
+     * {@code TerminalServiceImpl#addConnector}, que además verifica que no esté tomado; esto cubre
+     * a quien arme un conector a mano (los tests, un script) para que la columna NOT NULL no lo rechace.
+     */
+    @PrePersist
+    void assignAccessCode() {
+        if (accessCode == null) {
+            accessCode = ConnectorAccessCode.random();
+        }
+    }
 
     public Long getId() {
         return id;
@@ -85,5 +106,13 @@ public class Connector {
 
     public void setOperationalStatus(OperationalStatus operationalStatus) {
         this.operationalStatus = operationalStatus;
+    }
+
+    public String getAccessCode() {
+        return accessCode;
+    }
+
+    public void setAccessCode(String accessCode) {
+        this.accessCode = accessCode;
     }
 }

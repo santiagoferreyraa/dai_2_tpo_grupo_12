@@ -139,6 +139,15 @@ public interface BookingService {
     Booking getBooking(Long bookingId);
 
     /**
+     * La reserva confirmada del conductor sobre ese conector cuya ventana está corriendo en
+     * {@code at}, si la hay (RF11, ECO-44).
+     *
+     * <p>Es lo que deja al conductor escanear la terminal sin decir con qué reserva viene: si tiene
+     * una para ese conector y es la hora, la habilitación la usa; si no, la carga es sin reserva.
+     */
+    Optional<Booking> findChargeableBooking(Long driverId, Long connectorId, Instant at);
+
+    /**
      * Libera una reserva sin penalización y encola el reintegro total de la seña cuando la carga no
      * pudo iniciarse por causas ajenas al conductor —conector fuera de servicio, cargador que no
      * responde o rechazo de la distribuidora (RF13, ECO-59)—.

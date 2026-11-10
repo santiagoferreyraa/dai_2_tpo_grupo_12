@@ -1,6 +1,7 @@
 package com.ecopedia.charging.session.domain;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 
 /**
  * Puerto hacia el sistema externo del cargador físico (RNF06, ECO-60).
@@ -22,10 +23,13 @@ public interface PhysicalChargerPort {
     void activate(long connectorId, String sessionId, BigDecimal powerLimitKw);
 
     /**
-     * Envía la orden de corte físico al cargador.
+     * Envía la orden de corte físico al cargador y devuelve cómo terminó la sesión (ECO-44).
+     *
+     * <p>Apagar dos veces es lo mismo que una: si el conector ya no estaba cargando, devuelve vacío.
      *
      * @param connectorId identificador del conector físico
+     * @return lo entregado en la sesión, o vacío si el conector no estaba cargando
      * @throws PhysicalChargerUnavailableException si el cargador físico no responde
      */
-    void deactivate(long connectorId);
+    Optional<ChargerReading> deactivate(long connectorId);
 }

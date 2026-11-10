@@ -20,25 +20,33 @@ import com.ecopedia.charging.booking.domain.BookingService;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
+import com.ecopedia.charging.booking.domain.TimeWindow;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
+import com.ecopedia.charging.session.domain.AccessCodeDirectory;
 import com.ecopedia.charging.session.domain.ActivationFailureReason;
 import com.ecopedia.charging.session.domain.ActivationRequest;
 import com.ecopedia.charging.session.domain.ActivationResult;
 import com.ecopedia.charging.session.domain.ChargingPoint;
 import com.ecopedia.charging.session.domain.ChargingPointCatalog;
 import com.ecopedia.charging.session.domain.ChargingSession;
+import com.ecopedia.charging.session.domain.ChargingSessionRepository;
+import com.ecopedia.charging.session.domain.DriverAlreadyChargingException;
+import com.ecopedia.charging.session.domain.InvalidAccessCodeException;
 import com.ecopedia.charging.session.domain.PhysicalChargerPort;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
 import com.ecopedia.charging.session.domain.PowerDecision;
 import com.ecopedia.charging.session.domain.SessionStatus;
+import com.ecopedia.charging.session.domain.TooManyAccessCodeAttemptsException;
+import com.ecopedia.charging.session.service.AccessCodeAttemptLimiter;
 import com.ecopedia.charging.session.service.ChargingActivationService;
 import com.ecopedia.charging.session.service.ChargingPowerPolicy;
 import com.ecopedia.charging.session.service.ChargingSettlementPolicy;
 import com.ecopedia.charging.session.service.ChargingTransactionalCoordinator;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
@@ -49,6 +57,8 @@ import org.junit.jupiter.api.Test;
 
 class ChargingActivationServiceTest {
 
+    private final AccessCodeDirectory accessCodes = mock(AccessCodeDirectory.class);
+    private final ChargingSessionRepository sessionRepository = mock(ChargingSessionRepository.class);
     private final ChargingPointCatalog catalog = mock(ChargingPointCatalog.class);
     private final ChargingPowerPolicy powerPolicy = mock(ChargingPowerPolicy.class);
     private final PaymentDirectory paymentDirectory = mock(PaymentDirectory.class);
@@ -58,6 +68,7 @@ class ChargingActivationServiceTest {
     private final PhysicalChargerPort chargerPort = mock(PhysicalChargerPort.class);
     private final Clock clock = Clock.fixed(Instant.parse("2026-11-02T15:00:00Z"), ZoneOffset.UTC);
 
+    private AccessCodeAttemptLimiter attemptLimiter;
     private ChargingActivationService activationService;
 
     private static final Long CONNECTOR_ID = 10L;
@@ -66,7 +77,11 @@ class ChargingActivationServiceTest {
 
     @BeforeEach
     void setUp() {
+        attemptLimiter = new AccessCodeAttemptLimiter(3, Duration.ofMinutes(10), clock);
         activationService = new ChargingActivationService(
+                accessCodes,
+                attemptLimiter,
+                sessionRepository,
                 catalog,
                 powerPolicy,
                 paymentDirectory,
@@ -76,6 +91,8 @@ class ChargingActivationServiceTest {
                 chargerPort,
                 clock);
         stubBooking(BOOKING_ID, DRIVER_ID, CONNECTOR_ID);
+        // El código de la terminal de todos los pedidos de abajo abre el conector CONNECTOR_ID.
+        when(accessCodes.findConnectorId("123456")).thenReturn(Optional.of(CONNECTOR_ID));
     }
 
     private void stubBooking(Long bookingId, Long ownerDriverId, Long connectorId) {
@@ -88,6 +105,9 @@ class ChargingActivationServiceTest {
         when(booking.belongsTo(anyLong())).thenAnswer(inv -> ownerDriverId.equals(inv.getArgument(0)));
         when(booking.getConnectorId()).thenReturn(connectorId);
         when(booking.isConfirmed()).thenReturn(confirmed);
+        // La ventana corre desde 10 minutos antes del reloj de la prueba hasta 50 después.
+        Instant now = clock.instant();
+        when(booking.getWindow()).thenReturn(new TimeWindow(now.minusSeconds(600), now.plusSeconds(3000)));
         when(bookingService.getBooking(bookingId)).thenReturn(booking);
     }
 
@@ -114,7 +134,7 @@ class ChargingActivationServiceTest {
                             new BigDecimal("150.00"),
                             clock.instant()));
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
             ActivationResult result = activationService.activate(request, "bearer-token");
 
             assertThat(result.sessionId()).isNotBlank();
@@ -135,7 +155,7 @@ class ChargingActivationServiceTest {
             when(powerPolicy.decide(point))
                     .thenReturn(new PowerDecision(BigDecimal.ZERO, PowerDecision.Outcome.REJECTED_BY_GRID));
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(ConnectorNotBookableException.class);
@@ -156,7 +176,7 @@ class ChargingActivationServiceTest {
                     .when(paymentDirectory)
                     .validatePaymentMethodForCharging(eq(DRIVER_ID), any());
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(PaymentMethodInvalidException.class);
@@ -176,7 +196,7 @@ class ChargingActivationServiceTest {
                     .when(paymentDirectory)
                     .validatePaymentMethodForCharging(eq(DRIVER_ID), any());
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(PaymentMethodsUnavailableException.class);
@@ -208,7 +228,7 @@ class ChargingActivationServiceTest {
                     .when(chargerPort)
                     .activate(anyLong(), any(), any());
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(PhysicalChargerUnavailableException.class);
@@ -245,7 +265,8 @@ class ChargingActivationServiceTest {
                             new BigDecimal("150.00"),
                             clock.instant()));
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, null, 80, "QR-WALKIN");
+            ActivationRequest request =
+                    new ActivationRequest(CONNECTOR_ID, DRIVER_ID, null, 80, "ecopedia:connector:123456");
 
             ActivationResult result = activationService.activate(request, "token");
 
@@ -270,7 +291,8 @@ class ChargingActivationServiceTest {
             when(bookingService.registerWalkIn(CONNECTOR_ID, DRIVER_ID))
                     .thenThrow(new SlotUnavailableException(CONNECTOR_ID));
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, null, 80, "QR-WALKIN");
+            ActivationRequest request =
+                    new ActivationRequest(CONNECTOR_ID, DRIVER_ID, null, 80, "ecopedia:connector:123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(SlotUnavailableException.class);
@@ -307,7 +329,8 @@ class ChargingActivationServiceTest {
                     .when(chargerPort)
                     .activate(anyLong(), any(), any());
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, null, 80, "QR-WALKIN");
+            ActivationRequest request =
+                    new ActivationRequest(CONNECTOR_ID, DRIVER_ID, null, 80, "ecopedia:connector:123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(PhysicalChargerUnavailableException.class);
@@ -333,7 +356,8 @@ class ChargingActivationServiceTest {
                             any(), eq(walkInBookingId), eq(CONNECTOR_ID), eq(DRIVER_ID), eq(80), any(), any()))
                     .thenThrow(new SlotUnavailableException(CONNECTOR_ID));
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, null, 80, "QR-WALKIN");
+            ActivationRequest request =
+                    new ActivationRequest(CONNECTOR_ID, DRIVER_ID, null, 80, "ecopedia:connector:123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(SlotUnavailableException.class);
@@ -347,7 +371,7 @@ class ChargingActivationServiceTest {
         void foreignBooking_isRejectedAsNotFound_beforeAnyExternalCall() {
             stubBooking(BOOKING_ID, 999L, CONNECTOR_ID);
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(BookingNotFoundException.class);
@@ -365,7 +389,7 @@ class ChargingActivationServiceTest {
             when(powerPolicy.decide(point))
                     .thenReturn(new PowerDecision(BigDecimal.ZERO, PowerDecision.Outcome.REJECTED_BY_GRID));
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(BookingNotFoundException.class);
@@ -379,7 +403,7 @@ class ChargingActivationServiceTest {
         void bookingOfAnotherConnector_isRejectedBeforeExternalCalls() {
             stubBooking(BOOKING_ID, DRIVER_ID, 999L);
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(InvalidBookingRequestException.class);
@@ -398,13 +422,149 @@ class ChargingActivationServiceTest {
             when(powerPolicy.decide(point))
                     .thenReturn(new PowerDecision(BigDecimal.ZERO, PowerDecision.Outcome.REJECTED_BY_GRID));
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(InvalidBookingRequestException.class);
 
             verifyNoInteractions(catalog, powerPolicy, paymentDirectory, coordinator, chargerPort);
             verify(settlementPolicy, never()).failActivation(any(), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("Escanear: el código de la terminal acredita la presencia (RF11, ECO-44)")
+    class AccessCode {
+
+        private void stubHappyPath(Long bookingId) {
+            ChargingPoint point = new ChargingPoint(CONNECTOR_ID, 1L, new BigDecimal("22.00"), null);
+            when(catalog.find(CONNECTOR_ID)).thenReturn(Optional.of(point));
+            when(powerPolicy.decide(point))
+                    .thenReturn(new PowerDecision(new BigDecimal("22.00"), PowerDecision.Outcome.STANDARD_CHARGE));
+            when(coordinator.persistLocalActivation(
+                            any(), eq(bookingId), eq(CONNECTOR_ID), eq(DRIVER_ID), eq(80), any(), any()))
+                    .thenAnswer(inv -> ChargingSession.start(
+                            inv.getArgument(0),
+                            bookingId,
+                            CONNECTOR_ID,
+                            DRIVER_ID,
+                            80,
+                            new BigDecimal("22.00"),
+                            clock.instant()));
+        }
+
+        @Test
+        @DisplayName("Sin decir el conector: el código lo resuelve y la carga arranca ahí")
+        void codeAloneResolvesConnector() {
+            stubHappyPath(BOOKING_ID);
+
+            ActivationResult result =
+                    activationService.activate(new ActivationRequest(null, DRIVER_ID, BOOKING_ID, 80, "123456"), "t");
+
+            assertThat(result.connectorId()).isEqualTo(CONNECTOR_ID);
+            verify(chargerPort).activate(eq(CONNECTOR_ID), any(), any());
+        }
+
+        @Test
+        @DisplayName("Un código mal escrito no llega a core ni a nada externo")
+        void malformedCodeIsRejectedLocally() {
+            ActivationRequest request = new ActivationRequest(null, DRIVER_ID, null, 80, "12-34");
+
+            assertThatThrownBy(() -> activationService.activate(request, "t"))
+                    .isInstanceOf(InvalidAccessCodeException.class);
+
+            verifyNoInteractions(accessCodes, catalog, powerPolicy, paymentDirectory, coordinator, chargerPort);
+        }
+
+        @Test
+        @DisplayName("Un código que no es de nadie se rechaza sin tocar reservas ni el cargador")
+        void unknownCodeIsRejected() {
+            when(accessCodes.findConnectorId("999999")).thenReturn(Optional.empty());
+            ActivationRequest request = new ActivationRequest(null, DRIVER_ID, null, 80, "999999");
+
+            assertThatThrownBy(() -> activationService.activate(request, "t"))
+                    .isInstanceOf(InvalidAccessCodeException.class);
+
+            verifyNoInteractions(catalog, powerPolicy, paymentDirectory, coordinator, chargerPort);
+            verify(bookingService, never()).registerWalkIn(any(), any());
+        }
+
+        @Test
+        @DisplayName("El código de la terminal de al lado: rechazado aunque sea un código válido")
+        void codeOfAnotherConnectorIsRejected() {
+            when(accessCodes.findConnectorId("654321")).thenReturn(Optional.of(77L));
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, null, 80, "654321");
+
+            assertThatThrownBy(() -> activationService.activate(request, "t"))
+                    .isInstanceOf(InvalidAccessCodeException.class);
+
+            verifyNoInteractions(catalog, coordinator, chargerPort);
+        }
+
+        @Test
+        @DisplayName("Después de errar el tope de veces, ni el código correcto pasa hasta que termine la espera")
+        void tooManyFailuresLockTheDriverOut() {
+            when(accessCodes.findConnectorId("000000")).thenReturn(Optional.empty());
+            for (int i = 0; i < 3; i++) {
+                assertThatThrownBy(() -> activationService.activate(
+                                new ActivationRequest(null, DRIVER_ID, null, 80, "000000"), "t"))
+                        .isInstanceOf(InvalidAccessCodeException.class);
+            }
+
+            assertThatThrownBy(() ->
+                            activationService.activate(new ActivationRequest(null, DRIVER_ID, null, 80, "123456"), "t"))
+                    .isInstanceOf(TooManyAccessCodeAttemptsException.class);
+            verify(accessCodes, never()).findConnectorId("123456");
+        }
+
+        @Test
+        @DisplayName("Con una sesión activa no se inicia otra")
+        void driverAlreadyChargingIsRejected() {
+            ChargingSession active =
+                    ChargingSession.start("ses-1", 1L, 3L, DRIVER_ID, 80, new BigDecimal("22"), clock.instant());
+            when(sessionRepository.findActiveByDriverId(DRIVER_ID)).thenReturn(Optional.of(active));
+
+            assertThatThrownBy(() ->
+                            activationService.activate(new ActivationRequest(null, DRIVER_ID, null, 80, "123456"), "t"))
+                    .isInstanceOf(DriverAlreadyChargingException.class);
+
+            verifyNoInteractions(catalog, coordinator, chargerPort);
+        }
+
+        @Test
+        @DisplayName("Sin elegir reserva, si tiene una para este conector y en hora, la usa en vez de un walk-in")
+        void ownBookingIsFoundWithoutBeingChosen() {
+            Booking own = mock(Booking.class);
+            when(own.getId()).thenReturn(BOOKING_ID);
+            when(bookingService.findChargeableBooking(eq(DRIVER_ID), eq(CONNECTOR_ID), any()))
+                    .thenReturn(Optional.of(own));
+            stubHappyPath(BOOKING_ID);
+
+            ActivationResult result =
+                    activationService.activate(new ActivationRequest(null, DRIVER_ID, null, 80, "123456"), "t");
+
+            assertThat(result.bookingId()).isEqualTo(BOOKING_ID);
+            verify(bookingService, never()).registerWalkIn(any(), any());
+        }
+
+        @Test
+        @DisplayName("Una reserva que todavía no empezó no habilita la carga")
+        void bookingNotStartedYetIsRejected() {
+            Booking future = mock(Booking.class);
+            Instant now = clock.instant();
+            when(future.getId()).thenReturn(BOOKING_ID);
+            when(future.belongsTo(DRIVER_ID)).thenReturn(true);
+            when(future.getConnectorId()).thenReturn(CONNECTOR_ID);
+            when(future.isConfirmed()).thenReturn(true);
+            when(future.getWindow()).thenReturn(new TimeWindow(now.plusSeconds(3600), now.plusSeconds(7200)));
+            when(bookingService.getBooking(BOOKING_ID)).thenReturn(future);
+
+            assertThatThrownBy(() -> activationService.activate(
+                            new ActivationRequest(null, DRIVER_ID, BOOKING_ID, 80, "123456"), "t"))
+                    .isInstanceOf(InvalidBookingRequestException.class)
+                    .hasMessageContaining("todavía no empezó");
+
+            verifyNoInteractions(catalog, coordinator, chargerPort);
         }
     }
 }

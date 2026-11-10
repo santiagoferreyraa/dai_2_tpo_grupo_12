@@ -155,7 +155,7 @@ services:
     container_name: ecopedia-core
     command: ["java", "-jar", "/app/ecopedia-core.jar"]
     environment:
-      <<: [*java-env, *db, *jwt]
+      <<: [*java-env, *db, *jwt, *internal-token]
       SERVER_PORT: 8081
       ECOPEDIA_CHARGER_URL: http://charger:8088
       ECOPEDIA_CHARGER_ACCESS_TOKEN: ${ECOPEDIA_CHARGER_ACCESS_TOKEN:?Falta ECOPEDIA_CHARGER_ACCESS_TOKEN en el .env. Correr pnpm env:init}

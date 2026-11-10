@@ -97,6 +97,11 @@ ecopedia:
     # en alterna. Decidido por Manuel el 28/10: ver ChargingPowerPolicy.
     fast-charge-threshold-kw: 22
     normal-power-kw: 22
+    # Cuántas veces seguidas puede errar un conductor el código de la terminal antes de quedar en
+    # espera, y cuánto dura la espera (ECO-44). Un PIN de 6 dígitos son un millón de combinaciones:
+    # sin tope, un script las recorre; con 5 cada 10 minutos, no. Ver AccessCodeAttemptLimiter.
+    access-code-max-failures: 5
+    access-code-lockout: PT10M
 
   booking:
     # Cuánto dura una retención de slot antes de vencer sola (ISO-8601: PT10M = 10 minutos).

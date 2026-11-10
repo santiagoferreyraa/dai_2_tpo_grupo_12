@@ -26,6 +26,15 @@ public interface JpaChargingSessionRepository extends JpaRepository<ChargingSess
     Optional<ChargingSession> findActiveByConnectorId(@Param("connectorId") Long connectorId);
 
     @Override
+    @Query(
+            """
+            select s from ChargingSession s
+            where s.driverId = :driverId
+              and s.status = com.ecopedia.charging.session.domain.SessionStatus.ACTIVE
+            """)
+    Optional<ChargingSession> findActiveByDriverId(@Param("driverId") Long driverId);
+
+    @Override
     List<ChargingSession> findByDriverId(Long driverId);
 
     @Override
