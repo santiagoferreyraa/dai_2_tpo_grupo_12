@@ -524,4 +524,30 @@ class PaymentServiceTest {
         verify(paymentGateway, never()).charge(any(), any(), any(), any(), any());
         verify(pendingPaymentRepository, never()).save(any());
     }
+
+    @Test
+    @DisplayName("ConsumptionChargeRequest valida invariantes de monto, sesión y clave de idempotencia")
+    void consumptionChargeRequestValidatesInvariants() {
+        assertThrows(
+                NullPointerException.class, () -> new ConsumptionChargeRequest(null, null, BigDecimal.TEN, "s1", "k1"));
+        assertThrows(NullPointerException.class, () -> new ConsumptionChargeRequest(1L, null, null, "s1", "k1"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new ConsumptionChargeRequest(1L, null, BigDecimal.ZERO, "s1", "k1"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new ConsumptionChargeRequest(1L, null, new BigDecimal("-1.00"), "s1", "k1"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new ConsumptionChargeRequest(1L, null, BigDecimal.TEN, null, "k1"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new ConsumptionChargeRequest(1L, null, BigDecimal.TEN, "  ", "k1"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new ConsumptionChargeRequest(1L, null, BigDecimal.TEN, "s1", null));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new ConsumptionChargeRequest(1L, null, BigDecimal.TEN, "s1", "  "));
+    }
 }

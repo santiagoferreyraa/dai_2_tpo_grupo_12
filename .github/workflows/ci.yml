@@ -41,6 +41,13 @@ jobs:
       - name: Compilar, testear y chequear formato
         run: mvn -B verify
 
+      - name: Publicar reporte de cobertura (JaCoCo)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco
+          path: backend/*/target/site/jacoco/
+
   frontend:
     name: Frontend (pnpm)
     runs-on: ubuntu-latest
