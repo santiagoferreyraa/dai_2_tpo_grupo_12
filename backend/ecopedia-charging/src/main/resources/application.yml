@@ -56,6 +56,8 @@ ecopedia:
   notifications:
     # La cola de avisos. El nombre tiene que coincidir con el que escucha ecopedia-async.
     queue: notifications.dispatch
+    # Cada cuánto se reintentan los avisos que no salieron porque el broker no estaba (ECO-177).
+    retry-interval: ${ECOPEDIA_NOTIFICATIONS_RETRY_INTERVAL:PT15S}
 
   jwt:
     # El MISMO secreto que ecopedia-core. Core firma el token al hacer login y este artefacto

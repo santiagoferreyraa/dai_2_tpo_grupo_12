@@ -484,8 +484,10 @@ Dos cosas que conviene reconocer:
 
 - **Sin el broker, `async` arranca igual** pero deja cada 5 segundos una línea de ERROR con
   `Could not refresh JMS Connection`. No es un error del módulo: falta `docker compose up -d`.
-- **Sin el broker, Reservas reserva igual**, y en su panel aparece en WARN
-  `No se pudo publicar el aviso`, con el aviso entero. Ese aviso no se reenvía solo.
+- **Sin el broker, Reservas reserva igual, y el aviso no se pierde.** Queda en la tabla
+  `charging.pending_notifications` y en su panel aparece en WARN `queda pendiente y se reenvía cuando
+  vuelva el broker`. Cada 15 segundos (`ECOPEDIA_NOTIFICATIONS_RETRY_INTERVAL`) un barrido los publica
+  en orden; al levantar el broker, el aviso llega a la campanita sin tocar nada.
 
 #### Mensajes que no se pudieron procesar
 
