@@ -14,15 +14,19 @@ import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
 import com.ecopedia.charging.booking.domain.DriverAlreadyBookedException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
+import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import com.ecopedia.charging.session.domain.ActivationRequest;
 import com.ecopedia.charging.session.domain.ActivationResult;
 import com.ecopedia.charging.session.domain.PhysicalChargerRejectedException;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
+import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import com.ecopedia.charging.session.domain.SessionStatus;
+import com.ecopedia.charging.session.domain.SessionStopResult;
 import com.ecopedia.charging.session.service.ChargingActivationService;
 import com.ecopedia.charging.session.web.dto.ActivationHttpRequest;
+import com.ecopedia.charging.session.web.dto.StopSessionRequest;
 import com.ecopedia.charging.web.ApiProblems;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
@@ -266,5 +270,59 @@ class SessionApiTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DRIVER_ALREADY_BOOKED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/sessions/{sessionId}/stop exitoso: responde 200 OK con resumen de liquidación")
+    void stopSessionSuccessfully() throws Exception {
+        Instant startedAt = Instant.parse("2026-11-02T15:00:00Z");
+        Instant stoppedAt = Instant.parse("2026-11-02T15:30:00Z");
+        SessionStopResult result = new SessionStopResult(
+                "session-stop-1",
+                10L,
+                CONNECTOR_ID,
+                SessionStatus.COMPLETED,
+                startedAt,
+                stoppedAt,
+                new BigDecimal("18.500"),
+                new BigDecimal("5000.00"),
+                new BigDecimal("7200.00"),
+                new BigDecimal("7200.00"),
+                new BigDecimal("2200.00"),
+                ConsumptionPaymentStatus.CHARGED);
+
+        when(activationService.stopSession("session-stop-1", DRIVER_ID, new BigDecimal("18.500")))
+                .thenReturn(result);
+
+        mockMvc.perform(post("/api/sessions/session-stop-1/stop")
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new StopSessionRequest(new BigDecimal("18.500")))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sessionId").value("session-stop-1"))
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.kwhDelivered").value(18.500))
+                .andExpect(jsonPath("$.realCost").value(7200.00))
+                .andExpect(jsonPath("$.additionalCharge").value(2200.00))
+                .andExpect(jsonPath("$.paymentStatus").value("CHARGED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/sessions/{sessionId}/stop sobre sesión ajena o inexistente responde 404 opaco")
+    void stopForeignOrMissingSessionReturnsOpaqueNotFound() throws Exception {
+        when(activationService.stopSession("session-foreign", DRIVER_ID, null))
+                .thenThrow(new SessionNotFoundException("session-foreign"));
+
+        mockMvc.perform(post("/api/sessions/session-foreign/stop")
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value(ApiProblems.NOT_FOUND_DETAIL))
+                .andExpect(jsonPath("$.code").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("POST /api/sessions/{sessionId}/stop sin autenticación responde 401 Unauthorized")
+    void stopUnauthenticatedReturnsUnauthorized() throws Exception {
+        mockMvc.perform(post("/api/sessions/session-stop-1/stop")).andExpect(status().isUnauthorized());
     }
 }

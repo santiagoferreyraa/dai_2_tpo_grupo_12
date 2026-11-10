@@ -1,11 +1,13 @@
 package com.ecopedia.charging.checkout.data;
 
+import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
 import org.slf4j.Logger;
@@ -142,6 +144,34 @@ public class IntegrationPaymentDirectory implements PaymentDirectory {
         }
     }
 
+    @Override
+    public ConsumptionPaymentStatus chargeConsumption(Long driverId, String sessionId, BigDecimal amount) {
+        try {
+            ConsumptionChargeResponse answer = internalRestClient
+                    .post()
+                    .uri("/internal/payments/consumption-charges")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(new ConsumptionChargeBody(
+                            driverId, null, amount, sessionId, "session-consumption-" + sessionId))
+                    .retrieve()
+                    .body(ConsumptionChargeResponse.class);
+            if (answer == null || answer.status() == null) {
+                throw new PaymentMethodsUnavailableException(
+                        new IllegalStateException("Respuesta vacía al cobrar consumo"));
+            }
+            return "CHARGED".equals(answer.status())
+                    ? ConsumptionPaymentStatus.CHARGED
+                    : ConsumptionPaymentStatus.DEBT_RECORDED;
+        } catch (RestClientException ex) {
+            log.warn(
+                    "No se pudo comunicar con integration para cobrar consumo de sesión {} del conductor {}: {}",
+                    sessionId,
+                    driverId,
+                    ex.getMessage());
+            throw new PaymentMethodsUnavailableException(ex);
+        }
+    }
+
     private String extractCode(RestClientResponseException ex) {
         try {
             String responseBody = ex.getResponseBodyAsString();
@@ -160,4 +190,9 @@ public class IntegrationPaymentDirectory implements PaymentDirectory {
     private record PaymentMethodSummary(Long id, String brand, String lastFourDigits, boolean isDefault) {}
 
     private record InternalValidationRequest(Long driverId, Long paymentMethodId) {}
+
+    private record ConsumptionChargeBody(
+            Long driverId, Long paymentMethodId, BigDecimal amount, String sessionId, String idempotencyKey) {}
+
+    private record ConsumptionChargeResponse(String status) {}
 }

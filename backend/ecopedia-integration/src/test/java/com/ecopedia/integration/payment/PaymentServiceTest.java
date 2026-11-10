@@ -12,7 +12,10 @@ import static org.mockito.Mockito.when;
 import com.ecopedia.integration.payment.domain.CardBrand;
 import com.ecopedia.integration.payment.domain.CardData;
 import com.ecopedia.integration.payment.domain.CardValidation;
+import com.ecopedia.integration.payment.domain.ConsumptionChargeRequest;
+import com.ecopedia.integration.payment.domain.ConsumptionChargeResult;
 import com.ecopedia.integration.payment.domain.DepositChargeRepository;
+import com.ecopedia.integration.payment.domain.GatewayCharge;
 import com.ecopedia.integration.payment.domain.PaymentGatewayPort;
 import com.ecopedia.integration.payment.domain.PaymentGatewayUnavailableException;
 import com.ecopedia.integration.payment.domain.PaymentMethod;
@@ -20,10 +23,12 @@ import com.ecopedia.integration.payment.domain.PaymentMethodNotFoundException;
 import com.ecopedia.integration.payment.domain.PaymentMethodRepository;
 import com.ecopedia.integration.payment.domain.PaymentValidationResult;
 import com.ecopedia.integration.payment.domain.PaymentValidationResult.ValidationErrorCode;
+import com.ecopedia.integration.payment.domain.PendingPayment;
 import com.ecopedia.integration.payment.domain.PendingPaymentRepository;
 import com.ecopedia.integration.payment.domain.PendingPaymentStatus;
 import com.ecopedia.integration.payment.domain.TokenizedCard;
 import com.ecopedia.integration.payment.service.PaymentServiceImpl;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.YearMonth;
@@ -397,5 +402,126 @@ class PaymentServiceTest {
         assertFalse(result.valid());
         assertEquals(ValidationErrorCode.CARD_EXPIRED, result.errorCode());
         verify(paymentGateway, never()).validate(any());
+    }
+
+    @Test
+    @DisplayName("chargeConsumption: cobro aprobado retorna CHARGED sin crear deuda pendiente")
+    void chargeConsumption_shouldReturnCharged_whenGatewayApproves() {
+        PaymentMethod card = existing(DRIVER, CardBrand.VISA, "1111", 12, 2029);
+        when(pendingPaymentRepository.findByReference("sess-1")).thenReturn(Optional.empty());
+        when(paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(DRIVER))
+                .thenReturn(List.of(card));
+        when(paymentGateway.charge(
+                        "tok_previo",
+                        new BigDecimal("1250.00"),
+                        "Consumo de sesión de carga",
+                        "sess-1",
+                        "session-consumption-sess-1"))
+                .thenReturn(new GatewayCharge("pay-123", true, "accredited"));
+
+        ConsumptionChargeResult result = paymentService.chargeConsumption(new ConsumptionChargeRequest(
+                DRIVER, null, new BigDecimal("1250.00"), "sess-1", "session-consumption-sess-1"));
+
+        assertEquals(ConsumptionChargeResult.Status.CHARGED, result.status());
+        assertEquals("pay-123", result.gatewayPaymentId());
+        verify(pendingPaymentRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("chargeConsumption: si la pasarela rechaza registra PendingPayment PENDING y retorna DEBT_RECORDED")
+    void chargeConsumption_shouldRecordDebt_whenGatewayDeclines() {
+        PaymentMethod card = existing(DRIVER, CardBrand.VISA, "1111", 12, 2029);
+        when(pendingPaymentRepository.findByReference("sess-declined")).thenReturn(Optional.empty());
+        when(paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(DRIVER))
+                .thenReturn(List.of(card));
+        when(paymentGateway.charge(
+                        "tok_previo",
+                        new BigDecimal("900.00"),
+                        "Consumo de sesión de carga",
+                        "sess-declined",
+                        "session-consumption-sess-declined"))
+                .thenReturn(new GatewayCharge("pay-err", false, "cc_rejected_insufficient_amount"));
+        when(pendingPaymentRepository.save(any())).thenAnswer(inv -> {
+            PendingPayment p = inv.getArgument(0);
+            p.setId(50L);
+            return p;
+        });
+
+        ConsumptionChargeResult result = paymentService.chargeConsumption(new ConsumptionChargeRequest(
+                DRIVER, null, new BigDecimal("900.00"), "sess-declined", "session-consumption-sess-declined"));
+
+        assertEquals(ConsumptionChargeResult.Status.DEBT_RECORDED, result.status());
+        assertEquals(50L, result.pendingPaymentId());
+        ArgumentCaptor<PendingPayment> captor = ArgumentCaptor.forClass(PendingPayment.class);
+        verify(pendingPaymentRepository).save(captor.capture());
+        assertEquals(PendingPaymentStatus.PENDING, captor.getValue().getStatus());
+        assertEquals("sess-declined", captor.getValue().getReference());
+        assertEquals(new BigDecimal("900.00"), captor.getValue().getAmount());
+    }
+
+    @Test
+    @DisplayName("chargeConsumption: si la pasarela está caída registra PendingPayment PENDING y retorna DEBT_RECORDED")
+    void chargeConsumption_shouldRecordDebt_whenGatewayUnavailable() {
+        PaymentMethod card = existing(DRIVER, CardBrand.VISA, "1111", 12, 2029);
+        when(pendingPaymentRepository.findByReference("sess-down")).thenReturn(Optional.empty());
+        when(paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(DRIVER))
+                .thenReturn(List.of(card));
+        when(paymentGateway.charge(
+                        "tok_previo",
+                        new BigDecimal("1800.00"),
+                        "Consumo de sesión de carga",
+                        "sess-down",
+                        "session-consumption-sess-down"))
+                .thenThrow(new PaymentGatewayUnavailableException(new RuntimeException("timeout")));
+        when(pendingPaymentRepository.save(any())).thenAnswer(inv -> {
+            PendingPayment p = inv.getArgument(0);
+            p.setId(51L);
+            return p;
+        });
+
+        ConsumptionChargeResult result = paymentService.chargeConsumption(new ConsumptionChargeRequest(
+                DRIVER, null, new BigDecimal("1800.00"), "sess-down", "session-consumption-sess-down"));
+
+        assertEquals(ConsumptionChargeResult.Status.DEBT_RECORDED, result.status());
+        assertEquals(51L, result.pendingPaymentId());
+        verify(pendingPaymentRepository).save(any());
+    }
+
+    @Test
+    @DisplayName(
+            "chargeConsumption: si el conductor no tiene tarjeta vigente registra deuda PENDING y retorna DEBT_RECORDED")
+    void chargeConsumption_shouldRecordDebt_whenNoUsableCardExists() {
+        when(pendingPaymentRepository.findByReference("sess-nocard")).thenReturn(Optional.empty());
+        when(paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(DRIVER))
+                .thenReturn(List.of());
+        when(pendingPaymentRepository.save(any())).thenAnswer(inv -> {
+            PendingPayment p = inv.getArgument(0);
+            p.setId(52L);
+            return p;
+        });
+
+        ConsumptionChargeResult result = paymentService.chargeConsumption(new ConsumptionChargeRequest(
+                DRIVER, null, new BigDecimal("700.00"), "sess-nocard", "session-consumption-sess-nocard"));
+
+        assertEquals(ConsumptionChargeResult.Status.DEBT_RECORDED, result.status());
+        assertEquals(52L, result.pendingPaymentId());
+        verify(paymentGateway, never()).charge(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("chargeConsumption: idempotencia si ya existe deuda registrada para la misma sesión")
+    void chargeConsumption_shouldBeIdempotent_whenDebtAlreadyRecorded() {
+        PendingPayment existingDebt =
+                new PendingPayment(DRIVER, null, new BigDecimal("700.00"), "Motivo previo", "sess-idem", Instant.now());
+        existingDebt.setId(77L);
+        when(pendingPaymentRepository.findByReference("sess-idem")).thenReturn(Optional.of(existingDebt));
+
+        ConsumptionChargeResult result = paymentService.chargeConsumption(new ConsumptionChargeRequest(
+                DRIVER, null, new BigDecimal("700.00"), "sess-idem", "session-consumption-sess-idem"));
+
+        assertEquals(ConsumptionChargeResult.Status.DEBT_RECORDED, result.status());
+        assertEquals(77L, result.pendingPaymentId());
+        verify(paymentGateway, never()).charge(any(), any(), any(), any(), any());
+        verify(pendingPaymentRepository, never()).save(any());
     }
 }

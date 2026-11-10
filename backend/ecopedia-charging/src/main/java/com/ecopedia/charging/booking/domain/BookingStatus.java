@@ -19,5 +19,9 @@ public enum BookingStatus {
      * La reserva fue consumida al iniciar la sesión de carga (RF11, ECO-44, ECO-60).
      * Pasa a este estado dentro de la transacción declarativa de habilitación.
      */
-    IN_PROGRESS
+    IN_PROGRESS,
+    /**
+     * La sesión de carga finalizó normalmente (RF12, RF14, ECO-55).
+     */
+    COMPLETED
 }

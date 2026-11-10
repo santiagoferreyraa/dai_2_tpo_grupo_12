@@ -12,6 +12,8 @@ public interface PendingPaymentRepository {
 
     Optional<PendingPayment> findById(Long id);
 
+    Optional<PendingPayment> findByReference(String reference);
+
     List<PendingPayment> findByDriverIdAndStatus(Long driverId, PendingPaymentStatus status);
 
     boolean existsByDriverIdAndStatus(Long driverId, PendingPaymentStatus status);

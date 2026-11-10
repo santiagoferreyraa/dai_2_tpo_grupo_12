@@ -98,4 +98,13 @@ public interface PaymentService {
      * Verifica si el conductor arrastra deudas impagas de sesiones anteriores.
      */
     boolean hasOutstandingDebt(Long driverId);
+
+    /**
+     * Cobra el consumo final de una sesión cerrada en la pasarela (RF14, RNF06, ECO-55).
+     *
+     * <p>Si el conductor no tiene tarjeta vigente, si la pasarela rechaza el cargo o si no está
+     * disponible, registra un {@link PendingPayment} en estado {@link PendingPaymentStatus#PENDING}
+     * sin lanzar excepción para no bloquear la liberación del conector.
+     */
+    ConsumptionChargeResult chargeConsumption(ConsumptionChargeRequest request);
 }

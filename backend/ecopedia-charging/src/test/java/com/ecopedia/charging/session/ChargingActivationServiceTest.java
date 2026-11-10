@@ -16,31 +16,42 @@ import static org.mockito.Mockito.when;
 
 import com.ecopedia.charging.booking.domain.Booking;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
+import com.ecopedia.charging.booking.domain.BookingRepository;
 import com.ecopedia.charging.booking.domain.BookingService;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
+import com.ecopedia.charging.booking.domain.TimeWindow;
+import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
+import com.ecopedia.charging.checkout.domain.PricingUnavailableException;
+import com.ecopedia.charging.checkout.domain.TariffDirectory;
 import com.ecopedia.charging.session.domain.ActivationFailureReason;
 import com.ecopedia.charging.session.domain.ActivationRequest;
 import com.ecopedia.charging.session.domain.ActivationResult;
+import com.ecopedia.charging.session.domain.ChargeSettlement;
 import com.ecopedia.charging.session.domain.ChargingPoint;
 import com.ecopedia.charging.session.domain.ChargingPointCatalog;
 import com.ecopedia.charging.session.domain.ChargingSession;
+import com.ecopedia.charging.session.domain.ChargingSessionRepository;
 import com.ecopedia.charging.session.domain.PhysicalChargerPort;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
 import com.ecopedia.charging.session.domain.PowerDecision;
+import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import com.ecopedia.charging.session.domain.SessionStatus;
+import com.ecopedia.charging.session.domain.SessionStopResult;
 import com.ecopedia.charging.session.service.ChargingActivationService;
 import com.ecopedia.charging.session.service.ChargingPowerPolicy;
 import com.ecopedia.charging.session.service.ChargingSettlementPolicy;
 import com.ecopedia.charging.session.service.ChargingTransactionalCoordinator;
+import com.ecopedia.charging.session.service.ChargingTransactionalCoordinator.CompletedSessionData;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -56,6 +67,9 @@ class ChargingActivationServiceTest {
     private final ChargingSettlementPolicy settlementPolicy = mock(ChargingSettlementPolicy.class);
     private final ChargingTransactionalCoordinator coordinator = mock(ChargingTransactionalCoordinator.class);
     private final PhysicalChargerPort chargerPort = mock(PhysicalChargerPort.class);
+    private final ChargingSessionRepository sessionRepository = mock(ChargingSessionRepository.class);
+    private final BookingRepository bookingRepository = mock(BookingRepository.class);
+    private final TariffDirectory tariffDirectory = mock(TariffDirectory.class);
     private final Clock clock = Clock.fixed(Instant.parse("2026-11-02T15:00:00Z"), ZoneOffset.UTC);
 
     private ChargingActivationService activationService;
@@ -74,6 +88,9 @@ class ChargingActivationServiceTest {
                 settlementPolicy,
                 coordinator,
                 chargerPort,
+                sessionRepository,
+                bookingRepository,
+                tariffDirectory,
                 clock);
         stubBooking(BOOKING_ID, DRIVER_ID, CONNECTOR_ID);
     }
@@ -405,6 +422,230 @@ class ChargingActivationServiceTest {
 
             verifyNoInteractions(catalog, powerPolicy, paymentDirectory, coordinator, chargerPort);
             verify(settlementPolicy, never()).failActivation(any(), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("Flujo C: cierre de sesión, liquidación con descuento de seña y corte automático (ECO-55 / ECO-58)")
+    class StopAndSettlementFlow {
+
+        @Test
+        @DisplayName("Cierre con reserva donde realCost > seña: cobra solo la diferencia y libera el conector")
+        void stopSession_withBookingAndCostExceedingDeposit_chargesDifference() {
+            Instant startedAt = clock.instant().minusSeconds(1800);
+            ChargingSession active = ChargingSession.start(
+                    "sess-1", BOOKING_ID, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), startedAt);
+            ChargingSession closed = ChargingSession.start(
+                    "sess-1", BOOKING_ID, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), startedAt);
+            closed.stop(clock.instant(), new BigDecimal("25.000"));
+
+            when(sessionRepository.findBySessionId("sess-1")).thenReturn(Optional.of(active));
+            when(chargerPort.deactivate(CONNECTOR_ID)).thenReturn(Optional.of(new BigDecimal("25.000")));
+            when(coordinator.completeLocalSession("sess-1", new BigDecimal("25.000"), clock.instant()))
+                    .thenReturn(new CompletedSessionData(
+                            closed, new BigDecimal("5000.00"), clock.instant().plusSeconds(1800)));
+            when(tariffDirectory.calculateRealCost(
+                            CONNECTOR_ID, new BigDecimal("25.000"), new BigDecimal("50.00"), startedAt, 0L))
+                    .thenReturn(new BigDecimal("7200.00"));
+            when(settlementPolicy.settleCompletedSession(new BigDecimal("5000.00"), new BigDecimal("7200.00")))
+                    .thenReturn(new ChargeSettlement(
+                            new BigDecimal("5000.00"),
+                            new BigDecimal("7200.00"),
+                            new BigDecimal("7200.00"),
+                            new BigDecimal("2200.00"),
+                            BigDecimal.ZERO,
+                            ChargeSettlement.Outcome.COMPLETED));
+            when(paymentDirectory.chargeConsumption(DRIVER_ID, "sess-1", new BigDecimal("2200.00")))
+                    .thenReturn(ConsumptionPaymentStatus.CHARGED);
+
+            SessionStopResult result = activationService.stopSession("sess-1", DRIVER_ID, null);
+
+            assertThat(result.status()).isEqualTo(SessionStatus.COMPLETED);
+            assertThat(result.kwhDelivered()).isEqualByComparingTo("25.000");
+            assertThat(result.depositAmount()).isEqualByComparingTo("5000.00");
+            assertThat(result.realCost()).isEqualByComparingTo("7200.00");
+            assertThat(result.finalBilled()).isEqualByComparingTo("7200.00");
+            assertThat(result.additionalCharge()).isEqualByComparingTo("2200.00");
+            assertThat(result.paymentStatus()).isEqualTo(ConsumptionPaymentStatus.CHARGED);
+            verify(paymentDirectory).chargeConsumption(DRIVER_ID, "sess-1", new BigDecimal("2200.00"));
+        }
+
+        @Test
+        @DisplayName("Cierre con reserva donde realCost <= seña: aplica piso de seña y no cobra saldo adicional")
+        void stopSession_withBookingAndCostWithinDeposit_appliesDepositFloor() {
+            Instant startedAt = clock.instant().minusSeconds(600);
+            ChargingSession active = ChargingSession.start(
+                    "sess-2", BOOKING_ID, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("22.00"), startedAt);
+            ChargingSession closed = ChargingSession.start(
+                    "sess-2", BOOKING_ID, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("22.00"), startedAt);
+            closed.stop(clock.instant(), new BigDecimal("4.000"));
+
+            when(sessionRepository.findBySessionId("sess-2")).thenReturn(Optional.of(active));
+            when(chargerPort.deactivate(CONNECTOR_ID)).thenReturn(Optional.empty());
+            when(coordinator.completeLocalSession("sess-2", new BigDecimal("4.000"), clock.instant()))
+                    .thenReturn(new CompletedSessionData(
+                            closed, new BigDecimal("5000.00"), clock.instant().plusSeconds(1800)));
+            when(tariffDirectory.calculateRealCost(
+                            CONNECTOR_ID, new BigDecimal("4.000"), new BigDecimal("22.00"), startedAt, 0L))
+                    .thenReturn(new BigDecimal("1800.00"));
+            when(settlementPolicy.settleCompletedSession(new BigDecimal("5000.00"), new BigDecimal("1800.00")))
+                    .thenReturn(new ChargeSettlement(
+                            new BigDecimal("5000.00"),
+                            new BigDecimal("1800.00"),
+                            new BigDecimal("5000.00"),
+                            BigDecimal.ZERO,
+                            BigDecimal.ZERO,
+                            ChargeSettlement.Outcome.COMPLETED));
+
+            SessionStopResult result = activationService.stopSession("sess-2", DRIVER_ID, new BigDecimal("4.000"));
+
+            assertThat(result.additionalCharge()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(result.finalBilled()).isEqualByComparingTo("5000.00");
+            assertThat(result.paymentStatus()).isEqualTo(ConsumptionPaymentStatus.NOT_REQUIRED);
+            verify(paymentDirectory, never()).chargeConsumption(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName(
+                "Cierre walk-in con cobro fallido: retorna DEBT_RECORDED sin revertir el cierre ni retener conector")
+        void stopSession_walkIn_returnsDebtRecordedWhenGatewayDeclines() {
+            Instant startedAt = clock.instant().minusSeconds(1200);
+            ChargingSession active = ChargingSession.start(
+                    "sess-walkin", 77L, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), startedAt);
+            ChargingSession closed = ChargingSession.start(
+                    "sess-walkin", 77L, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), startedAt);
+            closed.stop(clock.instant(), new BigDecimal("10.000"));
+
+            when(sessionRepository.findBySessionId("sess-walkin")).thenReturn(Optional.of(active));
+            when(chargerPort.deactivate(CONNECTOR_ID)).thenReturn(Optional.of(new BigDecimal("10.000")));
+            when(coordinator.completeLocalSession("sess-walkin", new BigDecimal("10.000"), clock.instant()))
+                    .thenReturn(new CompletedSessionData(
+                            closed, BigDecimal.ZERO, clock.instant().plusSeconds(600)));
+            when(tariffDirectory.calculateRealCost(
+                            CONNECTOR_ID, new BigDecimal("10.000"), new BigDecimal("50.00"), startedAt, 0L))
+                    .thenReturn(new BigDecimal("2500.00"));
+            when(settlementPolicy.settleCompletedSession(BigDecimal.ZERO, new BigDecimal("2500.00")))
+                    .thenReturn(new ChargeSettlement(
+                            BigDecimal.ZERO,
+                            new BigDecimal("2500.00"),
+                            new BigDecimal("2500.00"),
+                            new BigDecimal("2500.00"),
+                            BigDecimal.ZERO,
+                            ChargeSettlement.Outcome.COMPLETED));
+            when(paymentDirectory.chargeConsumption(DRIVER_ID, "sess-walkin", new BigDecimal("2500.00")))
+                    .thenReturn(ConsumptionPaymentStatus.DEBT_RECORDED);
+
+            SessionStopResult result = activationService.stopSession("sess-walkin", DRIVER_ID, null);
+
+            assertThat(result.status()).isEqualTo(SessionStatus.COMPLETED);
+            assertThat(result.additionalCharge()).isEqualByComparingTo("2500.00");
+            assertThat(result.paymentStatus()).isEqualTo(ConsumptionPaymentStatus.DEBT_RECORDED);
+        }
+
+        @Test
+        @DisplayName("Intentar detener sesión ajena o inexistente lanza SessionNotFoundException (SEC-06)")
+        void stopSession_foreignOrMissing_throwsSessionNotFound() {
+            ChargingSession othersSession = ChargingSession.start(
+                    "sess-other", BOOKING_ID, CONNECTOR_ID, 999L, 80, new BigDecimal("50.00"), clock.instant());
+            when(sessionRepository.findBySessionId("sess-other")).thenReturn(Optional.of(othersSession));
+            when(sessionRepository.findBySessionId("sess-missing")).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> activationService.stopSession("sess-other", DRIVER_ID, null))
+                    .isInstanceOf(SessionNotFoundException.class);
+            assertThatThrownBy(() -> activationService.stopSession("sess-missing", DRIVER_ID, null))
+                    .isInstanceOf(SessionNotFoundException.class);
+
+            verifyNoInteractions(chargerPort, coordinator, tariffDirectory, paymentDirectory);
+        }
+
+        @Test
+        @DisplayName(
+                "Si cargador físico y core/pagos están caídos al cerrar: cierra localmente igual con PENDING_SETTLEMENT")
+        void stopSession_whenExternalServicesFail_closesLocallyWithPendingSettlement() {
+            Instant startedAt = clock.instant().minusSeconds(600);
+            ChargingSession active = ChargingSession.start(
+                    "sess-resilient", BOOKING_ID, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("22.00"), startedAt);
+            ChargingSession closed = ChargingSession.start(
+                    "sess-resilient", BOOKING_ID, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("22.00"), startedAt);
+            closed.stop(clock.instant(), BigDecimal.ZERO);
+
+            when(sessionRepository.findBySessionId("sess-resilient")).thenReturn(Optional.of(active));
+            when(chargerPort.deactivate(CONNECTOR_ID))
+                    .thenThrow(new PhysicalChargerUnavailableException("Cargador desconectado"));
+            when(coordinator.completeLocalSession("sess-resilient", BigDecimal.ZERO, clock.instant()))
+                    .thenReturn(new CompletedSessionData(
+                            closed, new BigDecimal("3000.00"), clock.instant().plusSeconds(600)));
+            when(tariffDirectory.calculateRealCost(any(), any(), any(), any(), anyLong()))
+                    .thenThrow(new PricingUnavailableException(new RuntimeException("core down")));
+
+            SessionStopResult result = activationService.stopSession("sess-resilient", DRIVER_ID, null);
+
+            assertThat(result.status()).isEqualTo(SessionStatus.COMPLETED);
+            assertThat(result.paymentStatus()).isEqualTo(ConsumptionPaymentStatus.PENDING_SETTLEMENT);
+            verify(coordinator).completeLocalSession("sess-resilient", BigDecimal.ZERO, clock.instant());
+        }
+
+        @Test
+        @DisplayName("Corte automático (stopExpiredSessions): detiene solo sesiones cuya ventana ya venció")
+        void stopExpiredSessions_cutsOnlyExpiredWindows() {
+            Instant now = clock.instant();
+            Instant expiredEnd = now;
+            Instant activeEnd = now.plusSeconds(900);
+
+            ChargingSession expired = ChargingSession.start(
+                    "sess-exp", 101L, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), now.minusSeconds(1800));
+            ChargingSession stillValid = ChargingSession.start(
+                    "sess-ok",
+                    102L,
+                    CONNECTOR_ID + 1,
+                    DRIVER_ID + 1,
+                    80,
+                    new BigDecimal("50.00"),
+                    now.minusSeconds(600));
+            ChargingSession expiredClosed = ChargingSession.start(
+                    "sess-exp", 101L, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), now.minusSeconds(1800));
+            expiredClosed.stop(now, new BigDecimal("12.000"));
+
+            Booking expiredBooking = new Booking(
+                    CONNECTOR_ID,
+                    DRIVER_ID,
+                    new TimeWindow(now.minusSeconds(1800), expiredEnd),
+                    now.minusSeconds(1800));
+            Booking validBooking = new Booking(
+                    CONNECTOR_ID + 1,
+                    DRIVER_ID + 1,
+                    new TimeWindow(now.minusSeconds(600), activeEnd),
+                    now.minusSeconds(600));
+
+            when(sessionRepository.findByStatus(SessionStatus.ACTIVE)).thenReturn(List.of(expired, stillValid));
+            when(bookingRepository.findById(101L)).thenReturn(Optional.of(expiredBooking));
+            when(bookingRepository.findById(102L)).thenReturn(Optional.of(validBooking));
+            when(chargerPort.deactivate(CONNECTOR_ID)).thenReturn(Optional.of(new BigDecimal("12.000")));
+            when(coordinator.completeLocalSession("sess-exp", new BigDecimal("12.000"), now))
+                    .thenReturn(new CompletedSessionData(expiredClosed, BigDecimal.ZERO, expiredEnd));
+            when(tariffDirectory.calculateRealCost(
+                            CONNECTOR_ID,
+                            new BigDecimal("12.000"),
+                            new BigDecimal("50.00"),
+                            now.minusSeconds(1800),
+                            0L))
+                    .thenReturn(new BigDecimal("2400.00"));
+            when(settlementPolicy.settleCompletedSession(BigDecimal.ZERO, new BigDecimal("2400.00")))
+                    .thenReturn(new ChargeSettlement(
+                            BigDecimal.ZERO,
+                            new BigDecimal("2400.00"),
+                            new BigDecimal("2400.00"),
+                            new BigDecimal("2400.00"),
+                            BigDecimal.ZERO,
+                            ChargeSettlement.Outcome.COMPLETED));
+            when(paymentDirectory.chargeConsumption(DRIVER_ID, "sess-exp", new BigDecimal("2400.00")))
+                    .thenReturn(ConsumptionPaymentStatus.CHARGED);
+
+            int stopped = activationService.stopExpiredSessions();
+
+            assertThat(stopped).isEqualTo(1);
+            verify(coordinator).completeLocalSession("sess-exp", new BigDecimal("12.000"), now);
+            verify(coordinator, never()).completeLocalSession(eq("sess-ok"), any(), any());
         }
     }
 }

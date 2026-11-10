@@ -4,6 +4,7 @@ import com.ecopedia.charging.session.domain.PhysicalChargerPort;
 import com.ecopedia.charging.session.domain.PhysicalChargerRejectedException;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
 import java.math.BigDecimal;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -59,14 +60,16 @@ public class ChargerSimulatorAdapter implements PhysicalChargerPort {
     }
 
     @Override
-    public void deactivate(long connectorId) {
+    public Optional<BigDecimal> deactivate(long connectorId) {
         try {
-            restClient
+            var entity = restClient
                     .delete()
                     .uri("/v1/connectors/{id}/session", connectorId)
                     .retrieve()
-                    .toBodilessEntity();
-            log.info("Cargador físico desactivado en conector {}", connectorId);
+                    .toEntity(StoppedSessionBody.class);
+            Optional<BigDecimal> energy = Optional.ofNullable(entity.getBody()).map(StoppedSessionBody::energyKwh);
+            log.info("Cargador físico desactivado en conector {} (energía: {} kWh)", connectorId, energy.orElse(null));
+            return energy;
         } catch (RestClientException ex) {
             log.warn("Error al desactivar el cargador físico en conector {}: {}", connectorId, ex.getMessage());
             throw new PhysicalChargerUnavailableException("No se pudo desactivar el cargador físico", ex);
@@ -74,4 +77,6 @@ public class ChargerSimulatorAdapter implements PhysicalChargerPort {
     }
 
     record StartSessionBody(String sessionId, BigDecimal powerLimitKw) {}
+
+    record StoppedSessionBody(String sessionId, BigDecimal energyKwh) {}
 }

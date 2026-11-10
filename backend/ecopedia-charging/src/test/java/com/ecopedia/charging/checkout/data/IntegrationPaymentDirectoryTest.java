@@ -8,9 +8,11 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.net.ServerSocket;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -121,6 +123,35 @@ class IntegrationPaymentDirectoryTest {
         assertThatThrownBy(() -> directory.validatePaymentMethodForCharging(10L, null))
                 .isInstanceOf(PaymentMethodsUnavailableException.class);
         server.verify();
+    }
+
+    @Test
+    @DisplayName("Cobro de consumo: devuelve CHARGED o DEBT_RECORDED según la respuesta y falla si integration cae")
+    void chargeConsumption_mapsStatusAndHandlesUnavailable() {
+        RestClient.Builder builder = RestClient.builder().baseUrl("http://integration");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        RestClient client = builder.build();
+        IntegrationPaymentDirectory directory = new IntegrationPaymentDirectory(client, client);
+
+        server.expect(requestTo("http://integration/internal/payments/consumption-charges"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("{\"status\":\"CHARGED\"}", MediaType.APPLICATION_JSON));
+        assertThat(directory.chargeConsumption(10L, "sess-1", new BigDecimal("1200.00")))
+                .isEqualTo(ConsumptionPaymentStatus.CHARGED);
+
+        server.reset();
+        server.expect(requestTo("http://integration/internal/payments/consumption-charges"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("{\"status\":\"DEBT_RECORDED\"}", MediaType.APPLICATION_JSON));
+        assertThat(directory.chargeConsumption(10L, "sess-2", new BigDecimal("800.00")))
+                .isEqualTo(ConsumptionPaymentStatus.DEBT_RECORDED);
+
+        server.reset();
+        server.expect(requestTo("http://integration/internal/payments/consumption-charges"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+        assertThatThrownBy(() -> directory.chargeConsumption(10L, "sess-3", new BigDecimal("500.00")))
+                .isInstanceOf(PaymentMethodsUnavailableException.class);
     }
 
     /** Un puerto que estuvo libre hace un instante: se abre, se anota y se cierra. */

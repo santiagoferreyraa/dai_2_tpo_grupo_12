@@ -2,15 +2,19 @@ package com.ecopedia.charging.session.web;
 
 import com.ecopedia.charging.security.AuthenticatedUser;
 import com.ecopedia.charging.session.domain.ActivationResult;
+import com.ecopedia.charging.session.domain.SessionStopResult;
 import com.ecopedia.charging.session.service.ChargingActivationService;
 import com.ecopedia.charging.session.web.dto.ActivationHttpRequest;
 import com.ecopedia.charging.session.web.dto.ActivationHttpResponse;
+import com.ecopedia.charging.session.web.dto.SessionStopResponse;
+import com.ecopedia.charging.session.web.dto.StopSessionRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -44,5 +48,21 @@ public class SessionController {
         ActivationResult result = activationService.activate(request.toDomain(driver.id()), token);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(ActivationHttpResponse.fromDomain(result));
+    }
+
+    /**
+     * Detiene una sesión de carga activa, libera el conector, recorta la ventana remanente de la
+     * reserva y liquida el consumo real descontando la seña (Flujo C, RF12, RF14, ECO-55).
+     */
+    @PostMapping("/{sessionId}/stop")
+    @PreAuthorize("hasRole('CONDUCTOR')")
+    public ResponseEntity<SessionStopResponse> stopSession(
+            @AuthenticationPrincipal AuthenticatedUser driver,
+            @PathVariable String sessionId,
+            @Valid @RequestBody(required = false) StopSessionRequest request) {
+
+        SessionStopResult result =
+                activationService.stopSession(sessionId, driver.id(), request != null ? request.kwhDelivered() : null);
+        return ResponseEntity.ok(SessionStopResponse.fromDomain(result));
     }
 }

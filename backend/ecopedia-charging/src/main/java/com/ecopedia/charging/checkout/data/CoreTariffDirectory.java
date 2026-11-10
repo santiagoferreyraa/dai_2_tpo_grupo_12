@@ -3,6 +3,7 @@ package com.ecopedia.charging.checkout.data;
 import com.ecopedia.charging.checkout.domain.PricingUnavailableException;
 import com.ecopedia.charging.checkout.domain.TariffDirectory;
 import java.math.BigDecimal;
+import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -68,5 +69,40 @@ public class CoreTariffDirectory implements TariffDirectory {
         }
     }
 
+    @Override
+    public BigDecimal calculateRealCost(
+            Long connectorId,
+            BigDecimal kwhConsumed,
+            BigDecimal deliveredPowerKw,
+            Instant startedAt,
+            long excessMinutes) {
+        try {
+            RealCostAnswer answer = restClient
+                    .get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/api/pricing/real-cost")
+                            .queryParam("connectorId", connectorId)
+                            .queryParam("kwhConsumed", kwhConsumed)
+                            .queryParam("deliveredPowerKw", deliveredPowerKw)
+                            .queryParam("start", startedAt.toString())
+                            .queryParam("excessMinutes", excessMinutes)
+                            .build())
+                    .retrieve()
+                    .body(RealCostAnswer.class);
+            if (answer == null || answer.totalCost() == null) {
+                throw new PricingUnavailableException(new IllegalStateException("Respuesta sin totalCost"));
+            }
+            return answer.totalCost();
+        } catch (RestClientException noAnswer) {
+            log.warn(
+                    "No se pudo calcular el costo real en core para el conector {}: {}",
+                    connectorId,
+                    noAnswer.getMessage());
+            throw new PricingUnavailableException(noAnswer);
+        }
+    }
+
     record DepositAnswer(Long connectorId, BigDecimal depositAmount) {}
+
+    record RealCostAnswer(BigDecimal totalCost) {}
 }

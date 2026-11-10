@@ -740,7 +740,6 @@ public class BookingServiceImpl implements BookingService {
 
     private TimeWindow calculateWalkInWindow(Long connectorId, Instant from, Long driverId) {
         Instant maxEnd = from.plus(maxWindow);
-        Instant minRequiredEnd = from.plus(walkInBuffer);
 
         // 1. Buscar reservas CONFIRMED o IN_PROGRESS en [from, maxEnd)
         List<Booking> overlappingBookings = new ArrayList<>();
@@ -758,7 +757,7 @@ public class BookingServiceImpl implements BookingService {
                 .filter(hold -> hold.window().overlaps(evalWindow))
                 .toList();
 
-        // 3. Determinar el límite superior (el inicio más próximo de cualquier ocupación)
+        // 3. Determinar el límite superior dejando libre el resguardo previo a la próxima ocupación (RF10, ECO-58)
         Instant effectiveEnd = maxEnd;
         for (Booking booking : overlappingBookings) {
             Instant bookingStart = booking.getWindow().start();
@@ -766,8 +765,9 @@ public class BookingServiceImpl implements BookingService {
                 // Ya hay una reserva corriendo en este instante
                 throw new SlotUnavailableException(connectorId);
             }
-            if (bookingStart.isBefore(effectiveEnd)) {
-                effectiveEnd = bookingStart;
+            Instant cutoffBeforeBooking = bookingStart.minus(walkInBuffer);
+            if (cutoffBeforeBooking.isBefore(effectiveEnd)) {
+                effectiveEnd = cutoffBeforeBooking;
             }
         }
 
@@ -777,13 +777,14 @@ public class BookingServiceImpl implements BookingService {
                 // Ya hay una retención corriendo en este instante
                 throw new SlotUnavailableException(connectorId);
             }
-            if (holdStart.isBefore(effectiveEnd)) {
-                effectiveEnd = holdStart;
+            Instant cutoffBeforeHold = holdStart.minus(walkInBuffer);
+            if (cutoffBeforeHold.isBefore(effectiveEnd)) {
+                effectiveEnd = cutoffBeforeHold;
             }
         }
 
-        // 4. Validar buffer de 15 minutos previos a la próxima reserva
-        if (effectiveEnd.isBefore(minRequiredEnd)) {
+        // 4. Si no queda tiempo disponible tras descontar los 15 minutos de resguardo, rechazar
+        if (!effectiveEnd.isAfter(from)) {
             throw new SlotUnavailableException(connectorId);
         }
 
