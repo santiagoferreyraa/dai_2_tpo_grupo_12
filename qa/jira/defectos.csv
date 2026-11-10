@@ -1,6 +1,6 @@
 Summary,Issue Type,Priority,Labels,Labels,Description
 "DEF-01 · Sin broker, el aviso de una reserva confirmada se pierde",Error,High,defecto,severidad-mayor,"Severidad: Mayor.
-Apagar Artemis; confirmar una reserva; levantar Artemis; GET /api/notifications. Esperado: el aviso aparece. Obtenido: no se publica nunca. Workaround: la reserva figura en Mis reservas. Ver QA-27."
+Apagar Artemis; confirmar una reserva; levantar Artemis; GET /api/notifications. Esperado: el aviso aparece. Obtenido: no se publica nunca. Workaround: la reserva figura en Mis reservas. Ver QA-27. Resuelto en feat/notification-outbox (ECO-177): el aviso que no sale queda en pending_notifications y un barrido cada 15 s lo reenvía cuando el broker vuelve. Causa raíz: el publicador solo dejaba un WARN."
 "DEF-02 · JWT vencido, alterado, alg=none u otro emisor responde 403 y no 401",Error,High,defecto,severidad-mayor,"Severidad: Mayor.
 GET /api/users/profile con un token vencido. Esperado: 401. Obtenido: 403 (los 4 módulos). Evidencia: ApiAttackTest. Ver QA-33."
 DEF-03 · core escribe el email del usuario en el log de accesos denegados,Error,High,defecto,severidad-mayor,"Severidad: Mayor.
