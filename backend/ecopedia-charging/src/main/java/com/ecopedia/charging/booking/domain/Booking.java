@@ -276,6 +276,21 @@ public class Booking {
         this.status = BookingStatus.IN_PROGRESS;
     }
 
+    /**
+     * Finaliza la reserva al detenerse la sesión de carga (RF12, RF14, ECO-55) y recorta la ventana
+     * si concluyó antes del fin programado para liberar el tiempo remanente.
+     */
+    public void completeCharging(Instant stoppedAt) {
+        requireConfirmedOrInProgress("el cierre de la carga");
+        if (stoppedAt != null) {
+            Instant instant = stoppedAt.truncatedTo(ChronoUnit.MICROS);
+            if (instant.isAfter(this.windowStart) && instant.isBefore(this.windowEnd)) {
+                this.windowEnd = instant;
+            }
+        }
+        this.status = BookingStatus.COMPLETED;
+    }
+
     public boolean isConfirmed() {
         return status == BookingStatus.CONFIRMED;
     }

@@ -1,9 +1,12 @@
 package com.ecopedia.charging.checkout.domain;
 
+import java.math.BigDecimal;
+
 /**
  * Puerto secundario hacia el componente de Pagos (ecopedia-integration).
  *
- * <p>Permite al Facade de Checkout verificar las precondiciones de medios de pago del conductor (RF02).
+ * <p>Permite al Facade de Checkout verificar las precondiciones de medios de pago del conductor (RF02)
+ * y a SesionesDeCarga cobrar el consumo adicional al cerrar la sesión (RF14, ECO-55).
  */
 public interface PaymentDirectory {
 
@@ -27,4 +30,15 @@ public interface PaymentDirectory {
      * @throws PaymentMethodsUnavailableException si Pagos o la pasarela no responden (503).
      */
     void validatePaymentMethodForCharging(Long driverId, Long paymentMethodId);
+
+    /**
+     * Cobra el consumo adicional de una sesión finalizada o registra la deuda si el cobro falla (RF14, ECO-55).
+     *
+     * @param driverId Identificador del conductor
+     * @param sessionId Identificador de la sesión de carga cerrada
+     * @param amount Saldo adicional positivo a cobrar
+     * @return {@link ConsumptionPaymentStatus#CHARGED} o {@link ConsumptionPaymentStatus#DEBT_RECORDED}
+     * @throws PaymentMethodsUnavailableException si ecopedia-integration no responde al momento del cierre
+     */
+    ConsumptionPaymentStatus chargeConsumption(Long driverId, String sessionId, BigDecimal amount);
 }

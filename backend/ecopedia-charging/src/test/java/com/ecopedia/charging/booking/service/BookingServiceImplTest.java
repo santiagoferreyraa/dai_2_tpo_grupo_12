@@ -1077,8 +1077,8 @@ class BookingServiceImplTest {
         }
 
         @Test
-        @DisplayName("Con reserva posterior al buffer: acota la ventana hasta el inicio de la próxima reserva")
-        void walkIn_whenUpcomingBookingAfterBuffer_trimsWindowToNextBookingStart() {
+        @DisplayName("Con reserva posterior al buffer: acota la ventana dejando libres los 15 minutos previos")
+        void walkIn_whenUpcomingBookingAfterBuffer_trimsWindowLeaving15MinBuffer() {
             started(AVAILABLE, Duration.ofMinutes(10));
             Instant now = clock.instant();
             Instant nextBookingStart = now.plus(Duration.ofMinutes(45));
@@ -1087,7 +1087,8 @@ class BookingServiceImplTest {
 
             Booking booking = service.registerWalkIn(CONNECTOR, DRIVER);
 
-            assertThat(booking.getWindow()).isEqualTo(new TimeWindow(now, nextBookingStart));
+            assertThat(booking.getWindow())
+                    .isEqualTo(new TimeWindow(now, nextBookingStart.minus(Duration.ofMinutes(15))));
             assertThat(booking.getDepositStatus()).isEqualTo(DepositStatus.NONE);
         }
 
@@ -1125,20 +1126,33 @@ class BookingServiceImplTest {
         }
 
         @Test
-        @DisplayName(
-                "Con reserva próxima exactamente en el límite de los 15 minutos: permite la carga por esos 15 minutos")
-        void walkIn_whenUpcomingBookingStartsAtExact15Minutes_succeedsWith15MinWindow() {
+        @DisplayName("Con reserva próxima exactamente a los 15 minutos: rechaza con SlotUnavailableException")
+        void walkIn_whenUpcomingBookingStartsAtExact15Minutes_throwsSlotUnavailable() {
             started(AVAILABLE, Duration.ofMinutes(10));
             Instant now = clock.instant();
             Instant nextBookingStart = now.plus(Duration.ofMinutes(15));
             TimeWindow futureWindow = new TimeWindow(nextBookingStart, nextBookingStart.plus(Duration.ofHours(1)));
             repository.save(new Booking(CONNECTOR, OTHER_DRIVER, futureWindow, now));
 
-            TimeWindow calculated = service.calculateWalkInWindow(CONNECTOR, now);
-            assertThat(calculated).isEqualTo(new TimeWindow(now, nextBookingStart));
+            assertThatThrownBy(() -> service.calculateWalkInWindow(CONNECTOR, now))
+                    .isInstanceOf(SlotUnavailableException.class);
+
+            assertThatThrownBy(() -> service.registerWalkIn(CONNECTOR, DRIVER))
+                    .isInstanceOf(SlotUnavailableException.class);
+        }
+
+        @Test
+        @DisplayName("Con retención (Hold) de otro conductor a 45 minutos: acota la ventana dejando 15 minutos libres")
+        void walkIn_whenUpcomingHoldAfterBuffer_trimsWindowLeaving15MinBuffer() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Instant now = clock.instant();
+            Instant holdStart = now.plus(Duration.ofMinutes(45));
+            TimeWindow holdWindow = new TimeWindow(holdStart, holdStart.plus(Duration.ofHours(1)));
+            service.startHold(CONNECTOR, holdWindow, OTHER_DRIVER);
 
             Booking booking = service.registerWalkIn(CONNECTOR, DRIVER);
-            assertThat(booking.getWindow()).isEqualTo(new TimeWindow(now, nextBookingStart));
+
+            assertThat(booking.getWindow()).isEqualTo(new TimeWindow(now, holdStart.minus(Duration.ofMinutes(15))));
         }
 
         @Test

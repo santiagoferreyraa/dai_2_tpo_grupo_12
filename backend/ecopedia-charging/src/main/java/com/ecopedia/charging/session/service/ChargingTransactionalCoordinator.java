@@ -9,6 +9,7 @@ import com.ecopedia.charging.session.domain.ChargingSession;
 import com.ecopedia.charging.session.domain.ChargingSessionRepository;
 import com.ecopedia.charging.session.domain.ConnectorState;
 import com.ecopedia.charging.session.domain.ConnectorStateRepository;
+import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Objects;
@@ -146,4 +147,54 @@ public class ChargingTransactionalCoordinator {
 
         log.info("Compensación local ejecutada para conector {} y sesión {}", connectorId, sessionId);
     }
+
+    /**
+     * Cierra atómicamente la sesión local, libera el conector y finaliza la reserva recortando la
+     * ventana remanente (Flujo C, RF12, RNF06, ECO-55).
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public CompletedSessionData completeLocalSession(String sessionId, BigDecimal kwhDelivered, Instant stoppedAt) {
+        Objects.requireNonNull(sessionId, "sessionId no puede ser null");
+        Objects.requireNonNull(stoppedAt, "stoppedAt no puede ser null");
+
+        ChargingSession session = chargingSessionRepository
+                .findBySessionId(sessionId)
+                .orElseThrow(() -> new SessionNotFoundException(sessionId));
+
+        if (!session.isActive()) {
+            throw new InvalidBookingRequestException("La sesión ya fue finalizada");
+        }
+
+        session.stop(stoppedAt, kwhDelivered);
+        ChargingSession savedSession = chargingSessionRepository.save(session);
+
+        connectorStateRepository.findById(savedSession.getConnectorId()).ifPresent(state -> {
+            if (sessionId.equals(state.getCurrentSessionId())) {
+                state.release(stoppedAt);
+                connectorStateRepository.save(state);
+            }
+        });
+
+        BigDecimal depositAmount = BigDecimal.ZERO;
+        Instant originalWindowEnd = null;
+        if (savedSession.getBookingId() != null) {
+            Booking booking = bookingRepository
+                    .findById(savedSession.getBookingId())
+                    .orElseThrow(() -> new BookingNotFoundException(savedSession.getBookingId()));
+            originalWindowEnd = booking.getWindow().end();
+            depositAmount = booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO;
+            booking.completeCharging(stoppedAt);
+            bookingRepository.save(booking);
+        }
+
+        log.info(
+                "Sesión {} cerrada localmente: conector={} liberado, kWh={}",
+                sessionId,
+                savedSession.getConnectorId(),
+                savedSession.getKwhDelivered());
+
+        return new CompletedSessionData(savedSession, depositAmount, originalWindowEnd);
+    }
+
+    public record CompletedSessionData(ChargingSession session, BigDecimal depositAmount, Instant originalWindowEnd) {}
 }

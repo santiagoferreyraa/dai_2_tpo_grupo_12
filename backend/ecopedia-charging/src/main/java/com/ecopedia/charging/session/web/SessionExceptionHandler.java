@@ -10,6 +10,7 @@ import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import com.ecopedia.charging.session.domain.PhysicalChargerRejectedException;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
+import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import com.ecopedia.charging.web.ApiProblems;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,7 +42,8 @@ public class SessionExceptionHandler {
         return withCode(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), "CONNECTOR_NOT_BOOKABLE");
     }
 
-    @ExceptionHandler({ConnectorNotFoundException.class, BookingNotFoundException.class})
+    @ExceptionHandler({ConnectorNotFoundException.class, BookingNotFoundException.class, SessionNotFoundException.class
+    })
     public ProblemDetail handleNotFound(RuntimeException ex) {
         // Un único 404 para todo (QA-31, SEC-06): el id y el motivo quedan solo en el log.
         log.warn("Recurso no encontrado en sesión de carga: {}", ex.getMessage());

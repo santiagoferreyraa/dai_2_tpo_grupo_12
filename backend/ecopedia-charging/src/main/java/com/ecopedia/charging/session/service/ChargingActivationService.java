@@ -2,24 +2,39 @@ package com.ecopedia.charging.session.service;
 
 import com.ecopedia.charging.booking.domain.Booking;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
+import com.ecopedia.charging.booking.domain.BookingRepository;
 import com.ecopedia.charging.booking.domain.BookingService;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
+import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
+import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
+import com.ecopedia.charging.checkout.domain.PricingUnavailableException;
+import com.ecopedia.charging.checkout.domain.TariffDirectory;
 import com.ecopedia.charging.session.domain.ActivationFailureReason;
 import com.ecopedia.charging.session.domain.ActivationRequest;
 import com.ecopedia.charging.session.domain.ActivationResult;
+import com.ecopedia.charging.session.domain.ChargeSettlement;
 import com.ecopedia.charging.session.domain.ChargingPoint;
 import com.ecopedia.charging.session.domain.ChargingPointCatalog;
 import com.ecopedia.charging.session.domain.ChargingSession;
+import com.ecopedia.charging.session.domain.ChargingSessionRepository;
 import com.ecopedia.charging.session.domain.PhysicalChargerPort;
 import com.ecopedia.charging.session.domain.PhysicalChargerRejectedException;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
 import com.ecopedia.charging.session.domain.PowerDecision;
+import com.ecopedia.charging.session.domain.SessionNotFoundException;
+import com.ecopedia.charging.session.domain.SessionStatus;
+import com.ecopedia.charging.session.domain.SessionStopResult;
+import com.ecopedia.charging.session.service.ChargingTransactionalCoordinator.CompletedSessionData;
+import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,6 +68,9 @@ public class ChargingActivationService {
     private final ChargingSettlementPolicy settlementPolicy;
     private final ChargingTransactionalCoordinator transactionalCoordinator;
     private final PhysicalChargerPort physicalChargerPort;
+    private final ChargingSessionRepository chargingSessionRepository;
+    private final BookingRepository bookingRepository;
+    private final TariffDirectory tariffDirectory;
     private final Clock clock;
 
     public ChargingActivationService(
@@ -63,6 +81,9 @@ public class ChargingActivationService {
             ChargingSettlementPolicy settlementPolicy,
             ChargingTransactionalCoordinator transactionalCoordinator,
             PhysicalChargerPort physicalChargerPort,
+            ChargingSessionRepository chargingSessionRepository,
+            BookingRepository bookingRepository,
+            TariffDirectory tariffDirectory,
             Clock clock) {
         this.chargingPointCatalog = chargingPointCatalog;
         this.chargingPowerPolicy = chargingPowerPolicy;
@@ -71,6 +92,9 @@ public class ChargingActivationService {
         this.settlementPolicy = settlementPolicy;
         this.transactionalCoordinator = transactionalCoordinator;
         this.physicalChargerPort = physicalChargerPort;
+        this.chargingSessionRepository = chargingSessionRepository;
+        this.bookingRepository = bookingRepository;
+        this.tariffDirectory = tariffDirectory;
         this.clock = clock;
     }
 
@@ -160,5 +184,149 @@ public class ChargingActivationService {
         }
 
         return ActivationResult.fromSession(session);
+    }
+
+    /**
+     * Detiene una sesión de carga iniciada por el conductor (Flujo C, RF12, RF14, ECO-55).
+     *
+     * <p>Libera primero el cargador físico y la transacción local en base de datos, para garantizar
+     * que una caída de Tarificación o Pagos nunca deje bloqueado al conector ni al conductor.
+     */
+    public SessionStopResult stopSession(String sessionId, Long driverId, BigDecimal reportedKwh) {
+        Objects.requireNonNull(sessionId, "sessionId no puede ser null");
+        Objects.requireNonNull(driverId, "driverId no puede ser null");
+
+        ChargingSession session = chargingSessionRepository
+                .findBySessionId(sessionId)
+                .orElseThrow(() -> new SessionNotFoundException(sessionId));
+
+        if (!session.getDriverId().equals(driverId)) {
+            log.warn(
+                    "Acceso denegado: el conductor {} quiso detener la sesión {}, que es de otro", driverId, sessionId);
+            throw new SessionNotFoundException(sessionId);
+        }
+
+        return stopOwnedOrExpiredSession(session, reportedKwh);
+    }
+
+    /**
+     * Corta automáticamente todas las sesiones activas cuya ventana reservada o ventana walk-in (15
+     * minutos antes de la próxima reserva) ya venció (RF10, RF12, ECO-58).
+     */
+    public int stopExpiredSessions() {
+        Instant now = clock.instant();
+        List<ChargingSession> activeSessions = chargingSessionRepository.findByStatus(SessionStatus.ACTIVE);
+        int stoppedCount = 0;
+
+        for (ChargingSession session : activeSessions) {
+            if (session.getBookingId() == null) {
+                continue;
+            }
+            Optional<Booking> booking = bookingRepository.findById(session.getBookingId());
+            if (booking.isPresent() && !booking.get().getWindow().end().isAfter(now)) {
+                try {
+                    stopOwnedOrExpiredSession(session, null);
+                    stoppedCount++;
+                } catch (RuntimeException failure) {
+                    log.warn(
+                            "No se pudo cortar automáticamente la sesión vencida {}: {}",
+                            session.getSessionId(),
+                            failure.getMessage());
+                }
+            }
+        }
+        return stoppedCount;
+    }
+
+    private SessionStopResult stopOwnedOrExpiredSession(ChargingSession session, BigDecimal reportedKwh) {
+        if (!session.isActive()) {
+            throw new InvalidBookingRequestException("La sesión de carga no se encuentra activa");
+        }
+
+        // 1. Desactivación física y consolidación de energía fuera de @Transactional
+        Optional<BigDecimal> chargerKwh = Optional.empty();
+        try {
+            chargerKwh = physicalChargerPort.deactivate(session.getConnectorId());
+        } catch (PhysicalChargerUnavailableException ex) {
+            log.warn(
+                    "No se pudo desactivar el cargador físico en conector {} al cerrar sesión {}: {}",
+                    session.getConnectorId(),
+                    session.getSessionId(),
+                    ex.getMessage());
+        }
+
+        BigDecimal effectiveKwh = reportedKwh != null ? reportedKwh : chargerKwh.orElse(session.getKwhDelivered());
+        if (effectiveKwh == null) {
+            effectiveKwh = BigDecimal.ZERO;
+        }
+
+        // 2. Persistencia transaccional local PRIMERO (sesión COMPLETED, conector AVAILABLE, reserva COMPLETED)
+        Instant stoppedAt = clock.instant();
+        CompletedSessionData completed =
+                transactionalCoordinator.completeLocalSession(session.getSessionId(), effectiveKwh, stoppedAt);
+
+        // 3. Cálculo del costo real y liquidación con descuento de seña (fuera de @Transactional)
+        long excessMinutes = 0L;
+        if (completed.originalWindowEnd() != null && stoppedAt.isAfter(completed.originalWindowEnd())) {
+            excessMinutes =
+                    Duration.between(completed.originalWindowEnd(), stoppedAt).toMinutes();
+        }
+
+        BigDecimal depositAmount = completed.depositAmount() != null ? completed.depositAmount() : BigDecimal.ZERO;
+        BigDecimal realCost;
+        BigDecimal finalBilled;
+        BigDecimal additionalCharge;
+        ConsumptionPaymentStatus paymentStatus;
+
+        try {
+            realCost = tariffDirectory.calculateRealCost(
+                    session.getConnectorId(),
+                    effectiveKwh,
+                    session.getPowerLimitKw(),
+                    session.getStartedAt(),
+                    excessMinutes);
+            ChargeSettlement settlement = settlementPolicy.settleCompletedSession(depositAmount, realCost);
+            finalBilled = settlement.finalBilledAmount();
+            additionalCharge = settlement.amountToCharge();
+            if (additionalCharge.signum() > 0) {
+                try {
+                    paymentStatus = paymentDirectory.chargeConsumption(
+                            session.getDriverId(), session.getSessionId(), additionalCharge);
+                } catch (PaymentMethodsUnavailableException unavailable) {
+                    log.warn(
+                            "Pagos no disponible al liquidar sesión {} (monto ${}): queda PENDING_SETTLEMENT",
+                            session.getSessionId(),
+                            additionalCharge,
+                            unavailable);
+                    paymentStatus = ConsumptionPaymentStatus.PENDING_SETTLEMENT;
+                }
+            } else {
+                paymentStatus = ConsumptionPaymentStatus.NOT_REQUIRED;
+            }
+        } catch (PricingUnavailableException unavailable) {
+            log.warn(
+                    "Tarificación no disponible al liquidar sesión {}: queda PENDING_SETTLEMENT",
+                    session.getSessionId(),
+                    unavailable);
+            realCost = BigDecimal.ZERO;
+            finalBilled = depositAmount;
+            additionalCharge = BigDecimal.ZERO;
+            paymentStatus = ConsumptionPaymentStatus.PENDING_SETTLEMENT;
+        }
+
+        ChargingSession closed = completed.session();
+        return new SessionStopResult(
+                closed.getSessionId(),
+                closed.getBookingId(),
+                closed.getConnectorId(),
+                closed.getStatus(),
+                closed.getStartedAt(),
+                closed.getStoppedAt(),
+                closed.getKwhDelivered(),
+                depositAmount,
+                realCost,
+                finalBilled,
+                additionalCharge,
+                paymentStatus);
     }
 }
