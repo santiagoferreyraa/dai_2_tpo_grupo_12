@@ -42,7 +42,7 @@ public class BookingExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(BookingExceptionHandler.class);
 
-    static final String STATE_CONFLICT_DETAIL = "La reserva no admite ese cambio en su estado actual.";
+    static final String STATE_CONFLICT_DETAIL = ApiProblems.STATE_CONFLICT_DETAIL;
 
     static final String CHANGED_DETAIL = "La reserva cambió mientras se la modificaba.";
 

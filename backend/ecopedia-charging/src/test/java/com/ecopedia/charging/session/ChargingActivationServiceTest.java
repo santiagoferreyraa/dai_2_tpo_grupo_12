@@ -18,6 +18,7 @@ import com.ecopedia.charging.booking.domain.Booking;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.BookingRepository;
 import com.ecopedia.charging.booking.domain.BookingService;
+import com.ecopedia.charging.booking.domain.BookingStateConflictException;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
@@ -418,7 +419,7 @@ class ChargingActivationServiceTest {
             ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
-                    .isInstanceOf(InvalidBookingRequestException.class);
+                    .isInstanceOf(BookingStateConflictException.class);
 
             verifyNoInteractions(catalog, powerPolicy, paymentDirectory, coordinator, chargerPort);
             verify(settlementPolicy, never()).failActivation(any(), any());

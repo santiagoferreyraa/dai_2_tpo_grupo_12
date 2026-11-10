@@ -1,6 +1,7 @@
 package com.ecopedia.charging.session.web;
 
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
+import com.ecopedia.charging.booking.domain.BookingStateConflictException;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
 import com.ecopedia.charging.booking.domain.DriverAlreadyBookedException;
@@ -70,6 +71,17 @@ public class SessionExceptionHandler {
     public ProblemDetail handleChargerUnavailable(PhysicalChargerUnavailableException ex) {
         log.warn("El cargador físico no está disponible: {}", ex.getMessage(), ex.getCause());
         return withCode(HttpStatus.SERVICE_UNAVAILABLE, ApiProblems.CHARGER_UNAVAILABLE_DETAIL, "CHARGER_UNAVAILABLE");
+    }
+
+    /**
+     * Habilitar una reserva que ya no está confirmada, o cerrar la carga de una que ya se cerró: la
+     * reserva lo rechaza por su estado (patrón State). Mismo 409 que en Reservas; el id y el estado,
+     * solo al log. Sin esto caía en el manejador general y salía como 500.
+     */
+    @ExceptionHandler(BookingStateConflictException.class)
+    public ProblemDetail handleStateConflict(BookingStateConflictException ex) {
+        log.info("Transición de reserva rechazada en sesión de carga (409): {}", ex.getMessage());
+        return withCode(HttpStatus.CONFLICT, ApiProblems.STATE_CONFLICT_DETAIL, BookingStateConflictException.CODE);
     }
 
     @ExceptionHandler(InvalidBookingRequestException.class)

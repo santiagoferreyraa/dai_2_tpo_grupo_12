@@ -7,8 +7,8 @@ import com.ecopedia.charging.booking.domain.Booking;
 import com.ecopedia.charging.booking.domain.BookingDeposit;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.BookingRepository;
+import com.ecopedia.charging.booking.domain.BookingStateConflictException;
 import com.ecopedia.charging.booking.domain.BookingStatus;
-import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
 import com.ecopedia.charging.booking.domain.TimeWindow;
 import com.ecopedia.charging.session.domain.ChargingSession;
@@ -157,7 +157,7 @@ class ChargingTransactionalCoordinatorTest {
 
             assertThatThrownBy(() -> coordinator.persistLocalActivation(
                             sessionId, savedBooking.getId(), CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("22.00"), now))
-                    .isInstanceOf(InvalidBookingRequestException.class);
+                    .isInstanceOf(BookingStateConflictException.class);
 
             // Verificamos que el conector NO fue marcado como OCCUPIED
             ConnectorState reloadedConnector =

@@ -103,9 +103,7 @@ public class ChargingTransactionalCoordinator {
                         driverId);
                 throw new BookingNotFoundException(bookingId);
             }
-            if (!booking.isConfirmed()) {
-                throw new InvalidBookingRequestException("La reserva " + bookingId + " no está confirmada");
-            }
+            // Si la reserva dejó de estar confirmada, la propia reserva lo rechaza con 409 (patrón State).
             booking.startCharging(now);
             bookingRepository.save(booking);
         }

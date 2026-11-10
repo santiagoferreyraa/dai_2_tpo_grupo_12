@@ -131,7 +131,7 @@ public interface BookingService {
      * Transiciona su estado a {@link BookingStatus#IN_PROGRESS} bajo la transacción declarativa.
      *
      * @throws BookingNotFoundException si la reserva no existe
-     * @throws InvalidBookingRequestException si la reserva no está en estado CONFIRMED
+     * @throws BookingStateConflictException si la reserva no está en estado CONFIRMED (409)
      */
     Booking startBookingCharging(Long bookingId);
 
