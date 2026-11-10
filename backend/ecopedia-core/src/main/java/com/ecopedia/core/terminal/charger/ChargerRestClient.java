@@ -55,6 +55,10 @@ public class ChargerRestClient implements ChargerPort {
                             order.vehicleMaxChargeKw()))
                     .retrieve()
                     .body(ConnectorBody.class);
+            if (connector == null || connector.session() == null) {
+                // Un 2xx sin cuerpo no es una respuesta válida: se trata igual que si no hubiera contestado.
+                throw new ResourceAccessException("El cargador contestó sin cuerpo");
+            }
             return connector.session().toReading();
         } catch (RestClientResponseException rejected) {
             throw translate("encender", order.connectorId(), rejected);

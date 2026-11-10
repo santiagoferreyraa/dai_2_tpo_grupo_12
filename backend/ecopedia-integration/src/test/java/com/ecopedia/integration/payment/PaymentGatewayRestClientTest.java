@@ -198,6 +198,17 @@ class PaymentGatewayRestClientTest {
     }
 
     @Test
+    @DisplayName("Un 200 sin cuerpo no es una respuesta: se trata como pasarela no disponible, no como un 500")
+    void successWithoutBodyIsUnavailable() {
+        gateway.expect(requestTo("http://gateway.test/v1/payments")).andRespond(withSuccess());
+        gateway.expect(requestTo("http://gateway.test/v1/card_tokens")).andRespond(withSuccess());
+
+        assertThatThrownBy(() -> client.charge("tok_abc", BigDecimal.TEN, "Seña", "booking-12", "k"))
+                .isInstanceOf(PaymentGatewayUnavailableException.class);
+        assertThatThrownBy(() -> client.tokenize(CARD)).isInstanceOf(PaymentGatewayUnavailableException.class);
+    }
+
+    @Test
     @DisplayName("Reintegra todo cuando no se pide un importe")
     void refunds() {
         gateway.expect(requestTo("http://gateway.test/v1/payments/pay_1/refunds"))

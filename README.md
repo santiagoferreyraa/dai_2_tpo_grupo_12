@@ -130,7 +130,7 @@ docker compose up -d --build
 
 | Variable | Qué poner |
 |---|---|
-| `ECOPEDIA_ADMIN_PASSWORD` | La contraseña de la cuenta `ADMIN` inicial, de 6 caracteres o más |
+| `ECOPEDIA_ADMIN_PASSWORD` | La contraseña de la cuenta `ADMIN` inicial, de 8 caracteres o más |
 | `ECOPEDIA_CPO_PASSWORD` | La de la cuenta `CPO` inicial, igual |
 | `ECOPEDIA_JWT_SECRET` | Cualquier texto al azar de **64 caracteres o más** (firma los tokens) |
 | Las otras seis (`ECOPEDIA_DB_PASSWORD`, `ECOPEDIA_BROKER_PASSWORD`, `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN`, `ECOPEDIA_POWER_GRID_PASSWORD`, `ECOPEDIA_CHARGER_ACCESS_TOKEN`, `ECOPEDIA_INTERNAL_TOKEN`) | Cualquier texto al azar, solo letras y números. Nadie los escribe después: los usan los procesos entre sí |
@@ -811,7 +811,10 @@ Sin perfil apuntan a PostgreSQL. Para el ambiente propio y persistente va
 `-Dspring-boot.run.profiles=dev`.
 
 `mvn verify` además **chequea el formato** con Spotless y falla si algo quedó sin formatear.
-Para arreglarlo: `mvn spotless:apply`.
+Para arreglarlo: `mvn spotless:apply`. También corre el **análisis estático**: SpotBugs (prioridad
+media o alta) y PMD (prioridad 1 o 2) hacen fallar el build. Lo que cada uno no cuenta, y por qué,
+está en `config/spotbugs-exclude.xml` y `config/pmd-ruleset.xml`; los hallazgos quedan en
+`target/spotbugsXml.xml` y `target/pmd.xml` de cada módulo.
 
 ### El frontend por separado
 

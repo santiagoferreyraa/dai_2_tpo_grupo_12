@@ -126,6 +126,18 @@ class AuthErrorResponseTest {
                 {"email":"nuevo@ecopedia.test","password":"corta","fullName":"Usuario Nuevo"}
                 """)
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("La contraseña debe tener al menos 6 caracteres"));
+                .andExpect(jsonPath("$.detail").value("La contraseña debe tener al menos 8 caracteres"));
+    }
+
+    @Test
+    @DisplayName("Siete caracteres no alcanzan: el mínimo es 8, como pide ASVS 5.0 (DEF-11)")
+    void sevenCharactersAreNotEnough() throws Exception {
+        postJson(
+                        "/api/auth/register",
+                        """
+                {"email":"siete@ecopedia.test","password":"1234567","fullName":"Usuario Nuevo"}
+                """)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("La contraseña debe tener al menos 8 caracteres"));
     }
 }

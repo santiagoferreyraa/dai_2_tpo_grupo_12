@@ -16,6 +16,9 @@ Todo lo que el QA necesita para correr las pruebas de los criterios de la Clase 
 | `qa/jira/*.csv` | QA-03/04 | Defectos y casos para importar en Jira |
 | `.github/workflows/ci.yml` (job `api`) | QA-05 | Newman en cada PR |
 | `.github/workflows/qa-nightly.yml` | QA-06/08 | gitleaks, Trivy, ZAP y k6: a mano, cada noche y en cada push a `main` |
+| `.gitleaksignore` | QA-08 (G6) | Los falsos positivos de gitleaks en el historial, cada uno justificado |
+| `.trivyignore` | QA-08 | Las vulnerabilidades que no se cierran subiendo una versión, con su mitigación |
+| `config/spotbugs-exclude.xml`, `config/pmd-ruleset.xml` | QA-17 (G3) | Análisis estático dentro de `mvn verify`, o sea en el check "Backend (Maven)" |
 
 ## Correr todo en tu máquina
 

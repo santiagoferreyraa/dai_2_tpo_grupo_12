@@ -40,7 +40,12 @@ public class NetworkRates {
     protected NetworkRates() {}
 
     public NetworkRates(BigDecimal normalKwhRate, BigDecimal fastKwhRate, BigDecimal excessPenaltyPerMin, Instant at) {
-        update(normalKwhRate, fastKwhRate, excessPenaltyPerMin, at);
+        // Asignados acá y no con update(): un constructor que llama a un método que una subclase
+        // (el proxy de Hibernate, por ejemplo) puede sobrescribir corre sobre un objeto a medio armar.
+        this.normalKwhRate = normalKwhRate;
+        this.fastKwhRate = fastKwhRate;
+        this.excessPenaltyPerMin = excessPenaltyPerMin;
+        this.updatedAt = at;
     }
 
     public void update(BigDecimal normalKwhRate, BigDecimal fastKwhRate, BigDecimal excessPenaltyPerMin, Instant at) {

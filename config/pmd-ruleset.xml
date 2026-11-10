@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Reglas de PMD de Ecopedia (G3 de la prueba de testing).
+
+    Cuatro categorías enteras: las que buscan errores, problemas de seguridad, de concurrencia y
+    malas prácticas. Quedan afuera las de estilo, diseño y documentación, que son opiniones.
+
+    "mvn verify" falla con una violación de prioridad 1 o 2 (failurePriority en el pom padre). Las
+    de prioridad 3 a 5 no frenan el build pero quedan en target/pmd.xml de cada módulo: al 10/11/2026
+    eran unas 130, casi todas MissingSerialVersionUID en excepciones que nunca se serializan,
+    AvoidLiteralsInIfCondition y DoNotUseThreads (que es para servidores Java EE y acá los hilos son
+    a propósito: el vencimiento de las retenciones y los simuladores).
+-->
+<ruleset name="Ecopedia"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+    <description>Reglas de PMD de Ecopedia.</description>
+
+    <rule ref="category/java/errorprone.xml"/>
+    <rule ref="category/java/security.xml"/>
+    <rule ref="category/java/multithreading.xml"/>
+
+    <rule ref="category/java/bestpractices.xml">
+        <!--
+            Pide envolver cada log en "if (log.isDebugEnabled())". Con SLF4J y mensajes con {} el
+            texto no se arma si el nivel está apagado, que es justo lo que el guard evitaba.
+        -->
+        <exclude name="GuardLogStatement"/>
+        <!--
+            Pide marcar con @FunctionalInterface toda interfaz de un solo método. Las nuestras de un
+            solo método son puertos del dominio (PowerGridPort, TariffDirectory, ...): pueden sumar
+            operaciones mañana y no están pensadas para lambdas.
+        -->
+        <exclude name="ImplicitFunctionalInterface"/>
+    </rule>
+</ruleset>

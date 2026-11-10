@@ -3,6 +3,7 @@ package com.ecopedia.charging.checkout.data;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
@@ -150,7 +151,8 @@ public class IntegrationPaymentDirectory implements PaymentDirectory {
                     return root.get("code").asText();
                 }
             }
-        } catch (Exception ignored) {
+        } catch (JsonProcessingException unreadable) {
+            // Un cuerpo que no es JSON: no hay código que leer.
         }
         return "UNKNOWN";
     }

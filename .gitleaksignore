@@ -1,0 +1,17 @@
+# Hallazgos de gitleaks revisados uno por uno y descartados como secretos (G6).
+#
+# gitleaks lee este archivo solo, también cuando lo corre el docente. Cada huella es
+# <commit>:<archivo>:<regla>:<línea>, así que solo apaga ese hallazgo en ese commit: un secreto
+# nuevo en el mismo archivo vuelve a aparecer. Revisado el 10/11/2026 sobre todo el historial
+# (git log --all), con gitleaks 8.28.0.
+
+# README, ejemplo de los cargadores simulados (#44). El valor es la clave por defecto de los
+# perfiles dev y local del simulador, que solo escucha en 127.0.0.1 y está escrita también en su
+# application.yml. Sin perfil, el simulador no arranca sin la clave del .env. Desde entonces el
+# README usa $TOKEN.
+5c5be55c7df4b3e8453613f87589c52dc26b0fd4:README.md:curl-auth-header:517
+5c5be55c7df4b3e8453613f87589c52dc26b0fd4:README.md:curl-auth-header:520
+
+# ci.yml de la rama del #46: es el nombre del proyecto en SonarCloud (organización_repositorio),
+# que es público. La clave real, SONAR_TOKEN, va en los secretos de GitHub.
+8bfb5d15633f30ec69b1400296f62d472d9db7ba:.github/workflows/ci.yml:generic-api-key:155

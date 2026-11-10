@@ -19,7 +19,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.6</version>
+        <version>3.5.16</version>
         <relativePath/>
     </parent>
 
@@ -30,7 +30,47 @@
 
         <spotless.version>2.44.5</spotless.version>
         <jacoco.version>0.8.12</jacoco.version>
+        <spotbugs-plugin.version>4.10.4.1</spotbugs-plugin.version>
+        <pmd-plugin.version>3.28.0</pmd-plugin.version>
+
+        <!--
+            Versiones por encima de las que trae Spring Boot 3.5.16, solo para cerrar vulnerabilidades
+            altas o críticas que Trivy encuentra en los JAR (eje D: 0 sin mitigar). Son parches de la
+            misma línea que Boot ya usa, salvo httpcore5 (5.3 → 5.4), que no tiene el arreglo en 5.3.
+            Lo que no se puede cerrar sin pasar a Boot 4 está justificado en .trivyignore.
+            Al subir Spring Boot, revisar si alguna sobra: si Boot ya trae una igual o mayor, se borra.
+        -->
+        <jackson-bom.version>2.21.7</jackson-bom.version>
+        <netty.version>4.1.137.Final</netty.version>
+        <tomcat.version>10.1.59</tomcat.version>
+        <postgresql.version>42.7.12</postgresql.version>
+        <httpcore5.version>5.4.3</httpcore5.version>
     </properties>
+
+    <!--
+        Bibliotecas que Spring Boot no administra y llegan como transitivas con vulnerabilidades
+        altas o críticas: Bouncy Castle (por WS-Security en integration), Guava y commons-beanutils
+        (por Artemis). Mismo criterio que las propiedades de arriba.
+    -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcprov-jdk18on</artifactId>
+                <version>1.85</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>33.7.2-jre</version>
+            </dependency>
+            <dependency>
+                <groupId>commons-beanutils</groupId>
+                <artifactId>commons-beanutils</artifactId>
+                <version>1.11.0</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <!--
         Un módulo por artefacto desplegable. Ver ARQUITECTURA_ECOPEDIA.md §6.4.
@@ -170,6 +210,66 @@
                         </execution>
                     </executions>
                 </plugin>
+
+                <!--
+                    Análisis estático (G3 de la prueba de testing): SpotBugs mira el bytecode y PMD
+                    el código fuente. Los dos corren en "mvn verify", o sea dentro del check
+                    "Backend (Maven)" de CI, sin secretos ni servicios externos: un hallazgo nuevo
+                    hace fallar el build igual que un test.
+
+                    - "mvn verify" los corre; "mvn spotbugs:gui" muestra los hallazgos de SpotBugs.
+                    - Lo que no se cuenta, y por qué, está en config/spotbugs-exclude.xml y
+                      config/pmd-ruleset.xml.
+                -->
+                <plugin>
+                    <groupId>com.github.spotbugs</groupId>
+                    <artifactId>spotbugs-maven-plugin</artifactId>
+                    <version>${spotbugs-plugin.version}</version>
+                    <configuration>
+                        <effort>Max</effort>
+                        <!-- Falla con prioridad media o alta; las de prioridad baja son opiniones de estilo. -->
+                        <threshold>Medium</threshold>
+                        <excludeFilterFile>${maven.multiModuleProjectDirectory}/config/spotbugs-exclude.xml</excludeFilterFile>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <id>spotbugs-check</id>
+                            <phase>verify</phase>
+                            <goals>
+                                <goal>check</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-pmd-plugin</artifactId>
+                    <version>${pmd-plugin.version}</version>
+                    <configuration>
+                        <rulesets>
+                            <ruleset>${maven.multiModuleProjectDirectory}/config/pmd-ruleset.xml</ruleset>
+                        </rulesets>
+                        <targetJdk>${java.version}</targetJdk>
+                        <!-- Falla con prioridad 1 o 2; el resto queda en target/pmd.xml. -->
+                        <failurePriority>2</failurePriority>
+                        <printFailingErrors>true</printFailingErrors>
+                        <linkXRef>false</linkXRef>
+                        <!-- Las clases que genera JAXB desde el XSD de la distribuidora. -->
+                        <excludeRoots>
+                            <excludeRoot>${project.build.directory}/generated-sources</excludeRoot>
+                        </excludeRoots>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <id>pmd-check</id>
+                            <phase>verify</phase>
+                            <goals>
+                                <goal>check</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
             </plugins>
         </pluginManagement>
 
@@ -177,6 +277,14 @@
             <plugin>
                 <groupId>com.diffplug.spotless</groupId>
                 <artifactId>spotless-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>com.github.spotbugs</groupId>
+                <artifactId>spotbugs-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-pmd-plugin</artifactId>
             </plugin>
         </plugins>
     </build>
