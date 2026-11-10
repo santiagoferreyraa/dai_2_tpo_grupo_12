@@ -9,7 +9,7 @@
  */
 
 /** Mínimo que exige `@Size` en `RegisterRequest`. */
-export const MINIMUM_PASSWORD_LENGTH = 6
+export const MINIMUM_PASSWORD_LENGTH = 8
 
 /*
  * Alcanza con exigir algo@algo.dominio. Validar direcciones con una expresión exhaustiva es un

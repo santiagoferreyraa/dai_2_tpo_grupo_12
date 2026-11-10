@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
@@ -51,6 +52,10 @@ public class IntegrationDepositGateway implements DepositGateway {
                     .body(new ChargeBody(driverId, paymentMethodId, amount, reference, idempotencyKey))
                     .retrieve()
                     .body(ChargeAnswer.class);
+            if (answer == null) {
+                // Un 2xx sin cuerpo no es una respuesta válida: se trata igual que si no hubiera contestado.
+                throw new ResourceAccessException("ecopedia-integration contestó sin cuerpo");
+            }
             return new DepositCharge(answer.chargeId(), answer.cardLastFour());
         } catch (RestClientResponseException response) {
             if (response.getStatusCode().value() == 422) {

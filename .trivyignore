@@ -1,0 +1,20 @@
+# Vulnerabilidades altas o críticas que Trivy encuentra y que no se pueden cerrar subiendo una
+# versión: cada una con su mitigación documentada (eje D: 0 sin mitigar). Revisado el 10/11/2026
+# con Trivy 0.57.0 sobre los siete JAR y el pnpm-lock.yaml del front.
+#
+# Trivy lee este archivo solo cuando se corre desde la raíz del repo; si no, va con
+# --ignorefile .trivyignore.
+
+# spring-webmvc 6.2.19 (las dos): el arreglo existe solo en Spring Framework 7.0.9, que pide
+# Spring Boot 4. 6.2.19 es la última versión de la línea 6.2 y la que trae Boot 3.5.16.
+#
+# CVE-2026-47884: SSRF/RCE a través de XsltView con un mapeo "/**" que renderiza vistas sin nombre
+# explícito. No aplica: ningún módulo usa XsltView ni renderiza vistas; todos son API REST que
+# responden JSON (o SOAP, la distribuidora). Comprobado buscando XsltView y ModelAndView en
+# src/main: sin resultados.
+CVE-2026-47884
+
+# CVE-2026-47890: corrupción del flujo en Server-Sent Events con fragmentos de vista. No aplica:
+# ningún módulo usa SSE (SseEmitter, text/event-stream) ni fragmentos de vista. Las notificaciones
+# del front se consultan por polling.
+CVE-2026-47890

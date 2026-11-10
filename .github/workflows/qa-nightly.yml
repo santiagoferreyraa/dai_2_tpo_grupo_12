@@ -65,22 +65,26 @@ jobs:
       - name: Construir los JAR
         run: mvn -B -Dmaven.test.skip=true -Dspotless.check.skip=true package
 
+      # Los siete JAR van a una sola carpeta: `rootfs` acepta un único destino y, con varios,
+      # Trivy aborta ("multiple targets cannot be specified") sin escanear nada.
+      # Lo que no se puede cerrar subiendo una versión está justificado en .trivyignore.
       - name: Backend (JAR)
         run: |
-          mkdir -p reports
+          mkdir -p reports jars
+          cp backend/*/target/*.jar simulation/*/target/*.jar jars/
           docker run --rm -v "$PWD:/src" aquasec/trivy:0.57.0 rootfs \
             --scanners vuln --severity HIGH,CRITICAL --format table \
-            --output /src/reports/trivy-backend.txt --exit-code 1 \
-            /src/backend/ecopedia-core/target /src/backend/ecopedia-charging/target \
-            /src/backend/ecopedia-integration/target /src/backend/ecopedia-async/target \
-            /src/simulation/payment-gateway/target /src/simulation/power-grid/target /src/simulation/charger/target \
+            --ignorefile /src/.trivyignore \
+            --output /src/reports/trivy-backend.txt --exit-code 1 /src/jars \
             || (cat reports/trivy-backend.txt; exit 1)
 
       - name: Frontend (pnpm-lock)
         if: always()
         run: |
+          mkdir -p reports
           docker run --rm -v "$PWD:/src" aquasec/trivy:0.57.0 fs \
             --scanners vuln --severity HIGH,CRITICAL --format table \
+            --ignorefile /src/.trivyignore \
             --output /src/reports/trivy-frontend.txt --exit-code 1 /src/frontend \
             || (cat reports/trivy-frontend.txt; exit 1)
 

@@ -97,13 +97,16 @@ public class ChargerSimulator {
                     "connector_busy", "Connector " + connectorId + " is charging another session");
         }
 
+        double initialPercent = order.initialBatteryPercent() != null
+                ? order.initialBatteryPercent().doubleValue()
+                : randomInitialPercent();
         ChargingSession session = new ChargingSession(
                 order.sessionId(),
                 connectorId,
                 order.powerLimitKw().doubleValue(),
                 (order.vehicleMaxChargeKw() != null ? order.vehicleMaxChargeKw() : order.powerLimitKw()).doubleValue(),
                 (order.batteryCapacityKwh() != null ? order.batteryCapacityKwh() : defaultBatteryKwh).doubleValue(),
-                order.initialBatteryPercent() != null ? order.initialBatteryPercent() : randomInitialPercent());
+                initialPercent);
         try {
             publisher.publish(eventOf(session, Type.READING, null));
         } catch (RuntimeException brokerDown) {
