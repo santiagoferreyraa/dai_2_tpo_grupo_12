@@ -50,15 +50,13 @@ public class SessionClientConfig {
     @Bean
     public RestClient chargerHttpClient(
             RestClient.Builder builder,
-            @Value("${ecopedia.charger.url:http://localhost:8088}") String chargerUrl,
-            @Value("${ecopedia.charger.access-token:}") String accessToken) {
-        var clientBuilder = builder.clone()
+            @Value("${ecopedia.charger.url}") String chargerUrl,
+            @Value("${ecopedia.charger.access-token}") String accessToken) {
+        return builder.clone()
                 .baseUrl(chargerUrl)
-                .requestFactory(timeouts(Duration.ofSeconds(2), Duration.ofSeconds(4)));
-        if (accessToken != null && !accessToken.isBlank()) {
-            clientBuilder.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken);
-        }
-        return clientBuilder.build();
+                .requestFactory(timeouts(Duration.ofSeconds(2), Duration.ofSeconds(4)))
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                .build();
     }
 
     private static SimpleClientHttpRequestFactory timeouts(Duration connect, Duration read) {

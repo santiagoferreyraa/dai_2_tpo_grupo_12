@@ -11,11 +11,14 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.ecopedia.charging.booking.domain.Booking;
+import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.BookingService;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
+import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
@@ -72,6 +75,20 @@ class ChargingActivationServiceTest {
                 coordinator,
                 chargerPort,
                 clock);
+        stubBooking(BOOKING_ID, DRIVER_ID, CONNECTOR_ID);
+    }
+
+    private void stubBooking(Long bookingId, Long ownerDriverId, Long connectorId) {
+        stubBooking(bookingId, ownerDriverId, connectorId, true);
+    }
+
+    private void stubBooking(Long bookingId, Long ownerDriverId, Long connectorId, boolean confirmed) {
+        Booking booking = mock(Booking.class);
+        when(booking.getId()).thenReturn(bookingId);
+        when(booking.belongsTo(anyLong())).thenAnswer(inv -> ownerDriverId.equals(inv.getArgument(0)));
+        when(booking.getConnectorId()).thenReturn(connectorId);
+        when(booking.isConfirmed()).thenReturn(confirmed);
+        when(bookingService.getBooking(bookingId)).thenReturn(booking);
     }
 
     @Nested
@@ -323,6 +340,71 @@ class ChargingActivationServiceTest {
 
             verify(settlementPolicy).failActivation(walkInBookingId, ActivationFailureReason.CHARGER_UNAVAILABLE);
             verify(chargerPort, never()).activate(anyLong(), any(), any());
+        }
+
+        @Test
+        @DisplayName("Reserva ajena: rechaza con BookingNotFoundException antes de cualquier llamada externa")
+        void foreignBooking_isRejectedAsNotFound_beforeAnyExternalCall() {
+            stubBooking(BOOKING_ID, 999L, CONNECTOR_ID);
+
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+
+            assertThatThrownBy(() -> activationService.activate(request, "token"))
+                    .isInstanceOf(BookingNotFoundException.class);
+
+            verifyNoInteractions(catalog, powerPolicy, paymentDirectory, coordinator, chargerPort);
+            verify(settlementPolicy, never()).failActivation(any(), any());
+        }
+
+        @Test
+        @DisplayName("Reserva ajena con distribuidora configurada para rechazar: no cancela la reserva de otro")
+        void foreignBooking_withGridRejection_doesNotCancelOthersBooking() {
+            stubBooking(BOOKING_ID, 999L, CONNECTOR_ID);
+            ChargingPoint point = new ChargingPoint(CONNECTOR_ID, 1L, new BigDecimal("150.00"), "NODO-SUR");
+            when(catalog.find(CONNECTOR_ID)).thenReturn(Optional.of(point));
+            when(powerPolicy.decide(point))
+                    .thenReturn(new PowerDecision(BigDecimal.ZERO, PowerDecision.Outcome.REJECTED_BY_GRID));
+
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+
+            assertThatThrownBy(() -> activationService.activate(request, "token"))
+                    .isInstanceOf(BookingNotFoundException.class);
+
+            verify(settlementPolicy, never()).failActivation(any(), any());
+        }
+
+        @Test
+        @DisplayName(
+                "Reserva propia de otro conector: rechaza con InvalidBookingRequestException antes de llamadas externas")
+        void bookingOfAnotherConnector_isRejectedBeforeExternalCalls() {
+            stubBooking(BOOKING_ID, DRIVER_ID, 999L);
+
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+
+            assertThatThrownBy(() -> activationService.activate(request, "token"))
+                    .isInstanceOf(InvalidBookingRequestException.class);
+
+            verifyNoInteractions(catalog, powerPolicy, paymentDirectory, coordinator, chargerPort);
+            verify(settlementPolicy, never()).failActivation(any(), any());
+        }
+
+        @Test
+        @DisplayName(
+                "Reserva propia no confirmada (IN_PROGRESS o CANCELLED): rechaza antes de llamadas externas sin disparar failActivation")
+        void unconfirmedBooking_isRejectedBeforeExternalCalls_andDoesNotFailActivation() {
+            stubBooking(BOOKING_ID, DRIVER_ID, CONNECTOR_ID, false);
+            ChargingPoint point = new ChargingPoint(CONNECTOR_ID, 1L, new BigDecimal("150.00"), "NODO-SUR");
+            when(catalog.find(CONNECTOR_ID)).thenReturn(Optional.of(point));
+            when(powerPolicy.decide(point))
+                    .thenReturn(new PowerDecision(BigDecimal.ZERO, PowerDecision.Outcome.REJECTED_BY_GRID));
+
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+
+            assertThatThrownBy(() -> activationService.activate(request, "token"))
+                    .isInstanceOf(InvalidBookingRequestException.class);
+
+            verifyNoInteractions(catalog, powerPolicy, paymentDirectory, coordinator, chargerPort);
+            verify(settlementPolicy, never()).failActivation(any(), any());
         }
     }
 }

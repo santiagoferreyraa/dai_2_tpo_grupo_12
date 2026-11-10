@@ -1,22 +1,29 @@
 package com.ecopedia.charging.session;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ecopedia.charging.booking.TestTokens;
+import com.ecopedia.charging.booking.domain.BookingNotFoundException;
+import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
 import com.ecopedia.charging.booking.domain.DriverAlreadyBookedException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import com.ecopedia.charging.session.domain.ActivationRequest;
 import com.ecopedia.charging.session.domain.ActivationResult;
+import com.ecopedia.charging.session.domain.PhysicalChargerRejectedException;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
 import com.ecopedia.charging.session.domain.SessionStatus;
 import com.ecopedia.charging.session.service.ChargingActivationService;
 import com.ecopedia.charging.session.web.dto.ActivationHttpRequest;
+import com.ecopedia.charging.web.ApiProblems;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -118,10 +125,10 @@ class SessionApiTest {
     }
 
     @Test
-    @DisplayName("Cargador físico fuera de servicio responde 503 con code CHARGER_UNAVAILABLE")
-    void chargerUnavailableReturnsServiceUnavailable() throws Exception {
+    @DisplayName("Cargador físico fuera de servicio responde 503 con code CHARGER_UNAVAILABLE y texto fijo")
+    void chargerUnavailable_returnsFixedDetail() throws Exception {
         when(activationService.activate(any(ActivationRequest.class), any()))
-                .thenThrow(new PhysicalChargerUnavailableException("El cargador físico no responde"));
+                .thenThrow(new PhysicalChargerUnavailableException("tok_123 / body del simulador"));
 
         ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, 10L, 80, null);
 
@@ -130,7 +137,74 @@ class SessionApiTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.code").value("CHARGER_UNAVAILABLE"));
+                .andExpect(jsonPath("$.code").value("CHARGER_UNAVAILABLE"))
+                .andExpect(jsonPath("$.detail").value(ApiProblems.CHARGER_UNAVAILABLE_DETAIL))
+                .andExpect(content().string(not(containsString("tok_123"))))
+                .andExpect(content().string(not(containsString("body del simulador"))));
+    }
+
+    @Test
+    @DisplayName("Cargador físico rechaza encendido responde 409 con code CHARGER_REJECTED y texto fijo")
+    void chargerRejected_returnsFixedDetail() throws Exception {
+        when(activationService.activate(any(ActivationRequest.class), any()))
+                .thenThrow(new PhysicalChargerRejectedException("tok_123 / body del simulador"));
+
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, 10L, 80, null);
+
+        mockMvc.perform(post("/api/sessions/activation")
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CHARGER_REJECTED"))
+                .andExpect(jsonPath("$.detail").value(ApiProblems.CHARGER_REJECTED_DETAIL))
+                .andExpect(content().string(not(containsString("tok_123"))))
+                .andExpect(content().string(not(containsString("body del simulador"))));
+    }
+
+    @Test
+    @DisplayName("Conector inexistente responde 404 genérico sin code ni id")
+    void connectorNotFound_returnsGeneric404() throws Exception {
+        when(activationService.activate(any(ActivationRequest.class), any()))
+                .thenThrow(new ConnectorNotFoundException(CONNECTOR_ID));
+
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, null, 80, null);
+
+        mockMvc.perform(post("/api/sessions/activation")
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value(ApiProblems.NOT_FOUND_DETAIL))
+                .andExpect(jsonPath("$.code").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("Reserva inexistente o ajena devuelve exactamente el mismo cuerpo 404 que conector inexistente")
+    void bookingNotFound_returnsSameBodyAsConnectorNotFound() throws Exception {
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, 10L, 80, null);
+        String payload = objectMapper.writeValueAsString(request);
+        String token = TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR");
+
+        when(activationService.activate(any(ActivationRequest.class), any()))
+                .thenThrow(new ConnectorNotFoundException(CONNECTOR_ID));
+        String connectorBody = mockMvc.perform(post("/api/sessions/activation")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isNotFound())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        when(activationService.activate(any(ActivationRequest.class), any()))
+                .thenThrow(new BookingNotFoundException(10L));
+        mockMvc.perform(post("/api/sessions/activation")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isNotFound())
+                .andExpect(content().json(connectorBody));
     }
 
     @Test

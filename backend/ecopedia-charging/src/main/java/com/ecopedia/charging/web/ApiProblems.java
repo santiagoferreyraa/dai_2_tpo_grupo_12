@@ -36,6 +36,13 @@ public final class ApiProblems {
     /** Lo que ve el cliente de un error inesperado; el detalle queda en el log. */
     public static final String UNEXPECTED_DETAIL = "Ocurrió un error inesperado. Probá de nuevo en unos minutos.";
 
+    /** El cargador contestó que no a la orden de encendido. */
+    public static final String CHARGER_REJECTED_DETAIL =
+            "El cargador no aceptó la orden de encendido. Probá con otro conector o avisale al operador.";
+
+    /** El cargador no contestó, o no se lo pudo alcanzar. */
+    public static final String CHARGER_UNAVAILABLE_DETAIL = "El cargador no respondió. Probá de nuevo en unos minutos.";
+
     private ApiProblems() {}
 
     public static ProblemDetail notFound() {

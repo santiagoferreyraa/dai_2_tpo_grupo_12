@@ -10,6 +10,9 @@ import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import com.ecopedia.charging.session.domain.PhysicalChargerRejectedException;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
+import com.ecopedia.charging.web.ApiProblems;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -20,6 +23,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice(basePackageClasses = SessionController.class)
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class SessionExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(SessionExceptionHandler.class);
 
     @ExceptionHandler(SlotUnavailableException.class)
     public ProblemDetail handleSlotUnavailable(SlotUnavailableException ex) {
@@ -36,14 +41,11 @@ public class SessionExceptionHandler {
         return withCode(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), "CONNECTOR_NOT_BOOKABLE");
     }
 
-    @ExceptionHandler(ConnectorNotFoundException.class)
-    public ProblemDetail handleConnectorNotFound(ConnectorNotFoundException ex) {
-        return withCode(HttpStatus.NOT_FOUND, ex.getMessage(), "CONNECTOR_NOT_FOUND");
-    }
-
-    @ExceptionHandler(BookingNotFoundException.class)
-    public ProblemDetail handleBookingNotFound(BookingNotFoundException ex) {
-        return withCode(HttpStatus.NOT_FOUND, ex.getMessage(), "BOOKING_NOT_FOUND");
+    @ExceptionHandler({ConnectorNotFoundException.class, BookingNotFoundException.class})
+    public ProblemDetail handleNotFound(RuntimeException ex) {
+        // Un único 404 para todo (QA-31, SEC-06): el id y el motivo quedan solo en el log.
+        log.warn("Recurso no encontrado en sesión de carga: {}", ex.getMessage());
+        return ApiProblems.notFound();
     }
 
     @ExceptionHandler(PaymentMethodInvalidException.class)
@@ -58,12 +60,14 @@ public class SessionExceptionHandler {
 
     @ExceptionHandler(PhysicalChargerRejectedException.class)
     public ProblemDetail handleChargerRejected(PhysicalChargerRejectedException ex) {
-        return withCode(HttpStatus.CONFLICT, ex.getMessage(), "CHARGER_REJECTED");
+        log.warn("El cargador físico rechazó la activación: {}", ex.getMessage(), ex.getCause());
+        return withCode(HttpStatus.CONFLICT, ApiProblems.CHARGER_REJECTED_DETAIL, "CHARGER_REJECTED");
     }
 
     @ExceptionHandler(PhysicalChargerUnavailableException.class)
     public ProblemDetail handleChargerUnavailable(PhysicalChargerUnavailableException ex) {
-        return withCode(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), "CHARGER_UNAVAILABLE");
+        log.warn("El cargador físico no está disponible: {}", ex.getMessage(), ex.getCause());
+        return withCode(HttpStatus.SERVICE_UNAVAILABLE, ApiProblems.CHARGER_UNAVAILABLE_DETAIL, "CHARGER_UNAVAILABLE");
     }
 
     @ExceptionHandler(InvalidBookingRequestException.class)

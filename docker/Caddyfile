@@ -39,6 +39,9 @@
 	handle /api/checkout* {
 		reverse_proxy charging:8082
 	}
+	handle /api/sessions* {
+		reverse_proxy charging:8082
+	}
 	handle /api/payment-methods* {
 		reverse_proxy integration:8083
 	}

@@ -178,6 +178,8 @@ services:
       SERVER_PORT: 8082
       ECOPEDIA_CORE_URL: http://core:8081
       ECOPEDIA_INTEGRATION_URL: http://integration:8083
+      ECOPEDIA_CHARGER_URL: http://charger:8088
+      ECOPEDIA_CHARGER_ACCESS_TOKEN: ${ECOPEDIA_CHARGER_ACCESS_TOKEN:?Falta ECOPEDIA_CHARGER_ACCESS_TOKEN en el .env. Correr pnpm env:init}
     depends_on: *infra
 
   integration:
