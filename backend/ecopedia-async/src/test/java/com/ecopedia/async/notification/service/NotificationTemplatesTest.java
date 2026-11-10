@@ -116,4 +116,50 @@ class NotificationTemplatesTest {
         assertThat(body).hasSizeLessThanOrEqualTo(NotificationTemplates.MAX_BODY);
         assertThat(body).doesNotContain("DDDD");
     }
+
+    @Test
+    @DisplayName(
+            "Cubre ramas de cancelación con seña sin flags, plazo 1 hora, sin plazo, dirección en blanco y estación nula")
+    void extraTemplateBranches() {
+        NotificationToDispatch cancelledNullRefunded =
+                event(NotificationType.BOOKING_CANCELLED, "8000.00", null, "4242");
+        assertThat(TEMPLATES.body(cancelledNullRefunded, null))
+                .contains("del conector 12")
+                .contains("El horario quedó libre.");
+
+        NotificationToDispatch cancelledOneHour = new NotificationToDispatch(
+                "b-1h",
+                NotificationType.BOOKING_CANCELLED,
+                5L,
+                1L,
+                12L,
+                START,
+                END,
+                new BigDecimal("8000.00"),
+                false,
+                "4242",
+                START.minusSeconds(3600));
+        StationInfo blankAddress = new StationInfo(3L, "Estación Sur", "   ", "TYPE_2");
+        assertThat(TEMPLATES.body(cancelledOneHour, blankAddress))
+                .contains("Estación Sur, conector TYPE_2")
+                .contains("menos de 1 hora");
+
+        NotificationToDispatch cancelledNullDeadline = new NotificationToDispatch(
+                "b-nd",
+                NotificationType.BOOKING_CANCELLED,
+                5L,
+                1L,
+                12L,
+                START,
+                END,
+                new BigDecimal("8000.00"),
+                false,
+                "4242",
+                null);
+        assertThat(TEMPLATES.body(cancelledNullDeadline, PALERMO)).contains("el plazo de devolución");
+
+        StationInfo hugeNameOnly = new StationInfo(3L, "X".repeat(600), null, null);
+        String truncated = TEMPLATES.body(cancelledNullRefunded, hugeNameOnly);
+        assertThat(truncated).hasSize(NotificationTemplates.MAX_BODY).endsWith("…");
+    }
 }

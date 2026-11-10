@@ -75,23 +75,53 @@ class AdminServiceTest {
 
     @Test
     void testGetDashboardSummary() {
-        when(userRepository.findAll()).thenReturn(List.of(mockConductor, mockAdmin));
-        when(stationRepository.findAll()).thenReturn(List.of(mockStation));
-        when(connectorRepository.findAll()).thenReturn(List.of(mockConnector));
+        User inactiveCpo = new User();
+        inactiveCpo.setId(3L);
+        inactiveCpo.setEmail("cpo@ecopedia.com");
+        inactiveCpo.setRole(Role.CPO);
+        inactiveCpo.setActive(false);
+
+        Station inactiveStation = new Station();
+        inactiveStation.setId(11L);
+        inactiveStation.setName("Estación Cerrada");
+        inactiveStation.setActive(false);
+
+        Connector occupiedConnector = new Connector();
+        occupiedConnector.setId(101L);
+        occupiedConnector.setOperationalStatus(OperationalStatus.OCCUPIED);
+
+        Connector outOfServiceConnector = new Connector();
+        outOfServiceConnector.setId(102L);
+        outOfServiceConnector.setOperationalStatus(OperationalStatus.OUT_OF_SERVICE);
+
+        when(userRepository.findAll()).thenReturn(List.of(mockConductor, mockAdmin, inactiveCpo));
+        when(stationRepository.findAll()).thenReturn(List.of(mockStation, inactiveStation));
+        when(connectorRepository.findAll())
+                .thenReturn(List.of(mockConnector, occupiedConnector, outOfServiceConnector));
 
         AdminDashboard summary = adminService.getDashboardSummary();
 
-        assertNotNull(summary);
-        assertEquals(2, summary.usersSummary().total());
+        assertEquals(3, summary.usersSummary().total());
         assertEquals(2, summary.usersSummary().active());
+        assertEquals(1, summary.usersSummary().inactive());
         assertEquals(1, summary.usersSummary().conductors());
+        assertEquals(1, summary.usersSummary().cpos());
         assertEquals(1, summary.usersSummary().admins());
 
-        assertEquals(1, summary.stationsSummary().total());
+        assertEquals(2, summary.stationsSummary().total());
         assertEquals(1, summary.stationsSummary().active());
+        assertEquals(1, summary.stationsSummary().inactive());
 
-        assertEquals(1, summary.connectorsSummary().total());
+        assertEquals(3, summary.connectorsSummary().total());
         assertEquals(1, summary.connectorsSummary().available());
+        assertEquals(1, summary.connectorsSummary().occupied());
+        assertEquals(1, summary.connectorsSummary().outOfService());
+    }
+
+    @Test
+    void testActivateUser() {
+        adminService.activateUser(5L);
+        verify(userService, times(1)).activateUser(5L);
     }
 
     @Test

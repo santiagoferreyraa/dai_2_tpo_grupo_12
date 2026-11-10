@@ -279,4 +279,50 @@ class PaymentGatewayRestClientTest {
                 .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
         assertThatThrownBy(() -> client.validate("tok_auth")).isInstanceOf(PaymentGatewayUnavailableException.class);
     }
+
+    @Test
+    @DisplayName("Cubre ramas faltantes de cobro 4xx, reintegros con error/vacío y validación sin cuerpo")
+    void extraGatewayBranches() {
+        gateway.expect(requestTo("http://gateway.test/v1/payments"))
+                .andRespond(
+                        withBadRequest().contentType(MediaType.APPLICATION_JSON).body(error("invalid_token")));
+        GatewayCharge rejected4xx = client.charge("tok_bad", BigDecimal.TEN, "Consumo", "sess-1", "k1");
+        assertThat(rejected4xx.approved()).isFalse();
+        assertThat(rejected4xx.statusDetail()).isEqualTo("invalid_token");
+
+        gateway.reset();
+        gateway.expect(requestTo("http://gateway.test/v1/payments")).andRespond(withStatus(HttpStatus.UNAUTHORIZED));
+        assertThatThrownBy(() -> client.charge("tok", BigDecimal.TEN, "Consumo", "sess-2", "k2"))
+                .isInstanceOf(PaymentGatewayUnavailableException.class);
+
+        gateway.reset();
+        gateway.expect(requestTo("http://gateway.test/v1/payments/pay_1/refunds"))
+                .andRespond(withSuccess());
+        assertThatThrownBy(() -> client.refund("pay_1", BigDecimal.TEN, "rk-empty"))
+                .isInstanceOf(PaymentGatewayUnavailableException.class);
+
+        gateway.reset();
+        gateway.expect(requestTo("http://gateway.test/v1/payments/pay_1/refunds"))
+                .andRespond(
+                        withBadRequest().contentType(MediaType.APPLICATION_JSON).body(error("already_refunded")));
+        assertThatThrownBy(() -> client.refund("pay_1", BigDecimal.TEN, "rk-400"))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        gateway.reset();
+        gateway.expect(requestTo("http://gateway.test/v1/payments/pay_1/refunds"))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
+        assertThatThrownBy(() -> client.refund("pay_1", BigDecimal.TEN, "rk-401"))
+                .isInstanceOf(PaymentGatewayUnavailableException.class);
+
+        gateway.reset();
+        gateway.expect(requestTo("http://gateway.test/v1/payments/pay_1/refunds"))
+                .andRespond(withException(new java.net.http.HttpTimeoutException("timeout")));
+        assertThatThrownBy(() -> client.refund("pay_1", BigDecimal.TEN, "rk-io"))
+                .isInstanceOf(PaymentGatewayUnavailableException.class);
+
+        gateway.reset();
+        gateway.expect(requestTo("http://gateway.test/v1/card_tokens/tok_empty/validations"))
+                .andRespond(withSuccess());
+        assertThatThrownBy(() -> client.validate("tok_empty")).isInstanceOf(PaymentGatewayUnavailableException.class);
+    }
 }
