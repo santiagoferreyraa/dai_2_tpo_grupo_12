@@ -78,7 +78,7 @@ public class ChargingActivationService {
         Objects.requireNonNull(request, "request no puede ser null");
         Instant now = clock.instant();
 
-        // 0. Verificación previa de la reserva (pertenencia y conector) antes de llamadas externas
+        // 0. Verificación previa de la reserva (pertenencia, conector y estado) antes de llamadas externas
         if (request.bookingId() != null) {
             Booking booking = bookingService.getBooking(request.bookingId());
             if (!booking.belongsTo(request.driverId())) {
@@ -90,6 +90,9 @@ public class ChargingActivationService {
             }
             if (!booking.getConnectorId().equals(request.connectorId())) {
                 throw new InvalidBookingRequestException("La reserva es de otro conector");
+            }
+            if (!booking.isConfirmed()) {
+                throw new InvalidBookingRequestException("La reserva " + request.bookingId() + " no está confirmada");
             }
         }
 
