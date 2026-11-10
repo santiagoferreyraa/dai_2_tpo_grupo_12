@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.ecopedia.charging.booking.domain.Booking;
 import com.ecopedia.charging.booking.domain.BookingDeposit;
+import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.BookingRepository;
 import com.ecopedia.charging.booking.domain.BookingStatus;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
@@ -164,6 +165,47 @@ class ChargingTransactionalCoordinatorTest {
             assertThat(reloadedConnector.getStatus()).isEqualTo(ConnectorOperationalStatus.AVAILABLE);
 
             // Y la sesión no fue creada
+            assertThat(chargingSessionRepository.findBySessionId(sessionId)).isEmpty();
+        }
+
+        @Test
+        @DisplayName(
+                "Si la reserva pertenece a otro conductor, lanza BookingNotFoundException y revierte la transacción")
+        void foreignBooking_throwsBookingNotFound_andRollsBack() {
+            Instant now = Instant.parse("2026-11-02T17:30:00Z");
+            TimeWindow window = new TimeWindow(now, now.plusSeconds(3600));
+
+            ConnectorState state = ConnectorState.available(CONNECTOR_ID, now);
+            connectorStateRepository.save(state);
+
+            Booking foreignBooking = new Booking(
+                    CONNECTOR_ID,
+                    DRIVER_ID,
+                    window,
+                    now.minusSeconds(600),
+                    BookingDeposit.none(),
+                    null,
+                    UUID.randomUUID(),
+                    "checkout-key-foreign");
+            Booking savedBooking = bookingRepository.save(foreignBooking);
+
+            String sessionId = UUID.randomUUID().toString();
+            Long intruderDriverId = 999L;
+
+            assertThatThrownBy(() -> coordinator.persistLocalActivation(
+                            sessionId,
+                            savedBooking.getId(),
+                            CONNECTOR_ID,
+                            intruderDriverId,
+                            80,
+                            new BigDecimal("22.00"),
+                            now))
+                    .isInstanceOf(BookingNotFoundException.class);
+
+            ConnectorState reloadedConnector =
+                    connectorStateRepository.findById(CONNECTOR_ID).orElseThrow();
+            assertThat(reloadedConnector.getStatus()).isEqualTo(ConnectorOperationalStatus.AVAILABLE);
+            assertThat(reloadedConnector.getCurrentSessionId()).isNull();
             assertThat(chargingSessionRepository.findBySessionId(sessionId)).isEmpty();
         }
 

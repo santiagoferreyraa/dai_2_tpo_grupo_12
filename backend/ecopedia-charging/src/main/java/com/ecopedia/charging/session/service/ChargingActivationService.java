@@ -1,9 +1,11 @@
 package com.ecopedia.charging.session.service;
 
 import com.ecopedia.charging.booking.domain.Booking;
+import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.BookingService;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
+import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
 import com.ecopedia.charging.session.domain.ActivationFailureReason;
 import com.ecopedia.charging.session.domain.ActivationRequest;
@@ -75,6 +77,21 @@ public class ChargingActivationService {
     public ActivationResult activate(ActivationRequest request, String authToken) {
         Objects.requireNonNull(request, "request no puede ser null");
         Instant now = clock.instant();
+
+        // 0. Verificación previa de la reserva (pertenencia y conector) antes de llamadas externas
+        if (request.bookingId() != null) {
+            Booking booking = bookingService.getBooking(request.bookingId());
+            if (!booking.belongsTo(request.driverId())) {
+                log.warn(
+                        "Acceso denegado: el conductor {} quiso habilitar con la reserva {}, que es de otro",
+                        request.driverId(),
+                        request.bookingId());
+                throw new BookingNotFoundException(request.bookingId());
+            }
+            if (!booking.getConnectorId().equals(request.connectorId())) {
+                throw new InvalidBookingRequestException("La reserva es de otro conector");
+            }
+        }
 
         // 1. Validaciones y consultas externas previas (FUERA de la transacción declarativa)
         ChargingPoint chargingPoint = chargingPointCatalog

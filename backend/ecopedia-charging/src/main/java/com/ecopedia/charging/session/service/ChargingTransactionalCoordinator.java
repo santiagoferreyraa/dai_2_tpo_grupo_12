@@ -96,8 +96,11 @@ public class ChargingTransactionalCoordinator {
                     bookingRepository.findById(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
 
             if (!booking.belongsTo(driverId)) {
-                throw new InvalidBookingRequestException(
-                        "La reserva " + bookingId + " no pertenece al conductor " + driverId);
+                log.warn(
+                        "Acceso denegado en transacción local: la reserva {} no pertenece al conductor {}",
+                        bookingId,
+                        driverId);
+                throw new BookingNotFoundException(bookingId);
             }
             if (!booking.isConfirmed()) {
                 throw new InvalidBookingRequestException("La reserva " + bookingId + " no está confirmada");

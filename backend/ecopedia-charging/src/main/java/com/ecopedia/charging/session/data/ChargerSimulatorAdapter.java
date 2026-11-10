@@ -45,10 +45,16 @@ public class ChargerSimulatorAdapter implements PhysicalChargerPort {
                     connectorId,
                     ex.getStatusCode());
             throw new PhysicalChargerRejectedException(
-                    "El cargador físico rechazó la activación: " + ex.getMessage(), ex);
+                    "El cargador rechazó la activación del conector "
+                            + connectorId
+                            + " (HTTP "
+                            + ex.getStatusCode().value()
+                            + ")",
+                    ex);
         } catch (RestClientException ex) {
             log.warn("El cargador físico no está disponible en conector {}: {}", connectorId, ex.getMessage());
-            throw new PhysicalChargerUnavailableException("El cargador físico no respondió: " + ex.getMessage(), ex);
+            throw new PhysicalChargerUnavailableException(
+                    "El cargador físico no respondió al activar el conector " + connectorId, ex);
         }
     }
 

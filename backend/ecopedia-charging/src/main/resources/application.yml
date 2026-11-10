@@ -76,6 +76,13 @@ ecopedia:
     # Dónde está ecopedia-integration. Checkout le consulta por medios de pago registrados (RF02).
     url: ${ECOPEDIA_INTEGRATION_URL:http://localhost:8083}
 
+  # Los cargadores corren como proceso aparte (simulation/charger, 8088) y SesionesDeCarga les
+  # envía la orden de encendido por REST con chargerHttpClient.
+  charger:
+    url: ${ECOPEDIA_CHARGER_URL:http://localhost:8088}
+    # Sin valor por defecto: en perfil base (pnpm demo, Docker, AWS) sale obligatorio del .env.
+    access-token: ${ECOPEDIA_CHARGER_ACCESS_TOKEN}
+
   # La clave de servicio con la que este artefacto llama a las rutas /internal/** de los otros (hoy,
   # la consulta a la distribuidora en ecopedia-integration). La misma variable la lee integration.
   # Sin valor por defecto, por lo mismo que el secreto del JWT.
@@ -162,6 +169,8 @@ ecopedia:
     secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
   internal:
     token: ${ECOPEDIA_INTERNAL_TOKEN:ecopedia-dev-only-internal-token}
+  charger:
+    access-token: ${ECOPEDIA_CHARGER_ACCESS_TOKEN:ecopedia-dev-only-charger-token}
 
 ---
 # Perfil local: la base de este integrante, en un archivo de su propio disco.
@@ -214,3 +223,5 @@ ecopedia:
     secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
   internal:
     token: ${ECOPEDIA_INTERNAL_TOKEN:ecopedia-dev-only-internal-token}
+  charger:
+    access-token: ${ECOPEDIA_CHARGER_ACCESS_TOKEN:ecopedia-dev-only-charger-token}
