@@ -131,6 +131,11 @@ ecopedia:
     # Buffer mínimo previo a una reserva existente para permitir iniciar una carga sin reserva (RF10, ECO-58).
     walk-in-buffer: ${ECOPEDIA_BOOKING_WALK_IN_BUFFER:PT15M}
 
+    # Cuánto antes del inicio del turno se puede habilitar la carga de una reserva, si la terminal no
+    # está ocupada (Manuel, 12/11). Antes de eso, 409 ACTIVATION_TOO_EARLY. Coincide con el buffer
+    # del walk-in: en esos 15 minutos no hay cargas sin reserva.
+    early-activation: ${ECOPEDIA_BOOKING_EARLY_ACTIVATION:PT15M}
+
 ---
 # Perfil de desarrollo: base en memoria, para levantar el módulo sin PostgreSQL instalado.
 # Las demos de las entregas corren sobre PostgreSQL, no sobre H2.

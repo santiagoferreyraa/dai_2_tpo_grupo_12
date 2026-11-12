@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
@@ -218,10 +219,29 @@ public class Booking {
     /**
      * Consume la reserva al iniciar la sesión de carga (RF11, ECO-60).
      * Transición a IN_PROGRESS bajo la transacción declarativa de habilitación. Solo desde
-     * {@code CONFIRMED}: lo demás es 409, como cualquier transición inválida.
+     * {@code CONFIRMED} y dentro de su rango de habilitación ({@link #checkActivationWindow}): lo
+     * demás es 409, como cualquier transición inválida.
+     *
+     * @param earlyActivation cuánto antes del inicio se admite habilitar (15 minutos)
      */
-    public void startCharging(Instant now) {
-        state().startCharging(this, now);
+    public void startCharging(Instant now, Duration earlyActivation) {
+        state().startCharging(this, now, earlyActivation);
+    }
+
+    /**
+     * Si la reserva se puede habilitar ahora: desde {@code earlyActivation} antes del inicio hasta el
+     * fin de la ventana (Manuel, 12/11). Antes, {@link ActivationTooEarlyException}; con la ventana
+     * terminada, el 409 de estado, porque ya no queda turno que usar. No mira el estado: eso lo hace
+     * {@link #startCharging}, que la llama solo desde {@code CONFIRMED}.
+     */
+    public void checkActivationWindow(Instant now, Duration earlyActivation) {
+        Instant availableFrom = getWindow().start().minus(earlyActivation);
+        if (now.isBefore(availableFrom)) {
+            throw new ActivationTooEarlyException(id, availableFrom);
+        }
+        if (!getWindow().end().isAfter(now)) {
+            throw new BookingStateConflictException(id, "con la ventana terminada", "la habilitación de la carga");
+        }
     }
 
     /**

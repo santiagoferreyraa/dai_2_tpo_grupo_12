@@ -5,9 +5,11 @@ import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.BookingRepository;
 import com.ecopedia.charging.booking.domain.BookingService;
 import com.ecopedia.charging.booking.domain.BookingStateConflictException;
+import com.ecopedia.charging.booking.domain.BookingStatus;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
+import com.ecopedia.charging.booking.domain.SlotUnavailableException;
 import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
@@ -39,6 +41,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -73,6 +76,7 @@ public class ChargingActivationService {
     private final BookingRepository bookingRepository;
     private final TariffDirectory tariffDirectory;
     private final Clock clock;
+    private final Duration earlyActivation;
 
     public ChargingActivationService(
             ChargingPointCatalog chargingPointCatalog,
@@ -85,7 +89,8 @@ public class ChargingActivationService {
             ChargingSessionRepository chargingSessionRepository,
             BookingRepository bookingRepository,
             TariffDirectory tariffDirectory,
-            Clock clock) {
+            Clock clock,
+            @Value("${ecopedia.booking.early-activation:PT15M}") Duration earlyActivation) {
         this.chargingPointCatalog = chargingPointCatalog;
         this.chargingPowerPolicy = chargingPowerPolicy;
         this.paymentDirectory = paymentDirectory;
@@ -97,6 +102,7 @@ public class ChargingActivationService {
         this.bookingRepository = bookingRepository;
         this.tariffDirectory = tariffDirectory;
         this.clock = clock;
+        this.earlyActivation = earlyActivation;
     }
 
     public ActivationResult activate(ActivationRequest request, String authToken) {
@@ -121,6 +127,10 @@ public class ChargingActivationService {
                 throw new BookingStateConflictException(
                         request.bookingId(), "en " + booking.getStatus(), "la habilitación de la carga");
             }
+            // Desde 15 minutos antes del turno y hasta su fin (Manuel, 12/11). La reserva lo vuelve
+            // a comprobar en la transacción; acá es para no consultar a nadie si ya se sabe que no.
+            booking.checkActivationWindow(now, earlyActivation);
+            rejectIfConnectorTakenBefore(booking, now);
         }
 
         // 1. Validaciones y consultas externas previas (FUERA de la transacción declarativa)
@@ -187,6 +197,24 @@ public class ChargingActivationService {
         }
 
         return ActivationResult.fromSession(session);
+    }
+
+    /**
+     * Llegar antes del turno vale solo con la terminal libre (Manuel, 12/11), y libre no es solo
+     * "sin carga en curso" —eso lo controla la transacción con el estado del conector—: tampoco
+     * puede haber otra reserva confirmada cuyo turno esté corriendo, aunque su conductor todavía no
+     * haya enchufado. Si no, se le tomaría la terminal en su propio turno.
+     */
+    private void rejectIfConnectorTakenBefore(Booking booking, Instant now) {
+        Instant start = booking.getWindow().start();
+        if (now.isBefore(start)
+                && bookingRepository.existsOverlapping(booking.getConnectorId(), BookingStatus.CONFIRMED, now, start)) {
+            log.info(
+                    "Habilitación anticipada rechazada: el conector {} tiene otra reserva en curso antes de la {}",
+                    booking.getConnectorId(),
+                    booking.getId());
+            throw new SlotUnavailableException(booking.getConnectorId());
+        }
     }
 
     /**

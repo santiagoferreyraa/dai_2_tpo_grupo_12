@@ -1,5 +1,6 @@
 package com.ecopedia.charging.session.web;
 
+import com.ecopedia.charging.booking.domain.ActivationTooEarlyException;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.BookingStateConflictException;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
@@ -82,6 +83,22 @@ public class SessionExceptionHandler {
     public ProblemDetail handleStateConflict(BookingStateConflictException ex) {
         log.info("Transición de reserva rechazada en sesión de carga (409): {}", ex.getMessage());
         return withCode(HttpStatus.CONFLICT, ApiProblems.STATE_CONFLICT_DETAIL, BookingStateConflictException.CODE);
+    }
+
+    /**
+     * Habilitar antes del rango de la reserva (desde 15 minutos antes del turno): 409 con su propio
+     * {@code code} y la hora desde la que se puede, para que el front diga "podés cargar desde las
+     * HH:MM". Es la hora de la reserva del propio conductor.
+     */
+    @ExceptionHandler(ActivationTooEarlyException.class)
+    public ProblemDetail handleTooEarly(ActivationTooEarlyException ex) {
+        log.info("Habilitación anticipada rechazada (409): {}", ex.getMessage());
+        ProblemDetail problem = withCode(
+                HttpStatus.CONFLICT,
+                "Todavía no podés empezar a cargar: se habilita poco antes de tu turno.",
+                ActivationTooEarlyException.CODE);
+        problem.setProperty("availableFrom", ex.getAvailableFrom());
+        return problem;
     }
 
     @ExceptionHandler(InvalidBookingRequestException.class)

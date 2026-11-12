@@ -14,11 +14,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.ecopedia.charging.booking.domain.ActivationTooEarlyException;
 import com.ecopedia.charging.booking.domain.Booking;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.BookingRepository;
 import com.ecopedia.charging.booking.domain.BookingService;
 import com.ecopedia.charging.booking.domain.BookingStateConflictException;
+import com.ecopedia.charging.booking.domain.BookingStatus;
 import com.ecopedia.charging.booking.domain.ConnectorNotBookableException;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
@@ -50,6 +52,7 @@ import com.ecopedia.charging.session.service.ChargingTransactionalCoordinator;
 import com.ecopedia.charging.session.service.ChargingTransactionalCoordinator.CompletedSessionData;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -78,6 +81,7 @@ class ChargingActivationServiceTest {
     private static final Long CONNECTOR_ID = 10L;
     private static final Long DRIVER_ID = 5L;
     private static final Long BOOKING_ID = 42L;
+    private static final Duration EARLY_ACTIVATION = Duration.ofMinutes(15);
 
     @BeforeEach
     void setUp() {
@@ -92,7 +96,8 @@ class ChargingActivationServiceTest {
                 sessionRepository,
                 bookingRepository,
                 tariffDirectory,
-                clock);
+                clock,
+                EARLY_ACTIVATION);
         stubBooking(BOOKING_ID, DRIVER_ID, CONNECTOR_ID);
     }
 
@@ -106,7 +111,22 @@ class ChargingActivationServiceTest {
         when(booking.belongsTo(anyLong())).thenAnswer(inv -> ownerDriverId.equals(inv.getArgument(0)));
         when(booking.getConnectorId()).thenReturn(connectorId);
         when(booking.isConfirmed()).thenReturn(confirmed);
+        // Un turno que ya empezó: el rango de habilitación no es lo que prueban estos casos.
+        when(booking.getWindow())
+                .thenReturn(new TimeWindow(
+                        clock.instant().minus(Duration.ofMinutes(5)),
+                        clock.instant().plus(Duration.ofMinutes(55))));
         when(bookingService.getBooking(bookingId)).thenReturn(booking);
+    }
+
+    /** Una reserva real y confirmada del conductor, para que el rango lo decida la reserva misma. */
+    private void stubRealBooking(Instant start) {
+        Booking booking = new Booking(
+                CONNECTOR_ID,
+                DRIVER_ID,
+                new TimeWindow(start, start.plus(Duration.ofHours(1))),
+                clock.instant().minus(Duration.ofDays(1)));
+        when(bookingService.getBooking(BOOKING_ID)).thenReturn(booking);
     }
 
     @Nested
@@ -423,6 +443,62 @@ class ChargingActivationServiceTest {
 
             verifyNoInteractions(catalog, powerPolicy, paymentDirectory, coordinator, chargerPort);
             verify(settlementPolicy, never()).failActivation(any(), any());
+        }
+
+        @Test
+        @DisplayName("Más de 15 min antes del turno: ACTIVATION_TOO_EARLY sin consultar a ningún sistema")
+        void tooEarly_isRejectedBeforeExternalCalls() {
+            stubRealBooking(clock.instant().plus(Duration.ofHours(3)));
+
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+
+            assertThatThrownBy(() -> activationService.activate(request, "token"))
+                    .isInstanceOf(ActivationTooEarlyException.class);
+
+            verifyNoInteractions(catalog, powerPolicy, paymentDirectory, coordinator, chargerPort);
+            verify(settlementPolicy, never()).failActivation(any(), any());
+        }
+
+        @Test
+        @DisplayName("Antes del turno con otra reserva confirmada corriendo en la terminal: SLOT_UNAVAILABLE")
+        void earlyWithAnotherBookingRunning_isRejectedBeforeExternalCalls() {
+            Instant start = clock.instant().plus(Duration.ofMinutes(10));
+            stubRealBooking(start);
+            when(bookingRepository.existsOverlapping(CONNECTOR_ID, BookingStatus.CONFIRMED, clock.instant(), start))
+                    .thenReturn(true);
+
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+
+            assertThatThrownBy(() -> activationService.activate(request, "token"))
+                    .isInstanceOf(SlotUnavailableException.class);
+
+            verifyNoInteractions(catalog, powerPolicy, paymentDirectory, coordinator, chargerPort);
+        }
+
+        @Test
+        @DisplayName("10 min antes con la terminal libre: sigue con la habilitación")
+        void earlyWithFreeConnector_proceeds() {
+            Instant start = clock.instant().plus(Duration.ofMinutes(10));
+            stubRealBooking(start);
+            ChargingPoint point = new ChargingPoint(CONNECTOR_ID, 1L, new BigDecimal("22.00"), null);
+            when(catalog.find(CONNECTOR_ID)).thenReturn(Optional.of(point));
+            when(powerPolicy.decide(point))
+                    .thenReturn(new PowerDecision(new BigDecimal("22.00"), PowerDecision.Outcome.STANDARD_CHARGE));
+            when(coordinator.persistLocalActivation(
+                            any(), eq(BOOKING_ID), eq(CONNECTOR_ID), eq(DRIVER_ID), eq(80), any(), any()))
+                    .thenAnswer(inv -> ChargingSession.start(
+                            inv.getArgument(0),
+                            BOOKING_ID,
+                            CONNECTOR_ID,
+                            DRIVER_ID,
+                            80,
+                            new BigDecimal("22.00"),
+                            clock.instant()));
+
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+
+            assertThat(activationService.activate(request, "token").status()).isEqualTo(SessionStatus.ACTIVE);
+            verify(bookingRepository).existsOverlapping(CONNECTOR_ID, BookingStatus.CONFIRMED, clock.instant(), start);
         }
     }
 

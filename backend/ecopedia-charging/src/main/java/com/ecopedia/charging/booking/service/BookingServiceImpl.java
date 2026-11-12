@@ -110,6 +110,7 @@ public class BookingServiceImpl implements BookingService {
     private final Duration depositRefundNotice;
     private final Duration noShowGrace;
     private final Duration walkInBuffer;
+    private final Duration earlyActivation;
 
     /** El estado conversacional del componente: las retenciones vigentes, por id. */
     private final Map<UUID, Hold> holds = new ConcurrentHashMap<>();
@@ -148,7 +149,8 @@ public class BookingServiceImpl implements BookingService {
             @Value("${ecopedia.booking.max-horizon}") Duration maxHorizon,
             @Value("${ecopedia.booking.deposit-refund-notice}") Duration depositRefundNotice,
             @Value("${ecopedia.booking.no-show-grace}") Duration noShowGrace,
-            @Value("${ecopedia.booking.walk-in-buffer:PT15M}") Duration walkInBuffer) {
+            @Value("${ecopedia.booking.walk-in-buffer:PT15M}") Duration walkInBuffer,
+            @Value("${ecopedia.booking.early-activation:PT15M}") Duration earlyActivation) {
         this.connectorCatalog = connectorCatalog;
         this.bookingRepository = bookingRepository;
         this.eventPublisher = eventPublisher;
@@ -159,6 +161,7 @@ public class BookingServiceImpl implements BookingService {
         this.depositRefundNotice = depositRefundNotice;
         this.noShowGrace = noShowGrace;
         this.walkInBuffer = walkInBuffer;
+        this.earlyActivation = earlyActivation;
     }
 
     public BookingServiceImpl(
@@ -181,6 +184,7 @@ public class BookingServiceImpl implements BookingService {
                 maxHorizon,
                 depositRefundNotice,
                 noShowGrace,
+                Duration.ofMinutes(15),
                 Duration.ofMinutes(15));
     }
 
@@ -643,7 +647,7 @@ public class BookingServiceImpl implements BookingService {
     public Booking startBookingCharging(Long bookingId) {
         Booking booking = getBooking(bookingId);
         Instant now = clock.instant();
-        booking.startCharging(now);
+        booking.startCharging(now, earlyActivation);
         Booking saved = bookingRepository.save(booking);
         log.info(
                 "Reserva {} del conductor {} sobre conector {} pasa a IN_PROGRESS",
