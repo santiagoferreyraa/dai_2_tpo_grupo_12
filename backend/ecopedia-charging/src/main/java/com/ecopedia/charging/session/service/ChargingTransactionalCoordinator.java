@@ -5,6 +5,7 @@ import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.BookingRepository;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
+import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import com.ecopedia.charging.session.domain.ChargingSession;
 import com.ecopedia.charging.session.domain.ChargingSessionRepository;
 import com.ecopedia.charging.session.domain.ConnectorState;
@@ -13,6 +14,7 @@ import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -192,6 +194,48 @@ public class ChargingTransactionalCoordinator {
                 savedSession.getKwhDelivered());
 
         return new CompletedSessionData(savedSession, depositAmount, originalWindowEnd);
+    }
+
+    /**
+     * Persiste el estado y los montos finales de la liquidación de la sesión (RF14, RNF06, ECO-55).
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public ChargingSession updateSessionSettlement(
+            String sessionId,
+            ConsumptionPaymentStatus paymentStatus,
+            BigDecimal realCost,
+            BigDecimal additionalCharge) {
+        Objects.requireNonNull(sessionId, "sessionId no puede ser null");
+        Objects.requireNonNull(paymentStatus, "paymentStatus no puede ser null");
+
+        ChargingSession session = chargingSessionRepository
+                .findBySessionId(sessionId)
+                .orElseThrow(() -> new SessionNotFoundException(sessionId));
+
+        session.markSettlement(paymentStatus, realCost, additionalCharge);
+        ChargingSession saved = chargingSessionRepository.save(session);
+        log.info(
+                "Liquidación de sesión {} actualizada: status={}, realCost={}, additionalCharge={}",
+                sessionId,
+                paymentStatus,
+                realCost,
+                additionalCharge);
+        return saved;
+    }
+
+    /**
+     * Actualiza la energía entregada por telemetría si la sesión sigue activa (RF11, RF16, ECO-45).
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Optional<ChargingSession> updateTelemetryProgress(String sessionId, BigDecimal kwhDelivered) {
+        Objects.requireNonNull(sessionId, "sessionId no puede ser null");
+        return chargingSessionRepository.findBySessionId(sessionId).map(session -> {
+            if (session.isActive()) {
+                session.updateTelemetry(kwhDelivered);
+                return chargingSessionRepository.save(session);
+            }
+            return session;
+        });
     }
 
     public record CompletedSessionData(ChargingSession session, BigDecimal depositAmount, Instant originalWindowEnd) {}

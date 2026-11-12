@@ -1,5 +1,6 @@
 package com.ecopedia.charging.session.data;
 
+import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import com.ecopedia.charging.session.domain.ChargingSession;
 import com.ecopedia.charging.session.domain.ChargingSessionRepository;
 import com.ecopedia.charging.session.domain.SessionStatus;
@@ -30,4 +31,7 @@ public interface JpaChargingSessionRepository extends JpaRepository<ChargingSess
 
     @Override
     List<ChargingSession> findByStatus(SessionStatus status);
+
+    @Override
+    List<ChargingSession> findByStatusAndPaymentStatus(SessionStatus status, ConsumptionPaymentStatus paymentStatus);
 }

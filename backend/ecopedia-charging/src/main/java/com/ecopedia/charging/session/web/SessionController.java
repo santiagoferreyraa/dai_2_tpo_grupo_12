@@ -7,7 +7,6 @@ import com.ecopedia.charging.session.service.ChargingActivationService;
 import com.ecopedia.charging.session.web.dto.ActivationHttpRequest;
 import com.ecopedia.charging.session.web.dto.ActivationHttpResponse;
 import com.ecopedia.charging.session.web.dto.SessionStopResponse;
-import com.ecopedia.charging.session.web.dto.StopSessionRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -53,16 +52,16 @@ public class SessionController {
     /**
      * Detiene una sesión de carga activa, libera el conector, recorta la ventana remanente de la
      * reserva y liquida el consumo real descontando la seña (Flujo C, RF12, RF14, ECO-55).
+     *
+     * <p>No acepta parámetros en el cuerpo de la petición: el consumo se toma del cargador físico
+     * o del acumulado fidedigno por telemetría.
      */
     @PostMapping("/{sessionId}/stop")
     @PreAuthorize("hasRole('CONDUCTOR')")
     public ResponseEntity<SessionStopResponse> stopSession(
-            @AuthenticationPrincipal AuthenticatedUser driver,
-            @PathVariable String sessionId,
-            @Valid @RequestBody(required = false) StopSessionRequest request) {
+            @AuthenticationPrincipal AuthenticatedUser driver, @PathVariable String sessionId) {
 
-        SessionStopResult result =
-                activationService.stopSession(sessionId, driver.id(), request != null ? request.kwhDelivered() : null);
+        SessionStopResult result = activationService.stopSession(sessionId, driver.id());
         return ResponseEntity.ok(SessionStopResponse.fromDomain(result));
     }
 }

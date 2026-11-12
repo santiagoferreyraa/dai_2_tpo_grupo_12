@@ -195,7 +195,7 @@ public class ChargingActivationService {
      * <p>Libera primero el cargador físico y la transacción local en base de datos, para garantizar
      * que una caída de Tarificación o Pagos nunca deje bloqueado al conector ni al conductor.
      */
-    public SessionStopResult stopSession(String sessionId, Long driverId, BigDecimal reportedKwh) {
+    public SessionStopResult stopSession(String sessionId, Long driverId) {
         Objects.requireNonNull(sessionId, "sessionId no puede ser null");
         Objects.requireNonNull(driverId, "driverId no puede ser null");
 
@@ -209,7 +209,21 @@ public class ChargingActivationService {
             throw new SessionNotFoundException(sessionId);
         }
 
-        return stopOwnedOrExpiredSession(session, reportedKwh);
+        return stopOwnedOrExpiredSession(session);
+    }
+
+    /**
+     * Dispara el corte automático de una sesión activa al alcanzarse el porcentaje de batería
+     * objetivo configurado por el conductor (RF12, ECO-45).
+     */
+    public void stopSessionByTargetBattery(String sessionId) {
+        Objects.requireNonNull(sessionId, "sessionId no puede ser null");
+        ChargingSession session =
+                chargingSessionRepository.findBySessionId(sessionId).orElse(null);
+        if (session != null && session.isActive()) {
+            log.info("Corte automático por batería objetivo alcanzada en sesión {}", sessionId);
+            stopOwnedOrExpiredSession(session);
+        }
     }
 
     /**
@@ -228,7 +242,7 @@ public class ChargingActivationService {
             Optional<Booking> booking = bookingRepository.findById(session.getBookingId());
             if (booking.isPresent() && !booking.get().getWindow().end().isAfter(now)) {
                 try {
-                    stopOwnedOrExpiredSession(session, null);
+                    stopOwnedOrExpiredSession(session);
                     stoppedCount++;
                 } catch (RuntimeException failure) {
                     log.warn(
@@ -241,7 +255,75 @@ public class ChargingActivationService {
         return stoppedCount;
     }
 
-    private SessionStopResult stopOwnedOrExpiredSession(ChargingSession session, BigDecimal reportedKwh) {
+    /**
+     * Reintenta la liquidación de consumo para sesiones completadas cuyo cobro quedó en {@code PENDING_SETTLEMENT}
+     * por caídas en Tarificación o Pagos (RF14, RNF06, ECO-55).
+     */
+    public int retryPendingSettlements() {
+        List<ChargingSession> pending = chargingSessionRepository.findByStatusAndPaymentStatus(
+                SessionStatus.COMPLETED, ConsumptionPaymentStatus.PENDING_SETTLEMENT);
+        int settledCount = 0;
+        for (ChargingSession session : pending) {
+            try {
+                settlePendingSession(session);
+                settledCount++;
+            } catch (RuntimeException failure) {
+                log.warn(
+                        "No se pudo regularizar la sesión pendiente {}: {}",
+                        session.getSessionId(),
+                        failure.getMessage());
+            }
+        }
+        return settledCount;
+    }
+
+    private void settlePendingSession(ChargingSession session) {
+        BigDecimal depositAmount = BigDecimal.ZERO;
+        long excessMinutes = 0L;
+
+        if (session.getBookingId() != null) {
+            Optional<Booking> booking = bookingRepository.findById(session.getBookingId());
+            if (booking.isPresent()) {
+                Booking b = booking.get();
+                depositAmount = b.getDepositAmount() != null ? b.getDepositAmount() : BigDecimal.ZERO;
+                if (session.getStoppedAt() != null
+                        && b.getWindow().end() != null
+                        && session.getStoppedAt().isAfter(b.getWindow().end())) {
+                    excessMinutes = Duration.between(b.getWindow().end(), session.getStoppedAt())
+                            .toMinutes();
+                }
+            }
+        }
+
+        BigDecimal realCost = session.getRealCost();
+        if (realCost == null) {
+            realCost = tariffDirectory.calculateRealCost(
+                    session.getConnectorId(),
+                    session.getKwhDelivered(),
+                    session.getPowerLimitKw(),
+                    session.getStartedAt(),
+                    excessMinutes);
+        }
+
+        BigDecimal additionalCharge = session.getAdditionalCharge();
+        if (additionalCharge == null) {
+            ChargeSettlement settlement = settlementPolicy.settleCompletedSession(depositAmount, realCost);
+            additionalCharge = settlement.amountToCharge();
+        }
+
+        ConsumptionPaymentStatus paymentStatus;
+        if (additionalCharge.signum() > 0) {
+            paymentStatus =
+                    paymentDirectory.chargeConsumption(session.getDriverId(), session.getSessionId(), additionalCharge);
+        } else {
+            paymentStatus = ConsumptionPaymentStatus.NOT_REQUIRED;
+        }
+
+        transactionalCoordinator.updateSessionSettlement(
+                session.getSessionId(), paymentStatus, realCost, additionalCharge);
+    }
+
+    private SessionStopResult stopOwnedOrExpiredSession(ChargingSession session) {
         if (!session.isActive()) {
             throw new InvalidBookingRequestException("La sesión de carga no se encuentra activa");
         }
@@ -258,7 +340,7 @@ public class ChargingActivationService {
                     ex.getMessage());
         }
 
-        BigDecimal effectiveKwh = reportedKwh != null ? reportedKwh : chargerKwh.orElse(session.getKwhDelivered());
+        BigDecimal effectiveKwh = chargerKwh.orElse(session.getKwhDelivered());
         if (effectiveKwh == null) {
             effectiveKwh = BigDecimal.ZERO;
         }
@@ -276,9 +358,9 @@ public class ChargingActivationService {
         }
 
         BigDecimal depositAmount = completed.depositAmount() != null ? completed.depositAmount() : BigDecimal.ZERO;
-        BigDecimal realCost;
-        BigDecimal finalBilled;
-        BigDecimal additionalCharge;
+        BigDecimal realCost = null;
+        BigDecimal finalBilled = depositAmount;
+        BigDecimal additionalCharge = null;
         ConsumptionPaymentStatus paymentStatus;
 
         try {
@@ -311,10 +393,18 @@ public class ChargingActivationService {
                     "Tarificación no disponible al liquidar sesión {}: queda PENDING_SETTLEMENT",
                     session.getSessionId(),
                     unavailable);
-            realCost = BigDecimal.ZERO;
+            realCost = null;
             finalBilled = depositAmount;
-            additionalCharge = BigDecimal.ZERO;
+            additionalCharge = null;
             paymentStatus = ConsumptionPaymentStatus.PENDING_SETTLEMENT;
+        }
+
+        try {
+            transactionalCoordinator.updateSessionSettlement(
+                    session.getSessionId(), paymentStatus, realCost, additionalCharge);
+        } catch (RuntimeException ex) {
+            log.warn(
+                    "No se pudo persistir la liquidación de la sesión {}: {}", session.getSessionId(), ex.getMessage());
         }
 
         ChargingSession closed = completed.session();

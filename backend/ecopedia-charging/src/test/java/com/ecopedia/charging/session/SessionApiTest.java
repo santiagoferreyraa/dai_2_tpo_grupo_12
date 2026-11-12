@@ -27,7 +27,6 @@ import com.ecopedia.charging.session.domain.SessionStatus;
 import com.ecopedia.charging.session.domain.SessionStopResult;
 import com.ecopedia.charging.session.service.ChargingActivationService;
 import com.ecopedia.charging.session.web.dto.ActivationHttpRequest;
-import com.ecopedia.charging.session.web.dto.StopSessionRequest;
 import com.ecopedia.charging.web.ApiProblems;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
@@ -292,13 +291,10 @@ class SessionApiTest {
                 new BigDecimal("2200.00"),
                 ConsumptionPaymentStatus.CHARGED);
 
-        when(activationService.stopSession("session-stop-1", DRIVER_ID, new BigDecimal("18.500")))
-                .thenReturn(result);
+        when(activationService.stopSession("session-stop-1", DRIVER_ID)).thenReturn(result);
 
         mockMvc.perform(post("/api/sessions/session-stop-1/stop")
-                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new StopSessionRequest(new BigDecimal("18.500")))))
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sessionId").value("session-stop-1"))
                 .andExpect(jsonPath("$.status").value("COMPLETED"))
@@ -311,7 +307,7 @@ class SessionApiTest {
     @Test
     @DisplayName("POST /api/sessions/{sessionId}/stop sobre sesión ajena o inexistente responde 404 opaco")
     void stopForeignOrMissingSessionReturnsOpaqueNotFound() throws Exception {
-        when(activationService.stopSession("session-foreign", DRIVER_ID, null))
+        when(activationService.stopSession("session-foreign", DRIVER_ID))
                 .thenThrow(new SessionNotFoundException("session-foreign"));
 
         mockMvc.perform(post("/api/sessions/session-foreign/stop")
@@ -349,7 +345,7 @@ class SessionApiTest {
     @Test
     @DisplayName("Cerrar la carga de una reserva ya cerrada responde 409 BOOKING_STATE_CONFLICT, no 500")
     void stoppingOnClosedBookingReturnsStateConflict() throws Exception {
-        when(activationService.stopSession("session-closed", DRIVER_ID, null))
+        when(activationService.stopSession("session-closed", DRIVER_ID))
                 .thenThrow(new BookingStateConflictException(10L, "en COMPLETED", "el cierre de la carga"));
 
         mockMvc.perform(post("/api/sessions/session-closed/stop")

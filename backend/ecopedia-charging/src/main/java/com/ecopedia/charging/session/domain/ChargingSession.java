@@ -1,5 +1,6 @@
 package com.ecopedia.charging.session.domain;
 
+import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -16,7 +17,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Sesión de carga persistida de Ecopedia (RF11, RF12, RF14, ECO-60).
+ * Sesión de carga persistida de Ecopedia (RF11, RF12, RF14, ECO-55, ECO-60).
  *
  * <p>Nace en estado {@link SessionStatus#ACTIVE} bajo la transacción declarativa local junto con el
  * cambio de estado del conector a ocupado y la reserva a en curso.
@@ -60,6 +61,16 @@ public class ChargingSession {
     @Column(name = "kwh_delivered", nullable = false, precision = 8, scale = 3)
     private BigDecimal kwhDelivered = BigDecimal.ZERO;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_status", nullable = false, length = 30)
+    private ConsumptionPaymentStatus paymentStatus = ConsumptionPaymentStatus.NOT_REQUIRED;
+
+    @Column(name = "real_cost", precision = 10, scale = 2)
+    private BigDecimal realCost;
+
+    @Column(name = "additional_charge", precision = 10, scale = 2)
+    private BigDecimal additionalCharge;
+
     @Version
     @Column(name = "version", nullable = false)
     private Long version;
@@ -84,6 +95,7 @@ public class ChargingSession {
                 Objects.requireNonNull(startedAt, "startedAt no puede ser null").truncatedTo(ChronoUnit.MICROS);
         this.status = SessionStatus.ACTIVE;
         this.kwhDelivered = BigDecimal.ZERO;
+        this.paymentStatus = ConsumptionPaymentStatus.NOT_REQUIRED;
     }
 
     public static ChargingSession start(
@@ -100,6 +112,7 @@ public class ChargingSession {
 
     public void stop(Instant stoppedAt, BigDecimal kwhDelivered) {
         this.status = SessionStatus.COMPLETED;
+        this.paymentStatus = ConsumptionPaymentStatus.PENDING_SETTLEMENT;
         this.stoppedAt = stoppedAt != null
                 ? stoppedAt.truncatedTo(ChronoUnit.MICROS)
                 : Instant.now().truncatedTo(ChronoUnit.MICROS);
@@ -115,6 +128,27 @@ public class ChargingSession {
                 : Instant.now().truncatedTo(ChronoUnit.MICROS);
         if (kwhDelivered != null) {
             this.kwhDelivered = kwhDelivered;
+        }
+    }
+
+    /**
+     * Actualiza el estado de la liquidación y los costos reales y cobros adicionales (RNF06, ECO-55).
+     */
+    public void markSettlement(
+            ConsumptionPaymentStatus paymentStatus, BigDecimal realCost, BigDecimal additionalCharge) {
+        this.paymentStatus = Objects.requireNonNull(paymentStatus, "paymentStatus no puede ser null");
+        this.realCost = realCost;
+        this.additionalCharge = additionalCharge;
+    }
+
+    /**
+     * Actualiza la energía suministrada acumulada recibida por telemetría si la sesión sigue activa (RF11, RF16).
+     */
+    public void updateTelemetry(BigDecimal kwhDelivered) {
+        if (isActive() && kwhDelivered != null) {
+            if (this.kwhDelivered == null || kwhDelivered.compareTo(this.kwhDelivered) >= 0) {
+                this.kwhDelivered = kwhDelivered;
+            }
         }
     }
 
@@ -160,6 +194,18 @@ public class ChargingSession {
 
     public BigDecimal getKwhDelivered() {
         return kwhDelivered;
+    }
+
+    public ConsumptionPaymentStatus getPaymentStatus() {
+        return paymentStatus;
+    }
+
+    public BigDecimal getRealCost() {
+        return realCost;
+    }
+
+    public BigDecimal getAdditionalCharge() {
+        return additionalCharge;
     }
 
     public Long getVersion() {

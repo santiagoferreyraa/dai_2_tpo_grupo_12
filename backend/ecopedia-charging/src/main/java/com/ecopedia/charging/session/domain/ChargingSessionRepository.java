@@ -1,5 +1,6 @@
 package com.ecopedia.charging.session.domain;
 
+import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import java.util.List;
 import java.util.Optional;
 
@@ -16,4 +17,6 @@ public interface ChargingSessionRepository {
     List<ChargingSession> findByDriverId(Long driverId);
 
     List<ChargingSession> findByStatus(SessionStatus status);
+
+    List<ChargingSession> findByStatusAndPaymentStatus(SessionStatus status, ConsumptionPaymentStatus paymentStatus);
 }

@@ -97,6 +97,10 @@ ecopedia:
     # en alterna. Decidido por Manuel el 28/10: ver ChargingPowerPolicy.
     fast-charge-threshold-kw: 22
     normal-power-kw: 22
+    # Tópico de telemetría de cargadores en Artemis (RF11, RF16, ECO-45)
+    telemetry-topic: ${ECOPEDIA_CHARGING_TELEMETRY_TOPIC:telemetry.charging}
+    # Intervalo de barrido para regularizar sesiones con liquidación pendiente (ECO-55)
+    settlement-sweep-ms: ${ECOPEDIA_CHARGING_SETTLEMENT_SWEEP_MS:30000}
 
   booking:
     # Cuánto dura una retención de slot antes de vencer sola (ISO-8601: PT10M = 10 minutos).
