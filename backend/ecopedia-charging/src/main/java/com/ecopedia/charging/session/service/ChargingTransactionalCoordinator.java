@@ -11,10 +11,12 @@ import com.ecopedia.charging.session.domain.ConnectorState;
 import com.ecopedia.charging.session.domain.ConnectorStateRepository;
 import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,14 +43,17 @@ public class ChargingTransactionalCoordinator {
     private final BookingRepository bookingRepository;
     private final ConnectorStateRepository connectorStateRepository;
     private final ChargingSessionRepository chargingSessionRepository;
+    private final Duration earlyActivation;
 
     public ChargingTransactionalCoordinator(
             BookingRepository bookingRepository,
             ConnectorStateRepository connectorStateRepository,
-            ChargingSessionRepository chargingSessionRepository) {
+            ChargingSessionRepository chargingSessionRepository,
+            @Value("${ecopedia.booking.early-activation:PT15M}") Duration earlyActivation) {
         this.bookingRepository = bookingRepository;
         this.connectorStateRepository = connectorStateRepository;
         this.chargingSessionRepository = chargingSessionRepository;
+        this.earlyActivation = earlyActivation;
     }
 
     /**
@@ -103,8 +108,9 @@ public class ChargingTransactionalCoordinator {
                         driverId);
                 throw new BookingNotFoundException(bookingId);
             }
-            // Si la reserva dejó de estar confirmada, la propia reserva lo rechaza con 409 (patrón State).
-            booking.startCharging(now);
+            // Si la reserva dejó de estar confirmada, o todavía no es su rango de habilitación, la
+            // propia reserva lo rechaza con 409 (patrón State).
+            booking.startCharging(now, earlyActivation);
             bookingRepository.save(booking);
         }
 
