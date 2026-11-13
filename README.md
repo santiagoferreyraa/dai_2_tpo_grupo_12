@@ -619,7 +619,8 @@ Lo que puede contestar, además del 201:
 
 **La carga se corta sola cuando vence su ventana**, la reservada o la de la carga sin reserva: un
 barrido revisa las sesiones activas cada 30 segundos (`ecopedia.session.cutoff-sweep-ms`). El corte
-al llegar al porcentaje objetivo todavía no existe.
+al llegar al porcentaje objetivo todavía no existe, pero el dato ya está: mientras carga, la sesión
+guarda el porcentaje de batería de cada lectura del cargador (ver "Los cargadores simulados").
 
 Al detener, la respuesta trae los kWh entregados, el costo real (`realCost`), lo facturado
 (`finalBilled`, que en una reserva nunca baja de la seña), lo que se cobró además de la seña
@@ -771,8 +772,14 @@ El hardware de las estaciones —o la central del fabricante que lo controla— 
 `simulation/charger` (8088). SesionesDeCarga (en `charging`) le da dos órdenes por REST, **encender**
 y **apagar** un conector, al habilitar y al detener una carga, y mientras el conector carga, el
 simulador publica una lectura cada 2 segundos en el **tópico** `telemetry.charging` de Artemis: kWh
-acumulados, potencia y porcentaje de batería. `pnpm dev` ya lo levanta. **Todavía nadie lee el
-tópico:** llega con ECO-45.
+acumulados, potencia y porcentaje de batería. `pnpm dev` ya lo levanta.
+
+**SesionesDeCarga está suscripta al tópico** (`charging`, con una suscripción durable,
+`ecopedia-charging.sessions`) y guarda cada lectura en su sesión: kWh, potencia, batería y el instante
+(`charging_sessions`). Si el cargador avisa que cortó solo —batería llena o falla—, queda anotado el
+motivo en `charger_end_reason` y la sesión sigue abierta: cerrarla en ese caso, igual que cortar al
+llegar al porcentaje objetivo, llega con ECO-45. Una lectura repetida, atrasada o de una sesión ya
+cerrada se descarta; una ilegible, tras cinco intentos, va a la cola de mensajes muertos.
 
 | Orden | Qué hace |
 |-------|----------|
@@ -1001,7 +1008,7 @@ estos módulos.
 | Módulo | Componentes | Estado |
 |--------|-------------|--------|
 | `ecopedia-core` (8081) | Usuarios · Terminales · Tarificación · Vehículos, y el backoffice del administrador | ✅ |
-| `ecopedia-charging` (8082) | Reservas *(stateful)*, con el checkout · Sesiones de carga | ✅ Reservas · 🚧 Sesiones: habilitar y detener andan; faltan la lectura de la telemetría, el corte por porcentaje y la pantalla |
+| `ecopedia-charging` (8082) | Reservas *(stateful)*, con el checkout · Sesiones de carga | ✅ Reservas · 🚧 Sesiones: habilitar y detener andan; la telemetría se guarda en la sesión; faltan el corte por porcentaje y la pantalla |
 | `ecopedia-integration` (8083) | Pagos (REST) · Red Eléctrica (SOAP) | ✅ |
 | `ecopedia-async` (8084) | Notificaciones | ✅ · Estadísticas, prevista |
 | `simulation/payment-gateway` | La pasarela de pagos — expone la API REST | ✅ |

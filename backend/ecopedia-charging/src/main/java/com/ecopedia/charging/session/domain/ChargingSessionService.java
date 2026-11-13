@@ -31,4 +31,17 @@ public interface ChargingSessionService {
      * @return cuántas sesiones cortó
      */
     int stopExpiredSessions();
+
+    /**
+     * Guarda en la sesión lo que informa el cargador: kWh acumulados, potencia y porcentaje de
+     * batería (RF16). Una lectura de una sesión que no existe o ya cerró, o que llega después de una
+     * más nueva, se descarta sin error.
+     *
+     * <p>Si es la última lectura —el cargador avisa que cortó por batería llena o por falla—, queda
+     * registrado el motivo en la sesión, que sigue abierta: cerrarla y liquidarla es otra decisión.
+     *
+     * @return {@code true} si la lectura se guardó, {@code false} si se descartó
+     * @throws IllegalArgumentException si a la lectura le falta la sesión, el instante o los kWh
+     */
+    boolean processTelemetry(TelemetryReading reading);
 }

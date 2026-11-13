@@ -58,6 +58,16 @@ ecopedia:
     queue: notifications.dispatch
     # Cada cuánto se reintentan los avisos que no salieron porque el broker no estaba (ECO-177).
     retry-interval: ${ECOPEDIA_NOTIFICATIONS_RETRY_INTERVAL:PT15S}
+  telemetry:
+    # El tópico donde los cargadores publican sus lecturas (RF16, ECO-40). El nombre tiene que
+    # coincidir con el del simulador (simulation.charger.telemetry-topic).
+    topic: telemetry.charging
+    # El nombre de la suscripción durable de SesionesDeCarga en ese tópico. Otro suscriptor
+    # (Estadísticas) usa el suyo, y así cada uno recibe todas las lecturas.
+    subscription: ecopedia-charging.sessions
+    # Los intentos antes de que Artemis aparte una lectura en la cola de mensajes muertos. Lo decide
+    # el broker (docker/artemis/broker.properties); acá se repite solo para decirlo en el log.
+    max-delivery-attempts: 5
 
   jwt:
     # El MISMO secreto que ecopedia-core. Core firma el token al hacer login y este artefacto

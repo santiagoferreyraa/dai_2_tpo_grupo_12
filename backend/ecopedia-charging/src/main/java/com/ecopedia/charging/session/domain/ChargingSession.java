@@ -60,6 +60,26 @@ public class ChargingSession {
     @Column(name = "kwh_delivered", nullable = false, precision = 8, scale = 3)
     private BigDecimal kwhDelivered = BigDecimal.ZERO;
 
+    /** La potencia de la última lectura del cargador (ECO-40). {@code null} hasta que llega una. */
+    @Column(name = "current_power_kw", precision = 6, scale = 2)
+    private BigDecimal currentPowerKw;
+
+    /** El porcentaje de batería de la última lectura: contra él se compara el objetivo. */
+    @Column(name = "battery_percent", precision = 5, scale = 2)
+    private BigDecimal batteryPercent;
+
+    @Column(name = "last_reading_at")
+    private Instant lastReadingAt;
+
+    /**
+     * Por qué el cargador dio por terminada la sesión, si ya avisó que cortó. {@code null} mientras
+     * sigue cargando. Que tenga valor con la sesión todavía {@code ACTIVE} quiere decir que el
+     * cargador terminó por su cuenta y falta cerrarla de este lado.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "charger_end_reason", length = 20)
+    private ChargerEndReason chargerEndReason;
+
     @Version
     @Column(name = "version", nullable = false)
     private Long version;
@@ -160,6 +180,27 @@ public class ChargingSession {
 
     public BigDecimal getKwhDelivered() {
         return kwhDelivered;
+    }
+
+    public BigDecimal getCurrentPowerKw() {
+        return currentPowerKw;
+    }
+
+    public BigDecimal getBatteryPercent() {
+        return batteryPercent;
+    }
+
+    public Instant getLastReadingAt() {
+        return lastReadingAt;
+    }
+
+    public ChargerEndReason getChargerEndReason() {
+        return chargerEndReason;
+    }
+
+    /** El cargador avisó que terminó (batería llena o falla) y la sesión sigue abierta de este lado. */
+    public boolean wasEndedByCharger() {
+        return chargerEndReason == ChargerEndReason.BATTERY_FULL || chargerEndReason == ChargerEndReason.FAULT;
     }
 
     public Long getVersion() {
