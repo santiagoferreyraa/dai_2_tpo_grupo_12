@@ -19,6 +19,7 @@ import com.ecopedia.charging.session.domain.ActivationFailureReason;
 import com.ecopedia.charging.session.domain.ActivationRequest;
 import com.ecopedia.charging.session.domain.ActivationResult;
 import com.ecopedia.charging.session.domain.ChargeSettlement;
+import com.ecopedia.charging.session.domain.ChargerEndReason;
 import com.ecopedia.charging.session.domain.ChargingPoint;
 import com.ecopedia.charging.session.domain.ChargingPointCatalog;
 import com.ecopedia.charging.session.domain.ChargingSession;
@@ -31,11 +32,13 @@ import com.ecopedia.charging.session.domain.PowerDecision;
 import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import com.ecopedia.charging.session.domain.SessionStatus;
 import com.ecopedia.charging.session.domain.SessionStopResult;
+import com.ecopedia.charging.session.domain.TelemetryReading;
 import com.ecopedia.charging.session.service.ChargingTransactionalCoordinator.CompletedSessionData;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -363,5 +366,57 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
                 finalBilled,
                 additionalCharge,
                 paymentStatus);
+    }
+
+    @Override
+    public boolean processTelemetry(TelemetryReading reading) {
+        Objects.requireNonNull(reading, "reading no puede ser null");
+        if (reading.sessionId() == null
+                || reading.sessionId().isBlank()
+                || reading.timestamp() == null
+                || reading.energyKwh() == null
+                || reading.energyKwh().signum() < 0) {
+            throw new IllegalArgumentException("La lectura " + reading.eventId() + " no trae sesión, instante o kWh");
+        }
+
+        // Solo la última lectura trae el motivo; si el cargador no lo manda, se deduce del tipo.
+        ChargerEndReason endReason = null;
+        if (reading.isFinal()) {
+            if (reading.endReason() != null) {
+                endReason = reading.endReason();
+            } else if (reading.type() == TelemetryReading.Type.FAULT) {
+                endReason = ChargerEndReason.FAULT;
+            } else {
+                endReason = ChargerEndReason.STOPPED;
+            }
+        }
+
+        int updated = chargingSessionRepository.recordReading(
+                reading.sessionId(),
+                reading.energyKwh(),
+                reading.powerKw(),
+                reading.batteryPercent(),
+                reading.timestamp().truncatedTo(ChronoUnit.MICROS),
+                endReason);
+
+        if (updated == 0) {
+            // Lo normal al detener: la última lectura del cargador llega con la sesión ya cerrada.
+            log.debug(
+                    "Lectura {} descartada: la sesión {} no está activa o ya tiene una lectura posterior",
+                    reading.eventId(),
+                    reading.sessionId());
+            return false;
+        }
+
+        if (endReason == ChargerEndReason.BATTERY_FULL || endReason == ChargerEndReason.FAULT) {
+            log.warn(
+                    "El cargador terminó por su cuenta la sesión {} del conector {} ({}), con {} kWh:"
+                            + " quedó registrado y la sesión sigue abierta hasta que se la cierre",
+                    reading.sessionId(),
+                    reading.connectorId(),
+                    endReason,
+                    reading.energyKwh());
+        }
+        return true;
     }
 }
