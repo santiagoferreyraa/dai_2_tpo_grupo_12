@@ -20,12 +20,12 @@ import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import com.ecopedia.charging.session.domain.ActivationRequest;
 import com.ecopedia.charging.session.domain.ActivationResult;
+import com.ecopedia.charging.session.domain.ChargingSessionService;
 import com.ecopedia.charging.session.domain.PhysicalChargerRejectedException;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
 import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import com.ecopedia.charging.session.domain.SessionStatus;
 import com.ecopedia.charging.session.domain.SessionStopResult;
-import com.ecopedia.charging.session.service.ChargingActivationService;
 import com.ecopedia.charging.session.web.dto.ActivationHttpRequest;
 import com.ecopedia.charging.session.web.dto.StopSessionRequest;
 import com.ecopedia.charging.web.ApiProblems;
@@ -62,7 +62,7 @@ class SessionApiTest {
     private String jwtSecret;
 
     @MockitoBean
-    private ChargingActivationService activationService;
+    private ChargingSessionService activationService;
 
     @Test
     @DisplayName("POST /api/sessions/activation exitoso: responde 201 Created con los datos de la sesión activa")
