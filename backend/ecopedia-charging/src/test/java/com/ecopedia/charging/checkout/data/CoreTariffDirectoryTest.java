@@ -10,6 +10,8 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.ecopedia.charging.checkout.domain.PricingUnavailableException;
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -76,5 +78,28 @@ class CoreTariffDirectoryTest {
         core.reset();
         core.expect(requestTo(URL)).andRespond(withSuccess("{\"deposit\":8000}", MediaType.APPLICATION_JSON));
         assertThatThrownBy(() -> tariffs.calculateDeposit(12L)).isInstanceOf(PricingUnavailableException.class);
+    }
+
+    @Test
+    @DisplayName("Calcula el costo real contra GET /api/pricing/real-cost y propaga error si core cae")
+    void calculatesRealCost() {
+        Instant startedAt = Instant.parse("2026-11-10T18:00:00Z");
+        String realCostUrl = "http://core.test/api/pricing/real-cost?connectorId=12&kwhConsumed=15.50"
+                + "&deliveredPowerKw=150.00&start=2026-11-10T18:00:00Z&excessMinutes=5";
+
+        core.expect(requestTo(realCostUrl))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"totalCost\":3500.00}", MediaType.APPLICATION_JSON));
+
+        BigDecimal total =
+                tariffs.calculateRealCost(12L, new BigDecimal("15.50"), new BigDecimal("150.00"), startedAt, 5L);
+        assertThat(total).isEqualByComparingTo("3500.00");
+        core.verify();
+
+        core.reset();
+        core.expect(requestTo(realCostUrl)).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+        assertThatThrownBy(() -> tariffs.calculateRealCost(
+                        12L, new BigDecimal("15.50"), new BigDecimal("150.00"), startedAt, 5L))
+                .isInstanceOf(PricingUnavailableException.class);
     }
 }

@@ -110,6 +110,7 @@ public class BookingServiceImpl implements BookingService {
     private final Duration depositRefundNotice;
     private final Duration noShowGrace;
     private final Duration walkInBuffer;
+    private final Duration earlyActivation;
 
     /** El estado conversacional del componente: las retenciones vigentes, por id. */
     private final Map<UUID, Hold> holds = new ConcurrentHashMap<>();
@@ -148,7 +149,8 @@ public class BookingServiceImpl implements BookingService {
             @Value("${ecopedia.booking.max-horizon}") Duration maxHorizon,
             @Value("${ecopedia.booking.deposit-refund-notice}") Duration depositRefundNotice,
             @Value("${ecopedia.booking.no-show-grace}") Duration noShowGrace,
-            @Value("${ecopedia.booking.walk-in-buffer:PT15M}") Duration walkInBuffer) {
+            @Value("${ecopedia.booking.walk-in-buffer:PT15M}") Duration walkInBuffer,
+            @Value("${ecopedia.booking.early-activation:PT15M}") Duration earlyActivation) {
         this.connectorCatalog = connectorCatalog;
         this.bookingRepository = bookingRepository;
         this.eventPublisher = eventPublisher;
@@ -159,6 +161,7 @@ public class BookingServiceImpl implements BookingService {
         this.depositRefundNotice = depositRefundNotice;
         this.noShowGrace = noShowGrace;
         this.walkInBuffer = walkInBuffer;
+        this.earlyActivation = earlyActivation;
     }
 
     public BookingServiceImpl(
@@ -181,6 +184,7 @@ public class BookingServiceImpl implements BookingService {
                 maxHorizon,
                 depositRefundNotice,
                 noShowGrace,
+                Duration.ofMinutes(15),
                 Duration.ofMinutes(15));
     }
 
@@ -640,8 +644,12 @@ public class BookingServiceImpl implements BookingService {
     }
 
     @Override
-    public Optional<Booking> findChargeableBooking(Long driverId, Long connectorId, Instant at) {
-        return bookingRepository.findInProgressForDriver(driverId, BookingStatus.CONFIRMED, at).stream()
+    public Optional<Booking> findChargeableBooking(
+            Long driverId, Long connectorId, Instant at, Duration earlyActivation) {
+        // Se cruza con [at, at + margen): o ya está corriendo, o empieza dentro del margen.
+        return bookingRepository
+                .findOverlappingForDriver(driverId, BookingStatus.CONFIRMED, at, at.plus(earlyActivation))
+                .stream()
                 .filter(booking -> booking.getConnectorId().equals(connectorId))
                 .findFirst();
     }
@@ -650,7 +658,7 @@ public class BookingServiceImpl implements BookingService {
     public Booking startBookingCharging(Long bookingId) {
         Booking booking = getBooking(bookingId);
         Instant now = clock.instant();
-        booking.startCharging(now);
+        booking.startCharging(now, earlyActivation);
         Booking saved = bookingRepository.save(booking);
         log.info(
                 "Reserva {} del conductor {} sobre conector {} pasa a IN_PROGRESS",
@@ -747,7 +755,6 @@ public class BookingServiceImpl implements BookingService {
 
     private TimeWindow calculateWalkInWindow(Long connectorId, Instant from, Long driverId) {
         Instant maxEnd = from.plus(maxWindow);
-        Instant minRequiredEnd = from.plus(walkInBuffer);
 
         // 1. Buscar reservas CONFIRMED o IN_PROGRESS en [from, maxEnd)
         List<Booking> overlappingBookings = new ArrayList<>();
@@ -765,7 +772,7 @@ public class BookingServiceImpl implements BookingService {
                 .filter(hold -> hold.window().overlaps(evalWindow))
                 .toList();
 
-        // 3. Determinar el límite superior (el inicio más próximo de cualquier ocupación)
+        // 3. Determinar el límite superior dejando libre el resguardo previo a la próxima ocupación (RF10, ECO-58)
         Instant effectiveEnd = maxEnd;
         for (Booking booking : overlappingBookings) {
             Instant bookingStart = booking.getWindow().start();
@@ -773,8 +780,9 @@ public class BookingServiceImpl implements BookingService {
                 // Ya hay una reserva corriendo en este instante
                 throw new SlotUnavailableException(connectorId);
             }
-            if (bookingStart.isBefore(effectiveEnd)) {
-                effectiveEnd = bookingStart;
+            Instant cutoffBeforeBooking = bookingStart.minus(walkInBuffer);
+            if (cutoffBeforeBooking.isBefore(effectiveEnd)) {
+                effectiveEnd = cutoffBeforeBooking;
             }
         }
 
@@ -784,13 +792,14 @@ public class BookingServiceImpl implements BookingService {
                 // Ya hay una retención corriendo en este instante
                 throw new SlotUnavailableException(connectorId);
             }
-            if (holdStart.isBefore(effectiveEnd)) {
-                effectiveEnd = holdStart;
+            Instant cutoffBeforeHold = holdStart.minus(walkInBuffer);
+            if (cutoffBeforeHold.isBefore(effectiveEnd)) {
+                effectiveEnd = cutoffBeforeHold;
             }
         }
 
-        // 4. Validar buffer de 15 minutos previos a la próxima reserva
-        if (effectiveEnd.isBefore(minRequiredEnd)) {
+        // 4. Si no queda tiempo disponible tras descontar los 15 minutos de resguardo, rechazar
+        if (!effectiveEnd.isAfter(from)) {
             throw new SlotUnavailableException(connectorId);
         }
 

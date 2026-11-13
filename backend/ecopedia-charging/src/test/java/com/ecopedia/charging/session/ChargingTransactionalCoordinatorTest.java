@@ -7,8 +7,8 @@ import com.ecopedia.charging.booking.domain.Booking;
 import com.ecopedia.charging.booking.domain.BookingDeposit;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.BookingRepository;
+import com.ecopedia.charging.booking.domain.BookingStateConflictException;
 import com.ecopedia.charging.booking.domain.BookingStatus;
-import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
 import com.ecopedia.charging.booking.domain.TimeWindow;
 import com.ecopedia.charging.session.domain.ChargingSession;
@@ -157,7 +157,7 @@ class ChargingTransactionalCoordinatorTest {
 
             assertThatThrownBy(() -> coordinator.persistLocalActivation(
                             sessionId, savedBooking.getId(), CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("22.00"), now))
-                    .isInstanceOf(InvalidBookingRequestException.class);
+                    .isInstanceOf(BookingStateConflictException.class);
 
             // Verificamos que el conector NO fue marcado como OCCUPIED
             ConnectorState reloadedConnector =
@@ -228,6 +228,48 @@ class ChargingTransactionalCoordinatorTest {
                     connectorStateRepository.findById(CONNECTOR_ID).orElseThrow();
             assertThat(connectorState.getStatus()).isEqualTo(ConnectorOperationalStatus.AVAILABLE);
             assertThat(connectorState.getCurrentSessionId()).isNull();
+        }
+
+        @Test
+        @DisplayName(
+                "Cierre atómico local: sesión pasa a COMPLETED, conector a AVAILABLE y reserva recorta windowEnd (RF12)")
+        void completeLocalSession_closesSessionReleasesConnectorAndTrimsBookingWindow() {
+            Instant start = Instant.parse("2026-11-02T19:00:00Z");
+            Instant plannedEnd = start.plusSeconds(3600);
+            Instant stopTime = start.plusSeconds(1800);
+
+            Booking booking = new Booking(
+                    CONNECTOR_ID,
+                    DRIVER_ID,
+                    new TimeWindow(start, plannedEnd),
+                    start.minusSeconds(600),
+                    new BookingDeposit(new BigDecimal("5000.00"), 1L, "4242"),
+                    start.minusSeconds(300),
+                    UUID.randomUUID(),
+                    "checkout-key-stop");
+            Booking savedBooking = bookingRepository.save(booking);
+
+            String sessionId = UUID.randomUUID().toString();
+            coordinator.persistLocalActivation(
+                    sessionId, savedBooking.getId(), CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), start);
+
+            var completed = coordinator.completeLocalSession(sessionId, new BigDecimal("18.500"), stopTime);
+
+            assertThat(completed.session().getStatus()).isEqualTo(SessionStatus.COMPLETED);
+            assertThat(completed.session().getStoppedAt()).isEqualTo(stopTime);
+            assertThat(completed.session().getKwhDelivered()).isEqualByComparingTo("18.500");
+            assertThat(completed.depositAmount()).isEqualByComparingTo("5000.00");
+            assertThat(completed.originalWindowEnd()).isEqualTo(plannedEnd);
+
+            ConnectorState released =
+                    connectorStateRepository.findById(CONNECTOR_ID).orElseThrow();
+            assertThat(released.getStatus()).isEqualTo(ConnectorOperationalStatus.AVAILABLE);
+            assertThat(released.getCurrentSessionId()).isNull();
+
+            Booking closedBooking =
+                    bookingRepository.findById(savedBooking.getId()).orElseThrow();
+            assertThat(closedBooking.getStatus()).isEqualTo(BookingStatus.COMPLETED);
+            assertThat(closedBooking.getWindow().end()).isEqualTo(stopTime);
         }
     }
 }

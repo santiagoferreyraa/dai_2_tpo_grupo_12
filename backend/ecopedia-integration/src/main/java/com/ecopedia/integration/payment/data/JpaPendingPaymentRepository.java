@@ -15,11 +15,11 @@ import org.springframework.stereotype.Repository;
 public interface JpaPendingPaymentRepository extends JpaRepository<PendingPayment, Long>, PendingPaymentRepository {
 
     @Override
+    Optional<PendingPayment> findByReference(String reference);
+
+    @Override
     List<PendingPayment> findByDriverIdAndStatus(Long driverId, PendingPaymentStatus status);
 
     @Override
     boolean existsByDriverIdAndStatus(Long driverId, PendingPaymentStatus status);
-
-    @Override
-    Optional<PendingPayment> findFirstByReference(String reference);
 }

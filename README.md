@@ -354,7 +354,7 @@ las dos cuentas iniciales y dos ajustes:
 | `ECOPEDIA_BROKER_PASSWORD` | La contraseña de Artemis |
 | `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN` | La clave con la que Pagos se presenta ante la pasarela simulada. La leen los dos |
 | `ECOPEDIA_POWER_GRID_PASSWORD` | La contraseña del UsernameToken con que RedEléctrica se presenta ante la distribuidora simulada. La leen los dos |
-| `ECOPEDIA_CHARGER_ACCESS_TOKEN` | La clave con la que Terminales (en core) se presenta ante los cargadores simulados. La leen los dos |
+| `ECOPEDIA_CHARGER_ACCESS_TOKEN` | La clave con la que SesionesDeCarga (en charging) se presenta ante los cargadores simulados. La leen los dos |
 | `ECOPEDIA_INTERNAL_TOKEN` | La clave de servicio entre artefactos de Ecopedia, para las rutas `/internal/**` (hoy, `charging` llamando a RedEléctrica y al cobro de la seña en `integration`). La leen los dos |
 | `ECOPEDIA_ADMIN_EMAIL`, `ECOPEDIA_ADMIN_PASSWORD`, `ECOPEDIA_CPO_EMAIL`, `ECOPEDIA_CPO_PASSWORD` | Las cuentas con las que se entra la primera vez (ver "Todo con Docker"). `docker compose up` las exige; `pnpm dev` y `pnpm demo` las crean solo si están |
 | `ECOPEDIA_LOGIN_MAX_FAILURES` | Cuántos logins fallidos seguidos bloquean una cuenta. Sin valor, 5 |
@@ -371,8 +371,8 @@ completas. Las cuentas se crean en el arranque siguiente, sin tocar los datos qu
 en cambio, son secretos:** un `.env` anterior no las tiene, y sin ellas `pnpm demo` no levanta los procesos que
 las usan (`Could not resolve placeholder 'ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN'` en la pasarela y en
 Pagos, `... 'ECOPEDIA_POWER_GRID_PASSWORD'` en la distribuidora y también en Pagos, que es el mismo
-artefacto que RedEléctrica, y `... 'ECOPEDIA_CHARGER_ACCESS_TOKEN'` en los cargadores y **en core**,
-que es el que les da las órdenes, y `... 'ECOPEDIA_INTERNAL_TOKEN'` en Pagos y en Reservas). Se agrega a
+artefacto que RedEléctrica, y `... 'ECOPEDIA_CHARGER_ACCESS_TOKEN'` en los cargadores y **en Reservas**
+(`charging`), que es el artefacto que les da las órdenes, y `... 'ECOPEDIA_INTERNAL_TOKEN'` en Pagos y en Reservas). Se agrega a
 mano la línea que falte, `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN=`, `ECOPEDIA_POWER_GRID_PASSWORD=`,
 `ECOPEDIA_CHARGER_ACCESS_TOKEN=` o `ECOPEDIA_INTERNAL_TOKEN=`, con cualquier valor largo al azar, o se borra el `.env` y se corre
 `pnpm env:init` de nuevo (eso cambia también los demás secretos). `pnpm dev` y `pnpm dev:mem` no
@@ -581,6 +581,67 @@ Los plazos son configurables en `charging`, y para una demo conviene achicarlos:
 Si se cambia la tolerancia, hay que cambiar también los textos que dicen "15 minutos" (el aviso de
 `async` y la pantalla de reservar).
 
+### La sesión de carga
+
+Habilitar y detener una carga son dos rutas de `charging` (8082), las dos del conductor. **Todavía no
+tienen pantalla**: se prueban con `curl` o Postman, con el token de un `CONDUCTOR` que tenga una
+tarjeta cargada.
+
+| Ruta | Qué hace |
+|------|----------|
+| `POST /api/sessions/activation` | Habilita la carga: valida la reserva, consulta a la distribuidora si es carga rápida, valida la tarjeta (sin cobrar), guarda la sesión y enciende el cargador. Responde 201 con el `sessionId` y la potencia permitida |
+| `POST /api/sessions/{sessionId}/stop` | Detiene la carga: apaga el cargador, libera el conector, calcula el costo real y cobra el consumo menos la seña |
+
+El cuerpo de la habilitación:
+
+```json
+{ "connectorId": 2, "bookingId": 7, "targetBatteryPercent": 80 }
+```
+
+- **Con `bookingId`**, es la carga de una reserva confirmada. Se puede habilitar **desde 15 minutos
+  antes del turno y hasta que termina**, si la terminal no está tomada por el turno de otro.
+- **Sin `bookingId`**, es una carga sin reserva: no paga seña y su ventana va desde ahora hasta 15
+  minutos antes de la próxima reserva del conector (4 horas como máximo).
+- `targetBatteryPercent` es opcional (80 si no viene).
+
+Lo que puede contestar, además del 201:
+
+| Caso | Respuesta |
+|------|-----------|
+| Faltan más de 15 minutos para el turno | 409 `ACTIVATION_TOO_EARLY`, con `availableFrom` |
+| La reserva no está confirmada (ya se usó, se canceló, venció) | 409 `BOOKING_STATE_CONFLICT` |
+| La terminal está tomada por otra reserva o por otra carga | 409 `SLOT_UNAVAILABLE` |
+| La reserva, el conector o la sesión no existen, o son de otro | 404, el mismo para todos |
+| Sin tarjeta que sirva, o con un cobro pendiente de una carga anterior | 422 `PAYMENT_METHOD_INVALID` |
+| La distribuidora no autoriza ninguna potencia (nodo en mantenimiento) | 422 `CONNECTOR_NOT_BOOKABLE`; la reserva se libera y la seña se devuelve |
+| El cargador rechaza la orden o no responde | 409 `CHARGER_REJECTED` o 503 `CHARGER_UNAVAILABLE`; la reserva se libera y la seña se devuelve |
+| Pagos no responde | 503 `PAYMENT_CHECK_UNAVAILABLE` |
+
+**La carga se corta sola cuando vence su ventana**, la reservada o la de la carga sin reserva: un
+barrido revisa las sesiones activas cada 30 segundos (`ecopedia.session.cutoff-sweep-ms`). El corte
+al llegar al porcentaje objetivo todavía no existe, pero el dato ya está: mientras carga, la sesión
+guarda el porcentaje de batería de cada lectura del cargador (ver "Los cargadores simulados").
+
+Al detener, la respuesta trae los kWh entregados, el costo real (`realCost`), lo facturado
+(`finalBilled`, que en una reserva nunca baja de la seña), lo que se cobró además de la seña
+(`additionalCharge`) y cómo terminó el cobro (`paymentStatus`):
+
+| `paymentStatus` | Qué significa |
+|---|---|
+| `CHARGED` | Se cobró la diferencia a la tarjeta |
+| `NOT_REQUIRED` | El consumo no superó la seña: no hay segundo cobro |
+| `DEBT_RECORDED` | La tarjeta rechazó o la pasarela no contestó: queda una deuda, y el conductor no puede habilitar otra carga |
+| `PENDING_SETTLEMENT` | Tarificación o Pagos no respondieron al cerrar. El conector se liberó igual |
+
+**El conector se libera antes de cobrar**, a propósito: una pasarela caída no puede dejar un cargador
+bloqueado. Para la demo, el rechazo de la red se ve con una estación del nodo `CABA-SUR` (hay que
+poner en servicio uno de sus conectores rápidos) y la deuda, con la tarjeta `…9995`.
+
+| Variable | Qué es | Por defecto |
+|---|---|---|
+| `ECOPEDIA_BOOKING_EARLY_ACTIVATION` | Desde cuánto antes del turno se puede habilitar | `PT15M` |
+| `ECOPEDIA_BOOKING_WALK_IN_BUFFER` | El resguardo antes de la próxima reserva para una carga sin reserva | `PT15M` |
+
 ### Los precios de la carga
 
 Los fija el `ADMIN` en `/admin` → Tarifas, y valen para todas las estaciones. Vienen sembrados, en
@@ -708,11 +769,17 @@ curl -H "Content-Type: text/xml" --data-binary @pedido.xml http://localhost:8087
 ### Los cargadores simulados
 
 El hardware de las estaciones —o la central del fabricante que lo controla— es un proceso aparte en
-`simulation/charger` (8088). Terminales le da dos órdenes por REST, **encender** y **apagar** un
-conector, y mientras el conector carga, el simulador publica una lectura cada 2 segundos en el
-**tópico** `telemetry.charging` de Artemis: kWh acumulados, potencia y porcentaje de batería. `pnpm dev`
-ya lo levanta. **Todavía no lo llama ninguna pantalla:** la habilitación de la carga llega con ECO-44,
-y quien lee el tópico, con ECO-45.
+`simulation/charger` (8088). SesionesDeCarga (en `charging`) le da dos órdenes por REST, **encender**
+y **apagar** un conector, al habilitar y al detener una carga, y mientras el conector carga, el
+simulador publica una lectura cada 2 segundos en el **tópico** `telemetry.charging` de Artemis: kWh
+acumulados, potencia y porcentaje de batería. `pnpm dev` ya lo levanta.
+
+**SesionesDeCarga está suscripta al tópico** (`charging`, con una suscripción durable,
+`ecopedia-charging.sessions`) y guarda cada lectura en su sesión: kWh, potencia, batería y el instante
+(`charging_sessions`). Si el cargador avisa que cortó solo —batería llena o falla—, queda anotado el
+motivo en `charger_end_reason` y la sesión sigue abierta: cerrarla en ese caso, igual que cortar al
+llegar al porcentaje objetivo, llega con ECO-45. Una lectura repetida, atrasada o de una sesión ya
+cerrada se descarta; una ilegible, tras cinco intentos, va a la cola de mensajes muertos.
 
 | Orden | Qué hace |
 |-------|----------|
@@ -747,16 +814,6 @@ curl -X POST http://localhost:8088/v1/connectors/1/session \
   -d '{"sessionId":"prueba-1","powerLimitKw":50}'
 curl http://localhost:8088/v1/connectors/1 -H "Authorization: Bearer $TOKEN"
 ```
-
-**Para probarlo contra el proceso real**, con el simulador y el broker arriba:
-
-```bash
-mvn -pl backend/ecopedia-core test -Dtest=ChargerLiveTest -Dcharger.live=true -Dcharger.broker-password=<la del .env>
-```
-
-Enciende un conector con el cliente de core, escucha el tópico, lo apaga, y prueba un conector roto y
-la clave equivocada. CI no lo corre. Si el `.env` tiene `ECOPEDIA_CHARGER_ACCESS_TOKEN`, el simulador
-usa esa clave, y se agrega `-Dcharger.token=` con la misma.
 
 ### Producción: un solo artefacto
 
@@ -922,13 +979,13 @@ git commit -am "Aplicar formato"
 ```
 dai_2_tpo/
 ├── pom.xml                    # POM padre (multi-módulo) + config de Spotless
-├── docker-compose.yml         # PostgreSQL + ActiveMQ
+├── docker-compose.yml         # Todo el sistema: base, broker, módulos, simuladores y Caddy
 ├── .gitattributes             # LF en todo; el lock sin merge textual
 ├── .editorconfig              # Indentación y encoding para los tres IDEs
 ├── .nvmrc                     # Versión de Node del equipo
 ├── .github/workflows/ci.yml   # Build + formato en cada PR
 ├── backend/
-│   ├── ecopedia-core/        # Usuarios · Terminales · Tarificación
+│   ├── ecopedia-core/        # Usuarios · Terminales · Tarificación · Vehículos
 │   ├── ecopedia-charging/    # Reservas · Sesiones de carga (stateful)
 │   ├── ecopedia-integration/ # Pagos (REST) · Red Eléctrica (SOAP)
 │   └── ecopedia-async/       # Notificaciones (consumidor JMS + historial por REST)
@@ -943,17 +1000,17 @@ dai_2_tpo/
 └── docs/                      # Diagramas y material de entregas
 ```
 
-### Módulos previstos
+### Módulos
 
 Un módulo Maven por artefacto desplegable. Los componentes de negocio viven dentro de
-estos módulos, cada uno con su interfaz explícita.
+estos módulos.
 
 | Módulo | Componentes | Estado |
 |--------|-------------|--------|
-| `ecopedia-core` | TerminalService · UserService · PricingService · VehicleService | 🚧 scaffold |
-| `ecopedia-charging` | BookingService · ChargingSessionService *(stateful)* | 🚧 scaffold |
-| `ecopedia-integration` | PaymentService (REST) · PowerGridService (SOAP) | 🚧 scaffold |
-| `ecopedia-async` | NotificationService | 🚧 scaffold |
+| `ecopedia-core` (8081) | Usuarios · Terminales · Tarificación · Vehículos, y el backoffice del administrador | ✅ |
+| `ecopedia-charging` (8082) | Reservas *(stateful)*, con el checkout · Sesiones de carga | ✅ Reservas · 🚧 Sesiones: habilitar y detener andan; la telemetría se guarda en la sesión; faltan el corte por porcentaje y la pantalla |
+| `ecopedia-integration` (8083) | Pagos (REST) · Red Eléctrica (SOAP) | ✅ |
+| `ecopedia-async` (8084) | Notificaciones | ✅ · Estadísticas, prevista |
 | `simulation/payment-gateway` | La pasarela de pagos — expone la API REST | ✅ |
 | `simulation/power-grid` | La distribuidora, el sistema legado — publica el WSDL | ✅ |
 | `simulation/charger` | Los cargadores — reciben órdenes por REST y publican la telemetría al tópico | ✅ |

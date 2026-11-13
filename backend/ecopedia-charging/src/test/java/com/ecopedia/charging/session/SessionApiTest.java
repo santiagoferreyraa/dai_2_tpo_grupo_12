@@ -11,17 +11,21 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.ecopedia.charging.booking.TestTokens;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
+import com.ecopedia.charging.booking.domain.BookingStateConflictException;
 import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
 import com.ecopedia.charging.booking.domain.DriverAlreadyBookedException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
+import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import com.ecopedia.charging.session.domain.ActivationRequest;
 import com.ecopedia.charging.session.domain.ActivationResult;
+import com.ecopedia.charging.session.domain.ChargingSessionService;
 import com.ecopedia.charging.session.domain.PhysicalChargerRejectedException;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
+import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import com.ecopedia.charging.session.domain.SessionStatus;
-import com.ecopedia.charging.session.service.ChargingActivationService;
+import com.ecopedia.charging.session.domain.SessionStopResult;
 import com.ecopedia.charging.session.web.dto.ActivationHttpRequest;
 import com.ecopedia.charging.web.ApiProblems;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -57,7 +61,7 @@ class SessionApiTest {
     private String jwtSecret;
 
     @MockitoBean
-    private ChargingActivationService activationService;
+    private ChargingSessionService activationService;
 
     @Test
     @DisplayName("POST /api/sessions/activation exitoso: responde 201 Created con los datos de la sesión activa")
@@ -266,5 +270,94 @@ class SessionApiTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DRIVER_ALREADY_BOOKED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/sessions/{sessionId}/stop exitoso: responde 200 OK con resumen de liquidación")
+    void stopSessionSuccessfully() throws Exception {
+        Instant startedAt = Instant.parse("2026-11-02T15:00:00Z");
+        Instant stoppedAt = Instant.parse("2026-11-02T15:30:00Z");
+        SessionStopResult result = new SessionStopResult(
+                "session-stop-1",
+                10L,
+                CONNECTOR_ID,
+                SessionStatus.COMPLETED,
+                startedAt,
+                stoppedAt,
+                new BigDecimal("18.500"),
+                new BigDecimal("5000.00"),
+                new BigDecimal("7200.00"),
+                new BigDecimal("7200.00"),
+                new BigDecimal("2200.00"),
+                ConsumptionPaymentStatus.CHARGED);
+
+        when(activationService.stopSession("session-stop-1", DRIVER_ID)).thenReturn(result);
+
+        mockMvc.perform(post("/api/sessions/session-stop-1/stop")
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sessionId").value("session-stop-1"))
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.kwhDelivered").value(18.500))
+                .andExpect(jsonPath("$.realCost").value(7200.00))
+                .andExpect(jsonPath("$.additionalCharge").value(2200.00))
+                .andExpect(jsonPath("$.paymentStatus").value("CHARGED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/sessions/{sessionId}/stop sobre sesión ajena o inexistente responde 404 opaco")
+    void stopForeignOrMissingSessionReturnsOpaqueNotFound() throws Exception {
+        when(activationService.stopSession("session-foreign", DRIVER_ID))
+                .thenThrow(new SessionNotFoundException("session-foreign"));
+
+        mockMvc.perform(post("/api/sessions/session-foreign/stop")
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value(ApiProblems.NOT_FOUND_DETAIL))
+                .andExpect(jsonPath("$.code").doesNotExist());
+    }
+
+    /**
+     * Patrón State: habilitar una reserva que ya no está confirmada es una transición inválida. 409
+     * {@code BOOKING_STATE_CONFLICT}, el mismo texto que en Reservas, y ni el id ni el estado de la
+     * reserva en la respuesta (directiva 7). Hasta el 10/11 era un 400 con "La reserva N no está
+     * confirmada".
+     */
+    @Test
+    @DisplayName("Habilitar una reserva que ya no está confirmada responde 409 BOOKING_STATE_CONFLICT sin pistas")
+    void activatingUnconfirmedBookingReturnsStateConflict() throws Exception {
+        when(activationService.activate(any(ActivationRequest.class), any()))
+                .thenThrow(new BookingStateConflictException(10L, "en CANCELLED", "la habilitación de la carga"));
+
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, 10L, 80, "123456");
+
+        mockMvc.perform(post("/api/sessions/activation")
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(BookingStateConflictException.CODE))
+                .andExpect(jsonPath("$.detail").value(ApiProblems.STATE_CONFLICT_DETAIL))
+                .andExpect(content().string(not(containsString("CANCELLED"))));
+    }
+
+    /** Cerrar la carga de una reserva que ya se cerró: antes del 10/11 caía en el manejador general (500). */
+    @Test
+    @DisplayName("Cerrar la carga de una reserva ya cerrada responde 409 BOOKING_STATE_CONFLICT, no 500")
+    void stoppingOnClosedBookingReturnsStateConflict() throws Exception {
+        when(activationService.stopSession("session-closed", DRIVER_ID))
+                .thenThrow(new BookingStateConflictException(10L, "en COMPLETED", "el cierre de la carga"));
+
+        mockMvc.perform(post("/api/sessions/session-closed/stop")
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(BookingStateConflictException.CODE))
+                .andExpect(jsonPath("$.detail").value(ApiProblems.STATE_CONFLICT_DETAIL));
+    }
+
+    @Test
+    @DisplayName("POST /api/sessions/{sessionId}/stop sin autenticación responde 401 Unauthorized")
+    void stopUnauthenticatedReturnsUnauthorized() throws Exception {
+        mockMvc.perform(post("/api/sessions/session-stop-1/stop")).andExpect(status().isUnauthorized());
     }
 }

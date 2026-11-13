@@ -13,18 +13,18 @@ function toSession(response: SessionResponse): ChargingSession {
     bookingId: response.bookingId,
     connectorId: response.connectorId,
     status: response.status,
-    targetBatteryPercent: response.targetBatteryPercent,
-    powerLimitKw: response.powerLimitKw,
+    targetBatteryPercent: response.targetBatteryPercent ?? null,
+    powerLimitKw: response.powerLimitKw ?? null,
     startedAt: new Date(response.startedAt),
     stoppedAt: response.stoppedAt ? new Date(response.stoppedAt) : null,
     kwhDelivered: response.kwhDelivered ?? 0,
+    currentPowerKw: response.currentPowerKw ?? null,
     batteryPercent: response.batteryPercent ?? null,
-    endReason: response.endReason ?? null,
+    depositAmount: response.depositAmount ?? null,
     realCost: response.realCost ?? null,
-    depositApplied: response.depositApplied ?? null,
-    finalAmount: response.finalAmount ?? null,
-    amountToCharge: response.amountToCharge ?? null,
-    paymentStatus: response.paymentStatus ?? 'NOT_SETTLED',
+    finalBilled: response.finalBilled ?? null,
+    additionalCharge: response.additionalCharge ?? null,
+    paymentStatus: response.paymentStatus ?? null,
   }
 }
 
@@ -51,7 +51,10 @@ export async function fetchSession(
   )
 }
 
-/** Detiene la carga. Repetirlo devuelve lo mismo: el backend lo resuelve idempotente. */
+/**
+ * Detiene la carga. Sin cuerpo: los kWh los dice el cargador. Repetirlo devuelve lo mismo, porque
+ * el backend guarda la liquidación y no vuelve a cobrar.
+ */
 export async function stopCharging(sessionId: string): Promise<ChargingSession> {
   return toSession(
     await api.post<SessionResponse>(`/sessions/${encodeURIComponent(sessionId)}/stop`),

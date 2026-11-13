@@ -23,13 +23,11 @@ public interface PhysicalChargerPort {
     void activate(long connectorId, String sessionId, BigDecimal powerLimitKw);
 
     /**
-     * Envía la orden de corte físico al cargador y devuelve cómo terminó la sesión (ECO-44).
-     *
-     * <p>Apagar dos veces es lo mismo que una: si el conector ya no estaba cargando, devuelve vacío.
+     * Envía la orden de corte físico al cargador y devuelve los kWh entregados si el cargador los informó.
      *
      * @param connectorId identificador del conector físico
-     * @return lo entregado en la sesión, o vacío si el conector no estaba cargando
+     * @return energía entregada en kWh si estaba presente en la respuesta; vacío si devolvió 204
      * @throws PhysicalChargerUnavailableException si el cargador físico no responde
      */
-    Optional<ChargerReading> deactivate(long connectorId);
+    Optional<BigDecimal> deactivate(long connectorId);
 }

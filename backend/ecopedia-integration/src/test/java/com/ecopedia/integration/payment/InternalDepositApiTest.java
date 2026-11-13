@@ -275,6 +275,33 @@ class InternalDepositApiTest {
     }
 
     @Test
+    @DisplayName("El pedido de charging (JSON con importe nulo) devuelve la seña entera")
+    void fullRefundWithNullAmountAsCharging() throws Exception {
+        PaymentMethod card = cardOf(314L, "4242");
+        String key = newKey();
+        when(gateway.charge(anyString(), any(), any(), any(), eq(key)))
+                .thenReturn(new GatewayCharge("pay_8", true, "accredited"));
+        when(gateway.refund(eq("pay_8"), isNull(), eq("refund-" + key)))
+                .thenReturn(new GatewayRefund("ref_3", "pay_8", new BigDecimal("8000")));
+        long chargeId = objectMapper
+                .readTree(charge(SERVICE_TOKEN, 314L, card.getId(), key)
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString())
+                .get("chargeId")
+                .asLong();
+
+        mockMvc.perform(post("/internal/payments/deposits/{id}/refund", chargeId)
+                        .header(HttpHeaders.AUTHORIZATION, SERVICE_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":null}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REFUNDED"));
+
+        verify(gateway, times(1)).refund(eq("pay_8"), isNull(), eq("refund-" + key));
+    }
+
+    @Test
     @DisplayName("Devolver un cobro rechazado es 409, y uno que no existe, 404")
     void refundOfDeclinedOrUnknown() throws Exception {
         PaymentMethod card = cardOf(312L, "0002");

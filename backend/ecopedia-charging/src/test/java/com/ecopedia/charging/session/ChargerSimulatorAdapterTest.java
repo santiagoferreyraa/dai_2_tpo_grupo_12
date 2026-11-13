@@ -96,4 +96,37 @@ class ChargerSimulatorAdapterTest {
 
         server.verify();
     }
+
+    @Test
+    @DisplayName("Desactivar cargador con 200 OK devuelve los kWh entregados")
+    void chargerDeactivateReturnsDeliveredKwhOnOk() {
+        RestClient.Builder builder = chargerHttpClient.mutate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        ChargerSimulatorAdapter adapter = new ChargerSimulatorAdapter(builder.build());
+
+        server.expect(requestTo("http://localhost:8088/v1/connectors/7/session"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer ecopedia-dev-only-charger-token"))
+                .andRespond(
+                        withSuccess("{\"sessionId\":\"session-1\",\"energyKwh\":18.450}", MediaType.APPLICATION_JSON));
+
+        assertThat(adapter.deactivate(7L)).contains(new BigDecimal("18.450"));
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("Desactivar cargador con 204 No Content devuelve Optional vacío")
+    void chargerDeactivateReturnsEmptyOnNoContent() {
+        RestClient.Builder builder = chargerHttpClient.mutate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        ChargerSimulatorAdapter adapter = new ChargerSimulatorAdapter(builder.build());
+
+        server.expect(requestTo("http://localhost:8088/v1/connectors/7/session"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer ecopedia-dev-only-charger-token"))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+
+        assertThat(adapter.deactivate(7L)).isEmpty();
+        server.verify();
+    }
 }

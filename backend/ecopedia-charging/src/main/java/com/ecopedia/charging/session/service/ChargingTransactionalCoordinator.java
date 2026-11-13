@@ -5,21 +5,19 @@ import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.BookingRepository;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
-import com.ecopedia.charging.session.domain.ChargeSettlement;
-import com.ecopedia.charging.session.domain.ChargerReading;
+import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import com.ecopedia.charging.session.domain.ChargingSession;
-import com.ecopedia.charging.session.domain.ChargingSessionNotFoundException;
 import com.ecopedia.charging.session.domain.ChargingSessionRepository;
 import com.ecopedia.charging.session.domain.ConnectorState;
 import com.ecopedia.charging.session.domain.ConnectorStateRepository;
-import com.ecopedia.charging.session.domain.SessionEndReason;
-import com.ecopedia.charging.session.domain.SessionPaymentStatus;
+import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
-import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,14 +44,17 @@ public class ChargingTransactionalCoordinator {
     private final BookingRepository bookingRepository;
     private final ConnectorStateRepository connectorStateRepository;
     private final ChargingSessionRepository chargingSessionRepository;
+    private final Duration earlyActivation;
 
     public ChargingTransactionalCoordinator(
             BookingRepository bookingRepository,
             ConnectorStateRepository connectorStateRepository,
-            ChargingSessionRepository chargingSessionRepository) {
+            ChargingSessionRepository chargingSessionRepository,
+            @Value("${ecopedia.booking.early-activation:PT15M}") Duration earlyActivation) {
         this.bookingRepository = bookingRepository;
         this.connectorStateRepository = connectorStateRepository;
         this.chargingSessionRepository = chargingSessionRepository;
+        this.earlyActivation = earlyActivation;
     }
 
     /**
@@ -108,10 +109,9 @@ public class ChargingTransactionalCoordinator {
                         driverId);
                 throw new BookingNotFoundException(bookingId);
             }
-            if (!booking.isConfirmed()) {
-                throw new InvalidBookingRequestException("La reserva " + bookingId + " no está confirmada");
-            }
-            booking.startCharging(now);
+            // Si la reserva dejó de estar confirmada, o todavía no es su rango de habilitación, la
+            // propia reserva lo rechaza con 409 (patrón State).
+            booking.startCharging(now, earlyActivation);
             bookingRepository.save(booking);
         }
 
@@ -154,73 +154,84 @@ public class ChargingTransactionalCoordinator {
     }
 
     /**
-     * Cierra la sesión en la transacción local (RF11, RNF06, ECO-44): la sesión pasa a
-     * {@code COMPLETED} con lo que entregó el cargador, el conector vuelve a {@code AVAILABLE} y la
-     * reserva a {@code COMPLETED}, con la ventana recortada al instante del cierre.
-     *
-     * <p>Las tres escrituras juntas o ninguna, igual que al habilitar. Lo externo —apagar el cargador,
-     * calcular el importe, cobrarlo— queda afuera: el cargador se apaga antes y el cobro va después,
-     * para que la liberación del conector nunca dependa de un tercero.
-     *
-     * <p>El bloqueo optimista de la sesión es el que decide si dos cierres llegan a la vez —el del
-     * conductor y el corte automático de ECO-45—: uno confirma y el otro falla con
-     * {@code OptimisticLockingFailureException}, sin liquidar dos veces.
-     *
-     * @return la sesión cerrada por este pedido, o vacío si ya estaba cerrada: quien llama no tiene
-     *     que volver a liquidarla
+     * Cierra atómicamente la sesión local, libera el conector y finaliza la reserva recortando la
+     * ventana remanente (Flujo C, RF12, RNF06, ECO-55).
      */
     @Transactional(rollbackFor = Exception.class)
-    public Optional<ChargingSession> persistLocalCompletion(
-            String sessionId, ChargerReading reading, SessionEndReason reason, Instant now) {
+    public CompletedSessionData completeLocalSession(String sessionId, BigDecimal kwhDelivered, Instant stoppedAt) {
+        Objects.requireNonNull(sessionId, "sessionId no puede ser null");
+        Objects.requireNonNull(stoppedAt, "stoppedAt no puede ser null");
+
         ChargingSession session = chargingSessionRepository
                 .findBySessionId(sessionId)
-                .orElseThrow(() -> new ChargingSessionNotFoundException(sessionId));
+                .orElseThrow(() -> new SessionNotFoundException(sessionId));
+
         if (!session.isActive()) {
-            return Optional.empty();
+            throw new SessionAlreadyClosedException(sessionId);
         }
 
-        session.complete(now, reading, reason);
-        ChargingSession saved = chargingSessionRepository.save(session);
+        session.stop(stoppedAt, kwhDelivered);
+        ChargingSession savedSession = chargingSessionRepository.save(session);
 
-        connectorStateRepository.findById(session.getConnectorId()).ifPresent(state -> {
+        connectorStateRepository.findById(savedSession.getConnectorId()).ifPresent(state -> {
             if (sessionId.equals(state.getCurrentSessionId())) {
-                state.release(now);
+                state.release(stoppedAt);
                 connectorStateRepository.save(state);
             }
         });
 
-        if (session.getBookingId() != null) {
-            bookingRepository.findById(session.getBookingId()).ifPresent(booking -> {
-                if (booking.isInProgress()) {
-                    booking.completeCharging(now);
-                    bookingRepository.save(booking);
-                }
-            });
+        BigDecimal depositAmount = BigDecimal.ZERO;
+        Instant originalWindowEnd = null;
+        if (savedSession.getBookingId() != null) {
+            Booking booking = bookingRepository
+                    .findById(savedSession.getBookingId())
+                    .orElseThrow(() -> new BookingNotFoundException(savedSession.getBookingId()));
+            originalWindowEnd = booking.getWindow().end();
+            depositAmount = booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO;
+            booking.completeCharging(stoppedAt);
+            bookingRepository.save(booking);
         }
 
         log.info(
-                "Transacción local de cierre confirmada: sesión={} ({}), conector={} (AVAILABLE), reserva={}, {} kWh",
+                "Sesión {} cerrada localmente: conector={} liberado, kWh={}",
                 sessionId,
-                reason,
-                session.getConnectorId(),
-                session.getBookingId(),
-                saved.getKwhDelivered());
-        return Optional.of(saved);
+                savedSession.getConnectorId(),
+                savedSession.getKwhDelivered());
+
+        return new CompletedSessionData(savedSession, depositAmount, originalWindowEnd);
     }
 
-    /** Anota la liquidación y el resultado del cobro de una sesión ya cerrada (RF14). */
+    public record CompletedSessionData(ChargingSession session, BigDecimal depositAmount, Instant originalWindowEnd) {}
+
+    /**
+     * Anota en la sesión ya cerrada cómo se liquidó (RF14, ECO-44). Va en su propia transacción,
+     * después del cobro, que es externo: si esto fallara, la sesión ya está cerrada y el conector
+     * libre, que es lo que no puede esperar.
+     */
     @Transactional(rollbackFor = Exception.class)
     public ChargingSession recordSettlement(
-            String sessionId, ChargeSettlement settlement, SessionPaymentStatus paymentStatus) {
+            String sessionId,
+            BigDecimal depositApplied,
+            BigDecimal realCost,
+            BigDecimal finalBilled,
+            BigDecimal additionalCharge,
+            ConsumptionPaymentStatus paymentStatus) {
         ChargingSession session = chargingSessionRepository
                 .findBySessionId(sessionId)
-                .orElseThrow(() -> new ChargingSessionNotFoundException(sessionId));
-        if (settlement != null) {
-            session.recordSettlement(settlement);
-        }
-        if (paymentStatus != null) {
-            session.recordPayment(paymentStatus);
-        }
+                .orElseThrow(() -> new SessionNotFoundException(sessionId));
+        session.recordSettlement(depositApplied, realCost, finalBilled, additionalCharge, paymentStatus);
         return chargingSessionRepository.save(session);
+    }
+
+    /**
+     * La sesión ya estaba cerrada cuando llegó este cierre: la cerró otro camino (el corte automático,
+     * un reintento). Sigue siendo un {@link InvalidBookingRequestException}, como antes de ECO-44,
+     * pero con nombre propio para que quien cierra la distinga y no liquide dos veces.
+     */
+    public static class SessionAlreadyClosedException extends InvalidBookingRequestException {
+
+        public SessionAlreadyClosedException(String sessionId) {
+            super("La sesión " + sessionId + " ya fue finalizada");
+        }
     }
 }

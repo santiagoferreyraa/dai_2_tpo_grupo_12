@@ -1,14 +1,14 @@
 package com.ecopedia.charging.session.domain;
 
+import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
- * Una sesión de carga como la ve su conductor (RF11, ECO-44): mientras carga y después, con la
- * liquidación.
+ * Una sesión de carga como la ve su conductor (RF11, ECO-44): mientras carga, con la última lectura
+ * del cargador (RF16), y después, con la liquidación que quedó guardada.
  *
- * <p>Mientras la sesión está activa, {@code kwhDelivered} y {@code batteryPercent} son lo último que
- * se supo; los actualiza la telemetría (ECO-45). Los importes son {@code null} hasta que cierra.
+ * <p>Los importes y el estado del cobro son {@code null} mientras la sesión sigue activa.
  */
 public record ChargingSessionView(
         String sessionId,
@@ -20,13 +20,14 @@ public record ChargingSessionView(
         Instant startedAt,
         Instant stoppedAt,
         BigDecimal kwhDelivered,
+        BigDecimal currentPowerKw,
         BigDecimal batteryPercent,
-        SessionEndReason endReason,
+        Instant lastReadingAt,
+        BigDecimal depositAmount,
         BigDecimal realCost,
-        BigDecimal depositApplied,
-        BigDecimal finalAmount,
-        BigDecimal amountToCharge,
-        SessionPaymentStatus paymentStatus) {
+        BigDecimal finalBilled,
+        BigDecimal additionalCharge,
+        ConsumptionPaymentStatus paymentStatus) {
 
     public static ChargingSessionView of(ChargingSession session) {
         return new ChargingSessionView(
@@ -39,12 +40,13 @@ public record ChargingSessionView(
                 session.getStartedAt(),
                 session.getStoppedAt(),
                 session.getKwhDelivered(),
+                session.getCurrentPowerKw(),
                 session.getBatteryPercent(),
-                session.getEndReason(),
-                session.getRealCost(),
+                session.getLastReadingAt(),
                 session.getDepositApplied(),
-                session.getFinalAmount(),
-                session.getAmountToCharge(),
+                session.getRealCost(),
+                session.getFinalBilled(),
+                session.getAdditionalCharge(),
                 session.getPaymentStatus());
     }
 }

@@ -4,7 +4,14 @@ import { CONNECTOR_TYPE_LABEL, formatPower } from '@/features/terminals/format'
 
 import BookingTicket from './components/BookingTicket'
 import { useMyBookings } from './data/myBookingsStore'
-import { formatCountdown, formatRelative, formatTime, formatWindow, isSameDay } from './slots'
+import {
+  activationOpensAt,
+  formatCountdown,
+  formatRelative,
+  formatTime,
+  formatWindow,
+  isSameDay,
+} from './slots'
 import { bookingPhase, nextBooking, timeRemaining } from './timeline'
 import { useNow } from './useNow'
 
@@ -54,6 +61,11 @@ export default function ActiveBookingBanner() {
   const phase = bookingPhase(booking, now)
   const remaining = timeRemaining(booking, now) ?? 0
   const inProgress = phase === 'inProgress'
+  /*
+    Se puede empezar a cargar desde 15 minutos antes del turno, si la terminal está libre: desde ahí
+    se ofrece el botón. Si la terminal está ocupada, la pantalla de carga lo dice.
+  */
+  const canStartCharging = inProgress || now.getTime() >= activationOpensAt(booking.start).getTime()
 
   /*
    * Con la ventana corriendo, cuánto de ella ya pasó. Es la barra del borde de abajo: dice de un
@@ -179,11 +191,11 @@ export default function ActiveBookingBanner() {
               </a>
             )}
             {/*
-              Con la ventana corriendo, lo que el conductor quiere es cargar: el botón lo lleva a
-              escanear la terminal con esta reserva ya elegida (ECO-44). Si la carga ya arrancó,
-              a verla.
+              Con la ventana corriendo —o a menos de 15 minutos de empezar—, lo que el conductor
+              quiere es cargar: el botón lo lleva a escanear la terminal con esta reserva ya elegida
+              (ECO-44). Si la carga ya arrancó, a verla.
             */}
-            {inProgress ? (
+            {canStartCharging ? (
               <Link
                 to={
                   booking.status === 'IN_PROGRESS'

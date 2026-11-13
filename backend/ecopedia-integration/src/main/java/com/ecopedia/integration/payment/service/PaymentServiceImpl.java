@@ -2,8 +2,8 @@ package com.ecopedia.integration.payment.service;
 
 import com.ecopedia.integration.payment.domain.CardData;
 import com.ecopedia.integration.payment.domain.CardValidation;
-import com.ecopedia.integration.payment.domain.ConsumptionCharge;
 import com.ecopedia.integration.payment.domain.ConsumptionChargeRequest;
+import com.ecopedia.integration.payment.domain.ConsumptionChargeResult;
 import com.ecopedia.integration.payment.domain.DepositCharge;
 import com.ecopedia.integration.payment.domain.DepositChargeNotFoundException;
 import com.ecopedia.integration.payment.domain.DepositChargeRepository;
@@ -315,75 +315,88 @@ public class PaymentServiceImpl implements PaymentService {
         return pendingPaymentRepository.existsByDriverIdAndStatus(driverId, PendingPaymentStatus.PENDING);
     }
 
-    /*
-     * Sin transacción propia, como el cobro de la seña: la conexión a la base no queda tomada mientras
-     * se espera a la pasarela.
-     */
     @Override
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public ConsumptionCharge chargeConsumption(ConsumptionChargeRequest request) {
-        Optional<PendingPayment> alreadyOwed = pendingPaymentRepository.findFirstByReference(request.reference());
-        if (alreadyOwed.isPresent()) {
-            return new ConsumptionCharge(
-                    ConsumptionCharge.Status.DEBT_REGISTERED,
-                    alreadyOwed.get().getAmount(),
-                    alreadyOwed.get().getId());
+    public ConsumptionChargeResult chargeConsumption(ConsumptionChargeRequest request) {
+        Optional<PendingPayment> existingDebt = pendingPaymentRepository.findByReference(request.sessionId());
+        if (existingDebt.isPresent()) {
+            PendingPayment debt = existingDebt.get();
+            return ConsumptionChargeResult.debtRecorded(
+                    debt.getAmount(), request.sessionId(), debt.getId(), debt.getReason());
         }
 
         PaymentMethod card;
         try {
-            card = cardToCharge(request.driverId(), null);
+            card = cardToCharge(request.driverId(), request.paymentMethodId());
         } catch (NoUsablePaymentMethodException noCard) {
-            // Dio de baja la tarjeta (o se le venció) con la carga en curso: la energía se entregó igual.
-            return registerDebt(request, null, "Consumo sin tarjeta con la que cobrar");
+            log.warn(
+                    "Conductor {} sin tarjeta vigente al liquidar sesión {}: se registra deuda pendiente",
+                    request.driverId(),
+                    request.sessionId());
+            return recordDebt(
+                    request.driverId(),
+                    null,
+                    request.amount(),
+                    "El conductor no posee tarjeta vigente al cerrar la sesión",
+                    request.sessionId());
         }
 
-        GatewayCharge answer;
         try {
-            answer = paymentGateway.charge(
+            GatewayCharge answer = paymentGateway.charge(
                     card.getGatewayToken(),
                     request.amount(),
-                    "Consumo de la sesión de carga",
-                    request.reference(),
-                    "consumption-" + request.reference());
-        } catch (PaymentGatewayUnavailableException gatewayDown) {
-            /*
-             * No se sabe si cobró. Se anota como deuda igual (RNF06), y el reintento con la misma clave
-             * es el que lo aclara: si la pasarela ya lo había cobrado, devuelve ese cobro y la deuda se
-             * salda sin volver a cobrar.
-             */
-            return registerDebt(request, card.getId(), "Consumo sin respuesta de la pasarela");
+                    "Consumo de sesión de carga",
+                    request.sessionId(),
+                    request.idempotencyKey());
+            if (answer.approved()) {
+                log.info(
+                        "Consumo de sesión {} cobrado (${}) al conductor {}: pago {}",
+                        request.sessionId(),
+                        request.amount(),
+                        request.driverId(),
+                        answer.paymentId());
+                return ConsumptionChargeResult.charged(
+                        request.amount(), request.sessionId(), answer.paymentId(), answer.statusDetail());
+            }
+            log.warn(
+                    "Pasarela rechazó cobro de sesión {} al conductor {}: {}",
+                    request.sessionId(),
+                    request.driverId(),
+                    answer.statusDetail());
+            return recordDebt(
+                    request.driverId(),
+                    card.getId(),
+                    request.amount(),
+                    truncatedReason(answer.statusDetail(), "Cobro rechazado por la pasarela"),
+                    request.sessionId());
+        } catch (PaymentGatewayUnavailableException unavailable) {
+            log.warn(
+                    "Pasarela no disponible al liquidar sesión {} del conductor {}: se registra deuda pendiente",
+                    request.sessionId(),
+                    request.driverId(),
+                    unavailable);
+            return recordDebt(
+                    request.driverId(),
+                    card.getId(),
+                    request.amount(),
+                    "Pasarela de pagos no disponible al liquidar sesión",
+                    request.sessionId());
         }
-
-        if (!answer.approved()) {
-            return registerDebt(request, card.getId(), "Consumo rechazado: " + answer.statusDetail());
-        }
-        log.info(
-                "Consumo cobrado: ${} al conductor {} ({}), cobro {} en la pasarela",
-                request.amount(),
-                request.driverId(),
-                request.reference(),
-                answer.paymentId());
-        return new ConsumptionCharge(ConsumptionCharge.Status.CHARGED, request.amount(), null);
     }
 
-    private ConsumptionCharge registerDebt(ConsumptionChargeRequest request, Long paymentMethodId, String reason) {
-        String trimmedReason = reason.length() > 120 ? reason.substring(0, 120) : reason;
-        PendingPayment debt = pendingPaymentRepository.save(new PendingPayment(
-                request.driverId(),
-                paymentMethodId,
-                request.amount(),
-                trimmedReason,
-                request.reference(),
-                clock.instant()));
-        log.warn(
-                "No se pudo cobrar el consumo de ${} al conductor {} ({}): queda como deuda {} — {}",
-                request.amount(),
-                request.driverId(),
-                request.reference(),
-                debt.getId(),
-                reason);
-        return new ConsumptionCharge(ConsumptionCharge.Status.DEBT_REGISTERED, request.amount(), debt.getId());
+    private ConsumptionChargeResult recordDebt(
+            Long driverId, Long paymentMethodId, BigDecimal amount, String reason, String sessionId) {
+        PendingPayment saved = pendingPaymentRepository.save(
+                new PendingPayment(driverId, paymentMethodId, amount, reason, sessionId, clock.instant()));
+        return ConsumptionChargeResult.debtRecorded(amount, sessionId, saved.getId(), reason);
+    }
+
+    private static String truncatedReason(String detail, String fallback) {
+        if (detail == null || detail.isBlank()) {
+            return fallback;
+        }
+        String trimmed = detail.trim();
+        return trimmed.length() <= 120 ? trimmed : trimmed.substring(0, 120);
     }
 
     private static DepositCharge repeated(DepositCharge previous, DepositChargeRequest request) {

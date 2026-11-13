@@ -3,6 +3,7 @@ package com.ecopedia.core.pricing.web;
 import com.ecopedia.core.pricing.domain.ChargeBreakdown;
 import com.ecopedia.core.pricing.domain.PricingRules;
 import com.ecopedia.core.pricing.domain.PricingService;
+import com.ecopedia.core.pricing.web.dto.ChargeBreakdownResponse;
 import com.ecopedia.core.pricing.web.dto.DepositResponse;
 import com.ecopedia.core.pricing.web.dto.EstimateCostResponse;
 import com.ecopedia.core.pricing.web.dto.NetworkRatesRequest;
@@ -107,6 +108,22 @@ public class PricingController {
                 pricingService.estimateCost(connectorId, estimatedKwh, start != null ? start : clock.instant());
         return EstimateCostResponse.from(
                 connectorId, estimatedKwh, pricingService.calculateDeposit(connectorId), estimate);
+    }
+
+    /**
+     * RF14 / ECO-55: calcula el costo real de una carga terminada a partir de la energía entregada,
+     * la potencia real, el instante de inicio y los minutos de exceso.
+     */
+    @GetMapping("/real-cost")
+    public ChargeBreakdownResponse realCost(
+            @RequestParam Long connectorId,
+            @RequestParam BigDecimal kwhConsumed,
+            @RequestParam BigDecimal deliveredPowerKw,
+            @RequestParam Instant start,
+            @RequestParam(defaultValue = "0") long excessMinutes) {
+        ChargeBreakdown breakdown =
+                pricingService.calculateRealCost(connectorId, kwhConsumed, deliveredPowerKw, start, excessMinutes);
+        return ChargeBreakdownResponse.from(kwhConsumed, excessMinutes, breakdown);
     }
 
     /* Los errores (400 con el motivo, 404 si la estación o el conector no existen) los traduce ApiExceptionHandler. */

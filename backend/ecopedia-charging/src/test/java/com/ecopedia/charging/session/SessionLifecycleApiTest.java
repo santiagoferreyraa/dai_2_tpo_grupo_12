@@ -13,17 +13,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ecopedia.charging.booking.TestTokens;
+import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import com.ecopedia.charging.session.domain.ActivationRequest;
-import com.ecopedia.charging.session.domain.ChargingSessionNotFoundException;
 import com.ecopedia.charging.session.domain.ChargingSessionService;
 import com.ecopedia.charging.session.domain.ChargingSessionView;
 import com.ecopedia.charging.session.domain.DriverAlreadyChargingException;
 import com.ecopedia.charging.session.domain.InvalidAccessCodeException;
-import com.ecopedia.charging.session.domain.SessionEndReason;
-import com.ecopedia.charging.session.domain.SessionPaymentStatus;
+import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import com.ecopedia.charging.session.domain.SessionStatus;
+import com.ecopedia.charging.session.domain.SessionStopResult;
 import com.ecopedia.charging.session.domain.TooManyAccessCodeAttemptsException;
-import com.ecopedia.charging.session.service.ChargingActivationService;
 import com.ecopedia.charging.web.ApiProblems;
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -59,9 +58,6 @@ class SessionLifecycleApiTest {
     private String jwtSecret;
 
     @MockitoBean
-    private ChargingActivationService activationService;
-
-    @MockitoBean
     private ChargingSessionService sessionService;
 
     private String driver() {
@@ -80,33 +76,49 @@ class SessionLifecycleApiTest {
                 start,
                 start.plusSeconds(1800),
                 new BigDecimal("20.000"),
+                null,
                 new BigDecimal("76.0"),
-                SessionEndReason.DRIVER_STOPPED,
-                new BigDecimal("7000.00"),
+                start.plusSeconds(1790),
                 new BigDecimal("3000.00"),
                 new BigDecimal("7000.00"),
+                new BigDecimal("7000.00"),
                 new BigDecimal("4000.00"),
-                SessionPaymentStatus.CHARGED);
+                ConsumptionPaymentStatus.CHARGED);
+    }
+
+    private static SessionStopResult stopped() {
+        Instant start = Instant.parse("2026-11-02T15:00:00Z");
+        return new SessionStopResult(
+                "sess-1",
+                42L,
+                8L,
+                SessionStatus.COMPLETED,
+                start,
+                start.plusSeconds(1800),
+                new BigDecimal("20.000"),
+                new BigDecimal("3000.00"),
+                new BigDecimal("7000.00"),
+                new BigDecimal("7000.00"),
+                new BigDecimal("4000.00"),
+                ConsumptionPaymentStatus.CHARGED);
     }
 
     @Test
     @DisplayName("POST /api/sessions/{id}/stop devuelve la sesión cerrada con su liquidación")
     void stopReturnsSettlement() throws Exception {
-        when(sessionService.stop("sess-1", DRIVER_ID)).thenReturn(completed());
+        when(sessionService.stopSession("sess-1", DRIVER_ID)).thenReturn(stopped());
 
         mockMvc.perform(post("/api/sessions/sess-1/stop").header(HttpHeaders.AUTHORIZATION, driver()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("COMPLETED"))
-                .andExpect(jsonPath("$.endReason").value("DRIVER_STOPPED"))
-                .andExpect(jsonPath("$.amountToCharge").value(4000.00))
+                .andExpect(jsonPath("$.additionalCharge").value(4000.00))
                 .andExpect(jsonPath("$.paymentStatus").value("CHARGED"));
     }
 
     @Test
     @DisplayName("Detener la sesión de otro conductor es el 404 genérico")
     void stopForeignSessionIs404() throws Exception {
-        when(sessionService.stop("sess-ajena", DRIVER_ID))
-                .thenThrow(new ChargingSessionNotFoundException("sess-ajena"));
+        when(sessionService.stopSession("sess-ajena", DRIVER_ID)).thenThrow(new SessionNotFoundException("sess-ajena"));
 
         mockMvc.perform(post("/api/sessions/sess-ajena/stop").header(HttpHeaders.AUTHORIZATION, driver()))
                 .andExpect(status().isNotFound())
@@ -120,7 +132,7 @@ class SessionLifecycleApiTest {
         mockMvc.perform(post("/api/sessions/sess-1/stop")
                         .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, 3L, "CPO")))
                 .andExpect(status().is4xxClientError());
-        verify(sessionService, never()).stop(any(), any());
+        verify(sessionService, never()).stopSession(any(), any());
     }
 
     @Test
@@ -154,13 +166,13 @@ class SessionLifecycleApiTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"targetBatteryPercent\":80}"))
                 .andExpect(status().isBadRequest());
-        verify(activationService, never()).activate(any(), any());
+        verify(sessionService, never()).activate(any(), any());
     }
 
     @Test
     @DisplayName("Código que no abre el conector: 422 INVALID_ACCESS_CODE, con un texto fijo")
     void invalidCodeIs422() throws Exception {
-        when(activationService.activate(any(ActivationRequest.class), any()))
+        when(sessionService.activate(any(ActivationRequest.class), any()))
                 .thenThrow(new InvalidAccessCodeException("El código es de otro conector"));
 
         mockMvc.perform(post("/api/sessions/activation")
@@ -175,7 +187,7 @@ class SessionLifecycleApiTest {
     @Test
     @DisplayName("Demasiados códigos errados: 429 con Retry-After")
     void tooManyAttemptsIs429() throws Exception {
-        when(activationService.activate(any(ActivationRequest.class), any()))
+        when(sessionService.activate(any(ActivationRequest.class), any()))
                 .thenThrow(new TooManyAccessCodeAttemptsException(DRIVER_ID, Duration.ofSeconds(240)));
 
         mockMvc.perform(post("/api/sessions/activation")
@@ -190,7 +202,7 @@ class SessionLifecycleApiTest {
     @Test
     @DisplayName("Ya cargando: 409 DRIVER_ALREADY_CHARGING con la sesión activa")
     void alreadyChargingIs409() throws Exception {
-        when(activationService.activate(any(ActivationRequest.class), any()))
+        when(sessionService.activate(any(ActivationRequest.class), any()))
                 .thenThrow(new DriverAlreadyChargingException(DRIVER_ID, "sess-viva"));
 
         mockMvc.perform(post("/api/sessions/activation")

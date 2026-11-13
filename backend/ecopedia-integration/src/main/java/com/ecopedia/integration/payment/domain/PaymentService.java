@@ -100,16 +100,11 @@ public interface PaymentService {
     boolean hasOutstandingDebt(Long driverId);
 
     /**
-     * Cobra el consumo de una sesión de carga al cerrarla (RF14, ECO-44), con la tarjeta usable más
-     * reciente del conductor.
+     * Cobra el consumo final de una sesión cerrada en la pasarela (RF14, RNF06, ECO-55).
      *
-     * <p><b>Nunca falla hacia quien llama por un problema de cobro</b> (RNF06): la energía ya se
-     * entregó y el conector ya se liberó. Si la pasarela rechaza, no contesta o el conductor no tiene
-     * tarjeta, el importe queda como deuda pendiente ({@link PendingPayment}) y se contesta
-     * {@link ConsumptionCharge.Status#DEBT_REGISTERED}.
-     *
-     * <p>Idempotente por {@code reference}: si ya hay una deuda anotada para esa sesión, se devuelve
-     * esa; y si ya se cobró, la pasarela reconoce la clave y devuelve el mismo cobro.
+     * <p>Si el conductor no tiene tarjeta vigente, si la pasarela rechaza el cargo o si no está
+     * disponible, registra un {@link PendingPayment} en estado {@link PendingPaymentStatus#PENDING}
+     * sin lanzar excepción para no bloquear la liberación del conector.
      */
-    ConsumptionCharge chargeConsumption(ConsumptionChargeRequest request);
+    ConsumptionChargeResult chargeConsumption(ConsumptionChargeRequest request);
 }

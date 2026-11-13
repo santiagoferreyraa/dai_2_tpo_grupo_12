@@ -1,7 +1,6 @@
 import { formatMoney } from '@/features/bookings/charges'
 
 import { formatDuration, formatKwh } from '../format'
-import { END_REASON_LABEL } from '../messages'
 import type { ChargingSession } from '../types'
 
 interface SessionSummaryProps {
@@ -18,7 +17,7 @@ interface SessionSummaryProps {
 export default function SessionSummary({ session }: SessionSummaryProps) {
   const durationMs =
     session.stoppedAt === null ? 0 : session.stoppedAt.getTime() - session.startedAt.getTime()
-  const deposit = session.depositApplied ?? 0
+  const deposit = session.depositAmount ?? 0
 
   return (
     <div className="flex flex-col gap-6">
@@ -26,9 +25,6 @@ export default function SessionSummary({ session }: SessionSummaryProps) {
         <h1 className="text-text text-3xl leading-tight font-extrabold tracking-tight">
           {session.status === 'FAULTED' ? 'La carga se interrumpió' : 'Carga terminada'}
         </h1>
-        {session.endReason !== null && (
-          <p className="text-text-muted text-sm">{END_REASON_LABEL[session.endReason]}.</p>
-        )}
       </header>
 
       <dl className="flex flex-col gap-2 text-sm">
@@ -42,8 +38,8 @@ export default function SessionSummary({ session }: SessionSummaryProps) {
         )}
         {session.realCost !== null && <Row label="Consumo" value={formatMoney(session.realCost)} />}
         {deposit > 0 && <Row label="Seña ya pagada" value={`− ${formatMoney(deposit)}`} />}
-        {session.finalAmount !== null && (
-          <Row label="Total de la carga" value={formatMoney(session.finalAmount)} strong />
+        {session.finalBilled !== null && (
+          <Row label="Total de la carga" value={formatMoney(session.finalBilled)} strong />
         )}
       </dl>
 
@@ -55,18 +51,18 @@ export default function SessionSummary({ session }: SessionSummaryProps) {
 }
 
 function paymentMessage(session: ChargingSession): string {
-  const amount = session.amountToCharge ?? 0
+  const amount = session.additionalCharge ?? 0
   switch (session.paymentStatus) {
     case 'CHARGED':
       return `Cobramos ${formatMoney(amount)} a tu tarjeta.`
     case 'NOT_REQUIRED':
-      return (session.depositApplied ?? 0) > 0
+      return (session.depositAmount ?? 0) > 0
         ? 'La seña cubrió el consumo: no se cobró nada más.'
         : 'No hubo consumo que cobrar.'
-    case 'DEBT_REGISTERED':
+    case 'DEBT_RECORDED':
       return `No pudimos cobrar ${formatMoney(amount)} a tu tarjeta y quedó como saldo pendiente. Hasta saldarlo no vas a poder reservar ni iniciar otra carga.`
-    case 'PENDING':
-    case 'NOT_SETTLED':
+    case 'PENDING_SETTLEMENT':
+    case null:
       return 'Estamos procesando el cobro de esta carga. Lo vas a ver en tu historial.'
   }
 }

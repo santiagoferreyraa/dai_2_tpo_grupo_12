@@ -57,7 +57,17 @@ export default function ActiveSessionCard({
     setStopping(true)
     setError(null)
     try {
-      onFinished(await stopCharging(session.sessionId))
+      const stopped = await stopCharging(session.sessionId)
+      /*
+        La respuesta del stop trae la liquidación, pero no la batería ni el objetivo: se completan
+        con lo último que se sabía de la sesión, para que el resumen los muestre.
+      */
+      onFinished({
+        ...stopped,
+        targetBatteryPercent: stopped.targetBatteryPercent ?? session.targetBatteryPercent,
+        powerLimitKw: stopped.powerLimitKw ?? session.powerLimitKw,
+        batteryPercent: stopped.batteryPercent ?? session.batteryPercent,
+      })
     } catch (failure) {
       setError(
         failure instanceof ApiError && failure.status === 0
@@ -87,11 +97,20 @@ export default function ActiveSessionCard({
           label="Batería"
           value={
             session.batteryPercent === null
-              ? `— / ${String(session.targetBatteryPercent)}%`
-              : `${String(Math.round(session.batteryPercent))}% / ${String(session.targetBatteryPercent)}%`
+              ? `— / ${String(session.targetBatteryPercent ?? '—')}%`
+              : `${String(Math.round(session.batteryPercent))}% / ${String(session.targetBatteryPercent ?? '—')}%`
           }
         />
-        <Stat label="Potencia autorizada" value={`${formatKw(session.powerLimitKw)} kW`} />
+        <Stat
+          label="Potencia"
+          value={
+            session.currentPowerKw !== null
+              ? `${formatKw(session.currentPowerKw)} kW`
+              : session.powerLimitKw !== null
+                ? `hasta ${formatKw(session.powerLimitKw)} kW`
+                : '—'
+          }
+        />
       </dl>
 
       <p className="text-text-muted text-xs leading-relaxed">

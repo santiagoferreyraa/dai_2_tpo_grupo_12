@@ -77,17 +77,6 @@ ecopedia:
       email: ${ECOPEDIA_CPO_EMAIL:}
       password: ${ECOPEDIA_CPO_PASSWORD:}
 
-  # Los cargadores corren como proceso aparte (simulation/charger, 8088) y Terminales les da las
-  # órdenes por REST con ChargerRestClient. Ver ARQUITECTURA §2.3, ficha 2.
-  charger:
-    url: ${ECOPEDIA_CHARGER_URL:http://localhost:8088}
-    # La clave con la que Terminales se presenta ante los cargadores. La misma variable la lee el
-    # simulador. Sin valor por defecto: sin perfil, core no arranca sin el .env.
-    access-token: ${ECOPEDIA_CHARGER_ACCESS_TOKEN}
-    # Los mismos que con la pasarela y la distribuidora: ver ChargerClientConfig.
-    connect-timeout: 2s
-    read-timeout: 5s
-
   # La clave de servicio que piden las rutas /internal/** (hoy, la que usa SesionesDeCarga para
   # resolver el código de acceso que escaneó el conductor, ECO-44). No es la de un usuario: es la del
   # servicio, la misma variable que leen ecopedia-charging y ecopedia-integration. Sin valor por
@@ -148,8 +137,6 @@ spring:
 ecopedia:
   jwt:
     secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
-  charger:
-    access-token: ${ECOPEDIA_CHARGER_ACCESS_TOKEN:ecopedia-dev-only-charger-token}
   internal:
     token: ${ECOPEDIA_INTERNAL_TOKEN:ecopedia-dev-only-internal-token}
 
@@ -201,7 +188,5 @@ spring:
 ecopedia:
   jwt:
     secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
-  charger:
-    access-token: ${ECOPEDIA_CHARGER_ACCESS_TOKEN:ecopedia-dev-only-charger-token}
   internal:
     token: ${ECOPEDIA_INTERNAL_TOKEN:ecopedia-dev-only-internal-token}
