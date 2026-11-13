@@ -45,8 +45,8 @@ import com.ecopedia.charging.session.domain.PowerDecision;
 import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import com.ecopedia.charging.session.domain.SessionStatus;
 import com.ecopedia.charging.session.domain.SessionStopResult;
-import com.ecopedia.charging.session.service.ChargingActivationService;
 import com.ecopedia.charging.session.service.ChargingPowerPolicy;
+import com.ecopedia.charging.session.service.ChargingSessionServiceImpl;
 import com.ecopedia.charging.session.service.ChargingSettlementPolicy;
 import com.ecopedia.charging.session.service.ChargingTransactionalCoordinator;
 import com.ecopedia.charging.session.service.ChargingTransactionalCoordinator.CompletedSessionData;
@@ -62,7 +62,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-class ChargingActivationServiceTest {
+class ChargingSessionServiceImplTest {
 
     private final ChargingPointCatalog catalog = mock(ChargingPointCatalog.class);
     private final ChargingPowerPolicy powerPolicy = mock(ChargingPowerPolicy.class);
@@ -76,7 +76,7 @@ class ChargingActivationServiceTest {
     private final TariffDirectory tariffDirectory = mock(TariffDirectory.class);
     private final Clock clock = Clock.fixed(Instant.parse("2026-11-02T15:00:00Z"), ZoneOffset.UTC);
 
-    private ChargingActivationService activationService;
+    private ChargingSessionServiceImpl activationService;
 
     private static final Long CONNECTOR_ID = 10L;
     private static final Long DRIVER_ID = 5L;
@@ -85,7 +85,7 @@ class ChargingActivationServiceTest {
 
     @BeforeEach
     void setUp() {
-        activationService = new ChargingActivationService(
+        activationService = new ChargingSessionServiceImpl(
                 catalog,
                 powerPolicy,
                 paymentDirectory,

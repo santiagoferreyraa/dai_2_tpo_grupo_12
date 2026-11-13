@@ -23,6 +23,7 @@ import com.ecopedia.charging.session.domain.ChargingPoint;
 import com.ecopedia.charging.session.domain.ChargingPointCatalog;
 import com.ecopedia.charging.session.domain.ChargingSession;
 import com.ecopedia.charging.session.domain.ChargingSessionRepository;
+import com.ecopedia.charging.session.domain.ChargingSessionService;
 import com.ecopedia.charging.session.domain.PhysicalChargerPort;
 import com.ecopedia.charging.session.domain.PhysicalChargerRejectedException;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
@@ -61,9 +62,9 @@ import org.springframework.stereotype.Service;
  * </ol>
  */
 @Service
-public class ChargingActivationService {
+public class ChargingSessionServiceImpl implements ChargingSessionService {
 
-    private static final Logger log = LoggerFactory.getLogger(ChargingActivationService.class);
+    private static final Logger log = LoggerFactory.getLogger(ChargingSessionServiceImpl.class);
 
     private final ChargingPointCatalog chargingPointCatalog;
     private final ChargingPowerPolicy chargingPowerPolicy;
@@ -78,7 +79,7 @@ public class ChargingActivationService {
     private final Clock clock;
     private final Duration earlyActivation;
 
-    public ChargingActivationService(
+    public ChargingSessionServiceImpl(
             ChargingPointCatalog chargingPointCatalog,
             ChargingPowerPolicy chargingPowerPolicy,
             PaymentDirectory paymentDirectory,
@@ -105,6 +106,7 @@ public class ChargingActivationService {
         this.earlyActivation = earlyActivation;
     }
 
+    @Override
     public ActivationResult activate(ActivationRequest request, String authToken) {
         Objects.requireNonNull(request, "request no puede ser null");
         Instant now = clock.instant();
@@ -223,6 +225,7 @@ public class ChargingActivationService {
      * <p>Libera primero el cargador físico y la transacción local en base de datos, para garantizar
      * que una caída de Tarificación o Pagos nunca deje bloqueado al conector ni al conductor.
      */
+    @Override
     public SessionStopResult stopSession(String sessionId, Long driverId, BigDecimal reportedKwh) {
         Objects.requireNonNull(sessionId, "sessionId no puede ser null");
         Objects.requireNonNull(driverId, "driverId no puede ser null");
@@ -244,6 +247,7 @@ public class ChargingActivationService {
      * Corta automáticamente todas las sesiones activas cuya ventana reservada o ventana walk-in (15
      * minutos antes de la próxima reserva) ya venció (RF10, RF12, ECO-58).
      */
+    @Override
     public int stopExpiredSessions() {
         Instant now = clock.instant();
         List<ChargingSession> activeSessions = chargingSessionRepository.findByStatus(SessionStatus.ACTIVE);

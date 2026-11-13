@@ -2,8 +2,8 @@ package com.ecopedia.charging.session.web;
 
 import com.ecopedia.charging.security.AuthenticatedUser;
 import com.ecopedia.charging.session.domain.ActivationResult;
+import com.ecopedia.charging.session.domain.ChargingSessionService;
 import com.ecopedia.charging.session.domain.SessionStopResult;
-import com.ecopedia.charging.session.service.ChargingActivationService;
 import com.ecopedia.charging.session.web.dto.ActivationHttpRequest;
 import com.ecopedia.charging.session.web.dto.ActivationHttpResponse;
 import com.ecopedia.charging.session.web.dto.SessionStopResponse;
@@ -28,9 +28,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/sessions")
 public class SessionController {
 
-    private final ChargingActivationService activationService;
+    private final ChargingSessionService activationService;
 
-    public SessionController(ChargingActivationService activationService) {
+    public SessionController(ChargingSessionService activationService) {
         this.activationService = activationService;
     }
 
