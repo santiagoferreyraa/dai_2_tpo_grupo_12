@@ -1,6 +1,7 @@
 import { formatMoney } from '@/features/bookings/charges'
 
 import { formatDuration, formatKwh } from '../format'
+import { STOP_REASON_LABEL } from '../messages'
 import type { ChargingSession } from '../types'
 
 interface SessionSummaryProps {
@@ -25,6 +26,9 @@ export default function SessionSummary({ session }: SessionSummaryProps) {
         <h1 className="text-text text-3xl leading-tight font-extrabold tracking-tight">
           {session.status === 'FAULTED' ? 'La carga se interrumpió' : 'Carga terminada'}
         </h1>
+        {session.stopReason !== null && (
+          <p className="text-text-muted text-sm">{STOP_REASON_LABEL[session.stopReason]}</p>
+        )}
       </header>
 
       <dl className="flex flex-col gap-2 text-sm">

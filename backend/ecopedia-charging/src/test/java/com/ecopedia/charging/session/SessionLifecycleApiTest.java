@@ -21,6 +21,7 @@ import com.ecopedia.charging.session.domain.DriverAlreadyChargingException;
 import com.ecopedia.charging.session.domain.InvalidAccessCodeException;
 import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import com.ecopedia.charging.session.domain.SessionStatus;
+import com.ecopedia.charging.session.domain.SessionStopReason;
 import com.ecopedia.charging.session.domain.SessionStopResult;
 import com.ecopedia.charging.session.domain.TooManyAccessCodeAttemptsException;
 import com.ecopedia.charging.web.ApiProblems;
@@ -83,7 +84,8 @@ class SessionLifecycleApiTest {
                 new BigDecimal("7000.00"),
                 new BigDecimal("7000.00"),
                 new BigDecimal("4000.00"),
-                ConsumptionPaymentStatus.CHARGED);
+                ConsumptionPaymentStatus.CHARGED,
+                SessionStopReason.DRIVER_STOPPED);
     }
 
     private static SessionStopResult stopped() {
@@ -100,7 +102,8 @@ class SessionLifecycleApiTest {
                 new BigDecimal("7000.00"),
                 new BigDecimal("7000.00"),
                 new BigDecimal("4000.00"),
-                ConsumptionPaymentStatus.CHARGED);
+                ConsumptionPaymentStatus.CHARGED,
+                SessionStopReason.DRIVER_STOPPED);
     }
 
     @Test

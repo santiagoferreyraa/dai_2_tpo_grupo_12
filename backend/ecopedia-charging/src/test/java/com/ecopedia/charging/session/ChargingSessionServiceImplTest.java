@@ -36,6 +36,7 @@ import com.ecopedia.charging.session.domain.ActivationFailureReason;
 import com.ecopedia.charging.session.domain.ActivationRequest;
 import com.ecopedia.charging.session.domain.ActivationResult;
 import com.ecopedia.charging.session.domain.ChargeSettlement;
+import com.ecopedia.charging.session.domain.ChargerEndReason;
 import com.ecopedia.charging.session.domain.ChargingPoint;
 import com.ecopedia.charging.session.domain.ChargingPointCatalog;
 import com.ecopedia.charging.session.domain.ChargingSession;
@@ -47,7 +48,9 @@ import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
 import com.ecopedia.charging.session.domain.PowerDecision;
 import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import com.ecopedia.charging.session.domain.SessionStatus;
+import com.ecopedia.charging.session.domain.SessionStopReason;
 import com.ecopedia.charging.session.domain.SessionStopResult;
+import com.ecopedia.charging.session.domain.TelemetryReading;
 import com.ecopedia.charging.session.domain.TooManyAccessCodeAttemptsException;
 import com.ecopedia.charging.session.service.AccessCodeAttemptLimiter;
 import com.ecopedia.charging.session.service.ChargingPowerPolicy;
@@ -119,14 +122,15 @@ class ChargingSessionServiceImplTest {
      * acá sobre el mismo objeto, para que el resultado salga de la sesión como en producción.
      */
     private void settlesOn(ChargingSession closed) {
-        when(coordinator.recordSettlement(eq(closed.getSessionId()), any(), any(), any(), any(), any()))
+        when(coordinator.recordSettlement(eq(closed.getSessionId()), any(), any(), any(), any(), any(), any()))
                 .thenAnswer(inv -> {
                     closed.recordSettlement(
                             inv.getArgument(1),
                             inv.getArgument(2),
                             inv.getArgument(3),
                             inv.getArgument(4),
-                            inv.getArgument(5));
+                            inv.getArgument(5),
+                            inv.getArgument(6));
                     return closed;
                 });
     }
@@ -888,6 +892,7 @@ class ChargingSessionServiceImplTest {
                     "sess-done", BOOKING_ID, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), clock.instant());
             closed.stop(clock.instant(), new BigDecimal("12.000"));
             closed.recordSettlement(
+                    SessionStopReason.DRIVER_STOPPED,
                     new BigDecimal("3000.00"),
                     new BigDecimal("6000.00"),
                     new BigDecimal("6000.00"),
@@ -916,7 +921,7 @@ class ChargingSessionServiceImplTest {
             activationService.stopSession("sess-race", DRIVER_ID);
 
             verifyNoInteractions(tariffDirectory, paymentDirectory);
-            verify(coordinator, never()).recordSettlement(any(), any(), any(), any(), any(), any());
+            verify(coordinator, never()).recordSettlement(any(), any(), any(), any(), any(), any(), any());
         }
 
         @Test
@@ -948,6 +953,72 @@ class ChargingSessionServiceImplTest {
             activationService.stopSession("sess-kwh", DRIVER_ID);
 
             verify(coordinator).completeLocalSession(eq("sess-kwh"), eq(new BigDecimal("9.500")), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("Corte automático por telemetría (RF12, ECO-45)")
+    class AutomaticCutoff {
+
+        private TelemetryReading reading(String sessionId, String battery) {
+            return new TelemetryReading(
+                    "evt-1",
+                    TelemetryReading.Type.READING,
+                    sessionId,
+                    CONNECTOR_ID,
+                    clock.instant(),
+                    new BigDecimal("50.00"),
+                    new BigDecimal("10.000"),
+                    battery == null ? null : new BigDecimal(battery),
+                    null);
+        }
+
+        @Test
+        @DisplayName("Si el corte falla, la lectura igual queda guardada y no vuelve al broker")
+        void aFailingCutDoesNotRedeliverTheReading() {
+            ChargingSession active = ChargingSession.start(
+                    "sess-cut", null, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), clock.instant());
+            when(sessionRepository.recordReading(eq("sess-cut"), any(), any(), any(), any(), any()))
+                    .thenReturn(1);
+            when(sessionRepository.findBySessionId("sess-cut")).thenReturn(Optional.of(active));
+            when(chargerPort.deactivate(CONNECTOR_ID)).thenThrow(new IllegalStateException("se rompió algo"));
+
+            assertThat(activationService.processTelemetry(reading("sess-cut", "85.0")))
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("Debajo del objetivo y sin ventana conocida: no apaga nada")
+        void belowTargetDoesNothing() {
+            ChargingSession active = ChargingSession.start(
+                    "sess-low", null, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), clock.instant());
+            when(sessionRepository.recordReading(eq("sess-low"), any(), any(), any(), any(), any()))
+                    .thenReturn(1);
+            when(sessionRepository.findBySessionId("sess-low")).thenReturn(Optional.of(active));
+
+            activationService.processTelemetry(reading("sess-low", "40.0"));
+
+            verifyNoInteractions(chargerPort, coordinator);
+        }
+
+        @Test
+        @DisplayName("Una falla del cargador no la corta este camino: es RF13 y se liquida distinto")
+        void aFaultIsNotCutHere() {
+            when(sessionRepository.recordReading(eq("sess-fault"), any(), any(), any(), any(), any()))
+                    .thenReturn(1);
+
+            activationService.processTelemetry(new TelemetryReading(
+                    "evt-f",
+                    TelemetryReading.Type.FAULT,
+                    "sess-fault",
+                    CONNECTOR_ID,
+                    clock.instant(),
+                    BigDecimal.ZERO,
+                    new BigDecimal("3.000"),
+                    new BigDecimal("99.0"),
+                    ChargerEndReason.FAULT));
+
+            verifyNoInteractions(chargerPort, coordinator);
         }
     }
 }

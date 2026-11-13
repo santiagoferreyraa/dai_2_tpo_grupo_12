@@ -1,5 +1,7 @@
 import { ApiError } from '@/lib/api'
 
+import type { SessionStopReason } from './types'
+
 /** El cuerpo de un error del backend: el `code` estable y, según el caso, algún dato más. */
 interface ProblemBody {
   code?: unknown
@@ -69,4 +71,11 @@ export function activationErrorMessage(error: unknown): string {
   }
   if (error.status === 404) return 'No encontramos esa reserva o ese conector.'
   return 'No pudimos iniciar la carga. Probá de nuevo en unos minutos.'
+}
+
+/** Por qué terminó la carga, dicho para el conductor (ECO-45). */
+export const STOP_REASON_LABEL: Record<SessionStopReason, string> = {
+  DRIVER_STOPPED: 'La detuviste vos.',
+  TARGET_REACHED: 'La batería llegó al porcentaje que elegiste.',
+  WINDOW_ENDED: 'Se terminó tu tiempo disponible en la terminal.',
 }

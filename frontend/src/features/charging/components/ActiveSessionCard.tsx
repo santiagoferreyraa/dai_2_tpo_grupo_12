@@ -67,6 +67,7 @@ export default function ActiveSessionCard({
         targetBatteryPercent: stopped.targetBatteryPercent ?? session.targetBatteryPercent,
         powerLimitKw: stopped.powerLimitKw ?? session.powerLimitKw,
         batteryPercent: stopped.batteryPercent ?? session.batteryPercent,
+        currentPowerKw: null,
       })
     } catch (failure) {
       setError(

@@ -25,6 +25,7 @@ import com.ecopedia.charging.session.domain.PhysicalChargerRejectedException;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
 import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import com.ecopedia.charging.session.domain.SessionStatus;
+import com.ecopedia.charging.session.domain.SessionStopReason;
 import com.ecopedia.charging.session.domain.SessionStopResult;
 import com.ecopedia.charging.session.web.dto.ActivationHttpRequest;
 import com.ecopedia.charging.web.ApiProblems;
@@ -289,7 +290,8 @@ class SessionApiTest {
                 new BigDecimal("7200.00"),
                 new BigDecimal("7200.00"),
                 new BigDecimal("2200.00"),
-                ConsumptionPaymentStatus.CHARGED);
+                ConsumptionPaymentStatus.CHARGED,
+                SessionStopReason.DRIVER_STOPPED);
 
         when(activationService.stopSession("session-stop-1", DRIVER_ID)).thenReturn(result);
 

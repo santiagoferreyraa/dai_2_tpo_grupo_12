@@ -25,6 +25,7 @@ function toSession(response: SessionResponse): ChargingSession {
     finalBilled: response.finalBilled ?? null,
     additionalCharge: response.additionalCharge ?? null,
     paymentStatus: response.paymentStatus ?? null,
+    stopReason: response.stopReason ?? null,
   }
 }
 

@@ -17,6 +17,9 @@ export type SessionStatus = 'ACTIVE' | 'COMPLETED' | 'FAULTED'
 export type ConsumptionPaymentStatus =
   'NOT_REQUIRED' | 'CHARGED' | 'DEBT_RECORDED' | 'PENDING_SETTLEMENT'
 
+/** Quién cerró la sesión. Equivale al enum SessionStopReason (ECO-45). */
+export type SessionStopReason = 'DRIVER_STOPPED' | 'TARGET_REACHED' | 'WINDOW_ENDED'
+
 /** Lo que se manda para iniciar la carga. */
 export interface ActivationRequest {
   /** El PIN de la terminal o el contenido de su QR. Es lo que acredita que el conductor está ahí. */
@@ -48,6 +51,7 @@ export interface SessionResponse {
   finalBilled?: number | null
   additionalCharge?: number | null
   paymentStatus?: ConsumptionPaymentStatus | null
+  stopReason?: SessionStopReason | null
 }
 
 /** La sesión con los instantes ya convertidos, que es como la usa la pantalla. */
@@ -68,4 +72,5 @@ export interface ChargingSession {
   finalBilled: number | null
   additionalCharge: number | null
   paymentStatus: ConsumptionPaymentStatus | null
+  stopReason: SessionStopReason | null
 }

@@ -98,6 +98,11 @@ public class ChargingSession {
     @Column(name = "additional_charge", precision = 10, scale = 2)
     private BigDecimal additionalCharge;
 
+    /** Quién decidió cerrar la sesión (ECO-45). {@code null} mientras sigue activa. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "stop_reason", length = 20)
+    private SessionStopReason stopReason;
+
     /** Cómo quedó el cobro del consumo. {@code null} mientras la sesión no se liquidó. */
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_status", length = 20)
@@ -161,13 +166,15 @@ public class ChargingSession {
         }
     }
 
-    /** Anota la liquidación de la sesión ya cerrada (RF14, ECO-44). */
+    /** Anota por qué se cerró y cómo se liquidó la sesión ya cerrada (RF12, RF14, ECO-44, ECO-45). */
     public void recordSettlement(
+            SessionStopReason stopReason,
             BigDecimal depositApplied,
             BigDecimal realCost,
             BigDecimal finalBilled,
             BigDecimal additionalCharge,
             ConsumptionPaymentStatus paymentStatus) {
+        this.stopReason = stopReason;
         this.depositApplied = depositApplied;
         this.realCost = realCost;
         this.finalBilled = finalBilled;
@@ -270,5 +277,9 @@ public class ChargingSession {
 
     public ConsumptionPaymentStatus getPaymentStatus() {
         return paymentStatus;
+    }
+
+    public SessionStopReason getStopReason() {
+        return stopReason;
     }
 }

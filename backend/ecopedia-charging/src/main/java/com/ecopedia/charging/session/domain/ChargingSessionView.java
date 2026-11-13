@@ -27,7 +27,8 @@ public record ChargingSessionView(
         BigDecimal realCost,
         BigDecimal finalBilled,
         BigDecimal additionalCharge,
-        ConsumptionPaymentStatus paymentStatus) {
+        ConsumptionPaymentStatus paymentStatus,
+        SessionStopReason stopReason) {
 
     public static ChargingSessionView of(ChargingSession session) {
         return new ChargingSessionView(
@@ -47,6 +48,7 @@ public record ChargingSessionView(
                 session.getRealCost(),
                 session.getFinalBilled(),
                 session.getAdditionalCharge(),
-                session.getPaymentStatus());
+                session.getPaymentStatus(),
+                session.getStopReason());
     }
 }

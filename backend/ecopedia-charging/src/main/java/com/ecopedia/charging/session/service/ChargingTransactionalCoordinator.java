@@ -11,6 +11,7 @@ import com.ecopedia.charging.session.domain.ChargingSessionRepository;
 import com.ecopedia.charging.session.domain.ConnectorState;
 import com.ecopedia.charging.session.domain.ConnectorStateRepository;
 import com.ecopedia.charging.session.domain.SessionNotFoundException;
+import com.ecopedia.charging.session.domain.SessionStopReason;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
@@ -211,6 +212,7 @@ public class ChargingTransactionalCoordinator {
     @Transactional(rollbackFor = Exception.class)
     public ChargingSession recordSettlement(
             String sessionId,
+            SessionStopReason stopReason,
             BigDecimal depositApplied,
             BigDecimal realCost,
             BigDecimal finalBilled,
@@ -219,7 +221,7 @@ public class ChargingTransactionalCoordinator {
         ChargingSession session = chargingSessionRepository
                 .findBySessionId(sessionId)
                 .orElseThrow(() -> new SessionNotFoundException(sessionId));
-        session.recordSettlement(depositApplied, realCost, finalBilled, additionalCharge, paymentStatus);
+        session.recordSettlement(stopReason, depositApplied, realCost, finalBilled, additionalCharge, paymentStatus);
         return chargingSessionRepository.save(session);
     }
 

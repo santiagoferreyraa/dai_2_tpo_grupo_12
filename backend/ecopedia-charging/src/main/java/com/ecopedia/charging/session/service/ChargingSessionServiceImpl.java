@@ -27,6 +27,7 @@ import com.ecopedia.charging.session.domain.ChargingSession;
 import com.ecopedia.charging.session.domain.ChargingSessionRepository;
 import com.ecopedia.charging.session.domain.ChargingSessionService;
 import com.ecopedia.charging.session.domain.ChargingSessionView;
+import com.ecopedia.charging.session.domain.CutoffDecision;
 import com.ecopedia.charging.session.domain.DriverAlreadyChargingException;
 import com.ecopedia.charging.session.domain.InvalidAccessCodeException;
 import com.ecopedia.charging.session.domain.PhysicalChargerPort;
@@ -35,6 +36,7 @@ import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
 import com.ecopedia.charging.session.domain.PowerDecision;
 import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import com.ecopedia.charging.session.domain.SessionStatus;
+import com.ecopedia.charging.session.domain.SessionStopReason;
 import com.ecopedia.charging.session.domain.SessionStopResult;
 import com.ecopedia.charging.session.domain.TelemetryReading;
 import com.ecopedia.charging.session.domain.TerminalAccessCode;
@@ -309,7 +311,7 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
             throw new SessionNotFoundException(sessionId);
         }
 
-        return stopOwnedOrExpiredSession(session);
+        return stopOwnedOrExpiredSession(session, SessionStopReason.DRIVER_STOPPED);
     }
 
     /**
@@ -329,7 +331,7 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
             Optional<Booking> booking = bookingRepository.findById(session.getBookingId());
             if (booking.isPresent() && !booking.get().getWindow().end().isAfter(now)) {
                 try {
-                    stopOwnedOrExpiredSession(session);
+                    stopOwnedOrExpiredSession(session, SessionStopReason.WINDOW_ENDED);
                     stoppedCount++;
                 } catch (RuntimeException failure) {
                     log.warn(
@@ -342,7 +344,7 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
         return stoppedCount;
     }
 
-    private SessionStopResult stopOwnedOrExpiredSession(ChargingSession session) {
+    private SessionStopResult stopOwnedOrExpiredSession(ChargingSession session, SessionStopReason reason) {
         if (!session.isActive()) {
             // Ya cerró —un reintento, o el corte automático llegó primero—: se devuelve lo que quedó.
             return stopResultOf(session);
@@ -435,7 +437,7 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
 
         // 4. La liquidación queda guardada en la sesión, para devolverla igual si se repite el pedido
         ChargingSession settled = transactionalCoordinator.recordSettlement(
-                session.getSessionId(), depositAmount, realCost, finalBilled, additionalCharge, paymentStatus);
+                session.getSessionId(), reason, depositAmount, realCost, finalBilled, additionalCharge, paymentStatus);
         return stopResultOf(settled);
     }
 
@@ -452,7 +454,8 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
                 session.getRealCost(),
                 session.getFinalBilled(),
                 session.getAdditionalCharge(),
-                session.getPaymentStatus());
+                session.getPaymentStatus(),
+                session.getStopReason());
     }
 
     @Override
@@ -509,15 +512,76 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
             return false;
         }
 
-        if (endReason == ChargerEndReason.BATTERY_FULL || endReason == ChargerEndReason.FAULT) {
+        if (endReason == ChargerEndReason.FAULT) {
+            // Una falla con la carga en curso es RF13: se liquida sin el piso de la seña, y no es este
+            // corte el que la cierra. Queda registrada y la sesión, abierta.
             log.warn(
-                    "El cargador terminó por su cuenta la sesión {} del conector {} ({}), con {} kWh:"
-                            + " quedó registrado y la sesión sigue abierta hasta que se la cierre",
+                    "El cargador falló con la sesión {} del conector {} en curso ({} kWh): quedó registrado y"
+                            + " la sesión sigue abierta hasta que se la cierre",
                     reading.sessionId(),
                     reading.connectorId(),
-                    endReason,
                     reading.energyKwh());
+            return true;
         }
+
+        cutOffIfDue(reading, endReason);
         return true;
+    }
+
+    /**
+     * El corte automático (RF12, ECO-45): con la lectura recién guardada, si la batería llegó al
+     * objetivo o la ventana terminó, la sesión se cierra por el mismo camino que cuando la detiene el
+     * conductor —apagar, cerrar, liquidar, cobrar—. Ver {@link CutoffDecision}.
+     *
+     * <p>Que el cargador avise que la batería se llenó también corta, aunque la lectura no traiga el
+     * porcentaje: lleno es más que cualquier objetivo.
+     *
+     * <p><b>Un error acá no devuelve la lectura al broker.</b> La lectura ya quedó guardada; si el corte
+     * falla, la próxima lectura —a los pocos segundos— lo vuelve a intentar, y el fin de ventana lo
+     * cubre además el barrido. Reentregarla no arreglaría nada y llenaría la cola de reintentos. Si
+     * otro cierre llega a la vez —el conductor, el barrido—, el cierre único ya resuelve que se liquide
+     * una sola vez (ECO-44).
+     */
+    private void cutOffIfDue(TelemetryReading reading, ChargerEndReason endReason) {
+        try {
+            Optional<ChargingSession> found = chargingSessionRepository.findBySessionId(reading.sessionId());
+            if (found.isEmpty() || !found.get().isActive()) {
+                return;
+            }
+            ChargingSession session = found.get();
+
+            Instant windowEnd = session.getBookingId() == null
+                    ? null
+                    : bookingRepository
+                            .findById(session.getBookingId())
+                            .map(booking -> booking.getWindow().end())
+                            .orElse(null);
+            BigDecimal battery = endReason == ChargerEndReason.BATTERY_FULL && reading.batteryPercent() == null
+                    ? BigDecimal.valueOf(100)
+                    : reading.batteryPercent();
+
+            Optional<SessionStopReason> cut =
+                    CutoffDecision.evaluate(battery, session.getTargetBatteryPercent(), reading.timestamp(), windowEnd);
+            if (cut.isEmpty()) {
+                return;
+            }
+
+            log.info(
+                    "Corte automático de la sesión {} del conector {}: {} ({}% de {}%, ventana hasta {})",
+                    session.getSessionId(),
+                    session.getConnectorId(),
+                    cut.get(),
+                    battery,
+                    session.getTargetBatteryPercent(),
+                    windowEnd);
+            stopOwnedOrExpiredSession(session, cut.get());
+        } catch (RuntimeException failure) {
+            log.warn(
+                    "No se pudo cortar automáticamente la sesión {} con la lectura {}: {}. Lo reintenta la próxima"
+                            + " lectura",
+                    reading.sessionId(),
+                    reading.eventId(),
+                    failure.getMessage());
+        }
     }
 }

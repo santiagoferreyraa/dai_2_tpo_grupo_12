@@ -9,6 +9,7 @@ import com.ecopedia.charging.session.domain.ChargingSession;
 import com.ecopedia.charging.session.domain.ChargingSessionRepository;
 import com.ecopedia.charging.session.domain.ChargingSessionService;
 import com.ecopedia.charging.session.domain.SessionStatus;
+import com.ecopedia.charging.session.domain.SessionStopReason;
 import com.ecopedia.charging.session.domain.TelemetryReading;
 import jakarta.jms.ConnectionFactory;
 import jakarta.jms.TextMessage;
@@ -154,10 +155,13 @@ class TelemetrySubscriptionTest {
     }
 
     @Test
-    @DisplayName("Si el cargador corta por batería llena, queda registrado y la sesión sigue abierta")
-    void aChargerThatStopsOnItsOwnIsRecordedAndTheSessionStaysOpen() {
-        String sessionId = activeSession();
+    @DisplayName("Si el cargador corta por batería llena, queda registrado y la sesión se cierra (ECO-45)")
+    void aChargerThatStopsOnItsOwnIsRecordedAndTheSessionCloses() {
+        // Objetivo 100%: la lectura del 97% no corta, y la que corta es el aviso del cargador.
+        String sessionId = activeSession(100);
         sessions.processTelemetry(reading(sessionId, 10, "8.000", "50.00", "97.0"));
+        assertThat(repository.findBySessionId(sessionId).orElseThrow().getStatus())
+                .isEqualTo(SessionStatus.ACTIVE);
 
         TelemetryReading last = new TelemetryReading(
                 "evt-final",
@@ -173,9 +177,9 @@ class TelemetrySubscriptionTest {
 
         ChargingSession stored = repository.findBySessionId(sessionId).orElseThrow();
         assertThat(stored.getChargerEndReason()).isEqualTo(ChargerEndReason.BATTERY_FULL);
-        assertThat(stored.wasEndedByCharger()).isTrue();
         assertThat(stored.getKwhDelivered()).isEqualByComparingTo("8.400");
-        assertThat(stored.getStatus()).isEqualTo(SessionStatus.ACTIVE);
+        assertThat(stored.getStatus()).isEqualTo(SessionStatus.COMPLETED);
+        assertThat(stored.getStopReason()).isEqualTo(SessionStopReason.TARGET_REACHED);
     }
 
     @Test
@@ -209,8 +213,13 @@ class TelemetrySubscriptionTest {
     }
 
     private String activeSession() {
+        return activeSession(80);
+    }
+
+    private String activeSession(int targetBatteryPercent) {
         String sessionId = UUID.randomUUID().toString();
-        repository.save(ChargingSession.start(sessionId, null, 7L, 42L, 80, new BigDecimal("50.00"), T0));
+        repository.save(
+                ChargingSession.start(sessionId, null, 7L, 42L, targetBatteryPercent, new BigDecimal("50.00"), T0));
         return sessionId;
     }
 

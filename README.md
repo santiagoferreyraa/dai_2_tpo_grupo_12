@@ -617,10 +617,15 @@ Lo que puede contestar, además del 201:
 | El cargador rechaza la orden o no responde | 409 `CHARGER_REJECTED` o 503 `CHARGER_UNAVAILABLE`; la reserva se libera y la seña se devuelve |
 | Pagos no responde | 503 `PAYMENT_CHECK_UNAVAILABLE` |
 
-**La carga se corta sola cuando vence su ventana**, la reservada o la de la carga sin reserva: un
-barrido revisa las sesiones activas cada 30 segundos (`ecopedia.session.cutoff-sweep-ms`). El corte
-al llegar al porcentaje objetivo todavía no existe, pero el dato ya está: mientras carga, la sesión
-guarda el porcentaje de batería de cada lectura del cargador (ver "Los cargadores simulados").
+**La carga se corta sola con la primera de dos condiciones** (RF12, ECO-45): que la batería llegue al
+porcentaje que eligió el conductor, o que se termine su ventana —la reservada o la de la carga sin
+reserva—. Se evalúa con cada lectura de telemetría, contra el instante en que midió el cargador; además,
+un barrido revisa las ventanas vencidas cada 30 segundos (`ecopedia.session.cutoff-sweep-ms`) por si
+las lecturas dejaron de llegar. El corte cierra la sesión por el mismo camino que el botón de detener
+—apaga el cargador, libera el conector, recorta la reserva y liquida—, así que el resto de la ventana
+queda libre para una carga sin reserva (con el mismo margen de 15 minutos antes de la reserva
+siguiente). Si dos cierres se cruzan, liquida uno solo. La sesión guarda quién la cerró en
+`stop_reason`: `DRIVER_STOPPED`, `TARGET_REACHED` o `WINDOW_ENDED`.
 
 Al detener, la respuesta trae los kWh entregados, el costo real (`realCost`), lo facturado
 (`finalBilled`, que en una reserva nunca baja de la seña), lo que se cobró además de la seña
@@ -776,9 +781,9 @@ acumulados, potencia y porcentaje de batería. `pnpm dev` ya lo levanta.
 
 **SesionesDeCarga está suscripta al tópico** (`charging`, con una suscripción durable,
 `ecopedia-charging.sessions`) y guarda cada lectura en su sesión: kWh, potencia, batería y el instante
-(`charging_sessions`). Si el cargador avisa que cortó solo —batería llena o falla—, queda anotado el
-motivo en `charger_end_reason` y la sesión sigue abierta: cerrarla en ese caso, igual que cortar al
-llegar al porcentaje objetivo, llega con ECO-45. Una lectura repetida, atrasada o de una sesión ya
+(`charging_sessions`). Si el cargador avisa que cortó solo, queda anotado el motivo en
+`charger_end_reason`: con batería llena la sesión se cierra como si hubiera llegado al objetivo
+(ECO-45); con una falla sigue abierta, porque se liquida distinto (RF13). Una lectura repetida, atrasada o de una sesión ya
 cerrada se descarta; una ilegible, tras cinco intentos, va a la cola de mensajes muertos.
 
 | Orden | Qué hace |

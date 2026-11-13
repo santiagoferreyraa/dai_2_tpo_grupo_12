@@ -3,6 +3,7 @@ package com.ecopedia.charging.session.web.dto;
 import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import com.ecopedia.charging.session.domain.ChargingSessionView;
 import com.ecopedia.charging.session.domain.SessionStatus;
+import com.ecopedia.charging.session.domain.SessionStopReason;
 import java.math.BigDecimal;
 import java.time.Instant;
 
@@ -28,7 +29,8 @@ public record SessionHttpResponse(
         BigDecimal realCost,
         BigDecimal finalBilled,
         BigDecimal additionalCharge,
-        ConsumptionPaymentStatus paymentStatus) {
+        ConsumptionPaymentStatus paymentStatus,
+        SessionStopReason stopReason) {
 
     public static SessionHttpResponse fromDomain(ChargingSessionView view) {
         return new SessionHttpResponse(
@@ -48,6 +50,7 @@ public record SessionHttpResponse(
                 view.realCost(),
                 view.finalBilled(),
                 view.additionalCharge(),
-                view.paymentStatus());
+                view.paymentStatus(),
+                view.stopReason());
     }
 }
