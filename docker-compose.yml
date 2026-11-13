@@ -157,8 +157,6 @@ services:
     environment:
       <<: [*java-env, *db, *jwt]
       SERVER_PORT: 8081
-      ECOPEDIA_CHARGER_URL: http://charger:8088
-      ECOPEDIA_CHARGER_ACCESS_TOKEN: ${ECOPEDIA_CHARGER_ACCESS_TOKEN:?Falta ECOPEDIA_CHARGER_ACCESS_TOKEN en el .env. Correr pnpm env:init}
       ECOPEDIA_LOGIN_MAX_FAILURES: ${ECOPEDIA_LOGIN_MAX_FAILURES:-5}
       ECOPEDIA_LOGIN_LOCK_MINUTES: ${ECOPEDIA_LOGIN_LOCK_MINUTES:-15}
       # Las cuentas con las que se entra la primera vez (ver InitialSetup). Obligatorias acá: sin

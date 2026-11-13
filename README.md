@@ -354,7 +354,7 @@ las dos cuentas iniciales y dos ajustes:
 | `ECOPEDIA_BROKER_PASSWORD` | La contraseña de Artemis |
 | `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN` | La clave con la que Pagos se presenta ante la pasarela simulada. La leen los dos |
 | `ECOPEDIA_POWER_GRID_PASSWORD` | La contraseña del UsernameToken con que RedEléctrica se presenta ante la distribuidora simulada. La leen los dos |
-| `ECOPEDIA_CHARGER_ACCESS_TOKEN` | La clave con la que Terminales (en core) se presenta ante los cargadores simulados. La leen los dos |
+| `ECOPEDIA_CHARGER_ACCESS_TOKEN` | La clave con la que SesionesDeCarga (en charging) se presenta ante los cargadores simulados. La leen los dos |
 | `ECOPEDIA_INTERNAL_TOKEN` | La clave de servicio entre artefactos de Ecopedia, para las rutas `/internal/**` (hoy, `charging` llamando a RedEléctrica y al cobro de la seña en `integration`). La leen los dos |
 | `ECOPEDIA_ADMIN_EMAIL`, `ECOPEDIA_ADMIN_PASSWORD`, `ECOPEDIA_CPO_EMAIL`, `ECOPEDIA_CPO_PASSWORD` | Las cuentas con las que se entra la primera vez (ver "Todo con Docker"). `docker compose up` las exige; `pnpm dev` y `pnpm demo` las crean solo si están |
 | `ECOPEDIA_LOGIN_MAX_FAILURES` | Cuántos logins fallidos seguidos bloquean una cuenta. Sin valor, 5 |
@@ -371,8 +371,8 @@ completas. Las cuentas se crean en el arranque siguiente, sin tocar los datos qu
 en cambio, son secretos:** un `.env` anterior no las tiene, y sin ellas `pnpm demo` no levanta los procesos que
 las usan (`Could not resolve placeholder 'ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN'` en la pasarela y en
 Pagos, `... 'ECOPEDIA_POWER_GRID_PASSWORD'` en la distribuidora y también en Pagos, que es el mismo
-artefacto que RedEléctrica, y `... 'ECOPEDIA_CHARGER_ACCESS_TOKEN'` en los cargadores y **en core**,
-que es el que les da las órdenes, y `... 'ECOPEDIA_INTERNAL_TOKEN'` en Pagos y en Reservas). Se agrega a
+artefacto que RedEléctrica, y `... 'ECOPEDIA_CHARGER_ACCESS_TOKEN'` en los cargadores y **en Reservas**
+(`charging`), que es el artefacto que les da las órdenes, y `... 'ECOPEDIA_INTERNAL_TOKEN'` en Pagos y en Reservas). Se agrega a
 mano la línea que falte, `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN=`, `ECOPEDIA_POWER_GRID_PASSWORD=`,
 `ECOPEDIA_CHARGER_ACCESS_TOKEN=` o `ECOPEDIA_INTERNAL_TOKEN=`, con cualquier valor largo al azar, o se borra el `.env` y se corre
 `pnpm env:init` de nuevo (eso cambia también los demás secretos). `pnpm dev` y `pnpm dev:mem` no
@@ -768,11 +768,11 @@ curl -H "Content-Type: text/xml" --data-binary @pedido.xml http://localhost:8087
 ### Los cargadores simulados
 
 El hardware de las estaciones —o la central del fabricante que lo controla— es un proceso aparte en
-`simulation/charger` (8088). Terminales le da dos órdenes por REST, **encender** y **apagar** un
-conector, y mientras el conector carga, el simulador publica una lectura cada 2 segundos en el
-**tópico** `telemetry.charging` de Artemis: kWh acumulados, potencia y porcentaje de batería. `pnpm dev`
-ya lo levanta. **Todavía no lo llama ninguna pantalla:** la habilitación de la carga llega con ECO-44,
-y quien lee el tópico, con ECO-45.
+`simulation/charger` (8088). SesionesDeCarga (en `charging`) le da dos órdenes por REST, **encender**
+y **apagar** un conector, al habilitar y al detener una carga, y mientras el conector carga, el
+simulador publica una lectura cada 2 segundos en el **tópico** `telemetry.charging` de Artemis: kWh
+acumulados, potencia y porcentaje de batería. `pnpm dev` ya lo levanta. **Todavía nadie lee el
+tópico:** llega con ECO-45.
 
 | Orden | Qué hace |
 |-------|----------|
@@ -807,16 +807,6 @@ curl -X POST http://localhost:8088/v1/connectors/1/session \
   -d '{"sessionId":"prueba-1","powerLimitKw":50}'
 curl http://localhost:8088/v1/connectors/1 -H "Authorization: Bearer $TOKEN"
 ```
-
-**Para probarlo contra el proceso real**, con el simulador y el broker arriba:
-
-```bash
-mvn -pl backend/ecopedia-core test -Dtest=ChargerLiveTest -Dcharger.live=true -Dcharger.broker-password=<la del .env>
-```
-
-Enciende un conector con el cliente de core, escucha el tópico, lo apaga, y prueba un conector roto y
-la clave equivocada. CI no lo corre. Si el `.env` tiene `ECOPEDIA_CHARGER_ACCESS_TOKEN`, el simulador
-usa esa clave, y se agrega `-Dcharger.token=` con la misma.
 
 ### Producción: un solo artefacto
 
