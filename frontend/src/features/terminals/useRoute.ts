@@ -247,6 +247,20 @@ export function useRoute(from: RouteOrigin | null, to: Point | null): RouteState
      * siempre. Ver REFETCH_THRESHOLD_M y `RouteOrigin.kind`.
      */
     const previous = routedFrom.current
+
+    /*
+     * El mismo punto que ya está ruteado, aunque llegue en un objeto nuevo: no hay nada que volver
+     * a pedir. Es la red de abajo de ECO-139 —el parpadeo de una dirección re-ruteada en cada
+     * aviso del GPS—: quien llama no tiene por qué garantizar identidades estables para que la
+     * ruta no se apague y se vuelva a prender sola.
+     */
+    const samePoint =
+      previous !== null &&
+      previous.kind === from.kind &&
+      previous.latitude === from.latitude &&
+      previous.longitude === from.longitude
+    if (samePoint) return
+
     const drifting = previous !== null && previous.kind !== 'address' && from.kind !== 'address'
     if (drifting && metersBetween(previous, from) < REFETCH_THRESHOLD_M) return
 

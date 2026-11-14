@@ -83,14 +83,21 @@ export function useDepartureOrigin(): DepartureOriginState {
     return { kind: 'device', latitude, longitude, accuracyM }
   }, [device.location])
 
-  const origin = useMemo<DeparturePoint | null>(() => {
-    if (departure.kind === 'address') {
-      const { latitude, longitude, accuracyM } = departure.address
-      return { kind: 'address', latitude, longitude, accuracyM }
-    }
+  /*
+   * La dirección se memoriza aparte y SOLO contra `departure` (ECO-139). Antes estaba en el mismo
+   * `useMemo` que elegía entre las dos, con `deviceOrigin` en las dependencias: cada aviso del GPS
+   * fabricaba un origen nuevo con las MISMAS coordenadas de la dirección, y como una dirección no
+   * pasa por el umbral de deriva de `useRoute`, cada aviso volvía a pedir la ruta. Entre pedido y
+   * respuesta la ruta quedaba en 'loading' sin recorrido, y eso era el parpadeo.
+   */
+  const addressOrigin = useMemo<DeparturePoint | null>(() => {
+    if (departure.kind !== 'address') return null
 
-    return deviceOrigin
-  }, [departure, deviceOrigin])
+    const { latitude, longitude, accuracyM } = departure.address
+    return { kind: 'address', latitude, longitude, accuracyM }
+  }, [departure])
+
+  const origin = addressOrigin ?? deviceOrigin
 
   return { departure, origin, deviceOrigin, device }
 }
