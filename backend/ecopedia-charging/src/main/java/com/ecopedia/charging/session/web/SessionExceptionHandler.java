@@ -10,16 +10,22 @@ import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
+import com.ecopedia.charging.session.domain.ChargingPointCatalogUnavailableException;
+import com.ecopedia.charging.session.domain.DriverAlreadyChargingException;
+import com.ecopedia.charging.session.domain.InvalidAccessCodeException;
 import com.ecopedia.charging.session.domain.PhysicalChargerRejectedException;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
 import com.ecopedia.charging.session.domain.SessionNotFoundException;
+import com.ecopedia.charging.session.domain.TooManyAccessCodeAttemptsException;
 import com.ecopedia.charging.web.ApiProblems;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -99,6 +105,55 @@ public class SessionExceptionHandler {
                 ActivationTooEarlyException.CODE);
         problem.setProperty("availableFrom", ex.getAvailableFrom());
         return problem;
+    }
+
+    /**
+     * El código de la terminal no abre ese conector (ECO-44). 422 y no 404: el pedido está bien
+     * formado y el conductor existe, lo que falla es el dato que tipeó. Un único texto para los tres
+     * motivos; el motivo exacto queda en el log. Ver {@link InvalidAccessCodeException}.
+     */
+    @ExceptionHandler(InvalidAccessCodeException.class)
+    public ProblemDetail handleInvalidAccessCode(InvalidAccessCodeException ex) {
+        log.info("Código de terminal rechazado: {}", ex.getMessage());
+        return withCode(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "El código no corresponde a ningún conector. Revisalo o volvé a escanear el QR de la terminal.",
+                "INVALID_ACCESS_CODE");
+    }
+
+    /** Demasiados códigos errados seguidos (ECO-44): 429, con cuándo volver a probar. */
+    @ExceptionHandler(TooManyAccessCodeAttemptsException.class)
+    public ResponseEntity<ProblemDetail> handleTooManyAttempts(TooManyAccessCodeAttemptsException ex) {
+        log.warn(ex.getMessage());
+        long seconds = Math.max(1, ex.getRetryAfter().toSeconds());
+        ProblemDetail problem = withCode(
+                HttpStatus.TOO_MANY_REQUESTS,
+                "Erraste el código demasiadas veces. Esperá unos minutos antes de volver a intentar.",
+                "TOO_MANY_ACCESS_CODE_ATTEMPTS");
+        problem.setProperty("retryAfterSeconds", seconds);
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(seconds))
+                .body(problem);
+    }
+
+    @ExceptionHandler(DriverAlreadyChargingException.class)
+    public ProblemDetail handleDriverAlreadyCharging(DriverAlreadyChargingException ex) {
+        ProblemDetail problem = withCode(
+                HttpStatus.CONFLICT,
+                "Ya tenés una carga en curso. Detenela antes de iniciar otra.",
+                "DRIVER_ALREADY_CHARGING");
+        problem.setProperty("activeSessionId", ex.getActiveSessionId());
+        return problem;
+    }
+
+    /** Core no contestó al resolver el código o el conector: no se sabe, y no saber no habilita. */
+    @ExceptionHandler(ChargingPointCatalogUnavailableException.class)
+    public ProblemDetail handleCatalogUnavailable(ChargingPointCatalogUnavailableException ex) {
+        log.warn("No se pudo consultar a Terminales: {}", ex.getMessage(), ex.getCause());
+        return withCode(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "No pudimos verificar la terminal. Probá de nuevo en unos minutos.",
+                "TERMINALS_UNAVAILABLE");
     }
 
     @ExceptionHandler(InvalidBookingRequestException.class)

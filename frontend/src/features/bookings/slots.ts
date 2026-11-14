@@ -107,6 +107,18 @@ export function windowEnd(start: Date, minutes: number): Date {
  */
 export const GRACE_MINUTES = 15
 
+/**
+ * Cuántos minutos antes del turno se puede empezar a cargar, si la terminal está libre (Manuel,
+ * 12/11). Es `ecopedia.booking.early-activation` de ecopedia-charging y tiene que coincidir: acá
+ * solo decide cuándo ofrecer el botón, y el que manda es el backend.
+ */
+export const EARLY_ACTIVATION_MINUTES = 15
+
+/** Desde cuándo se puede empezar a cargar una reserva que empieza en `start`. */
+export function activationOpensAt(start: Date): Date {
+  return new Date(start.getTime() - EARLY_ACTIVATION_MINUTES * MINUTE_MS)
+}
+
 /** Hasta cuándo puede presentarse el conductor a una reserva que empieza en `start`. */
 export function graceDeadline(start: Date): Date {
   return new Date(start.getTime() + GRACE_MINUTES * MINUTE_MS)

@@ -158,6 +158,24 @@ public class TerminalController {
         return ResponseEntity.ok(ConnectorResponse.fromDomain(connector));
     }
 
+    /**
+     * El código de acceso del conector, para imprimirlo en la terminal como PIN y como QR (RF11,
+     * ECO-44). Solo el operador dueño o el ADMIN: es lo que acredita que el conductor está frente al
+     * conector, y por eso no viaja en {@link ConnectorResponse}, que es pública.
+     */
+    @GetMapping("/connectors/{id}/access-code")
+    @PreAuthorize("hasRole('ADMIN') or (hasRole('CPO') and @terminalAccess.ownsConnector(#id, authentication))")
+    public ResponseEntity<ConnectorAccessCodeResponse> getAccessCode(@PathVariable Long id) {
+        return ResponseEntity.ok(ConnectorAccessCodeResponse.fromDomain(terminalService.getConnector(id)));
+    }
+
+    /** Un código nuevo para el conector: el anterior deja de servir en el acto (ECO-44). */
+    @PostMapping("/connectors/{id}/access-code")
+    @PreAuthorize("hasRole('ADMIN') or (hasRole('CPO') and @terminalAccess.ownsConnector(#id, authentication))")
+    public ResponseEntity<ConnectorAccessCodeResponse> regenerateAccessCode(@PathVariable Long id) {
+        return ResponseEntity.ok(ConnectorAccessCodeResponse.fromDomain(terminalService.regenerateAccessCode(id)));
+    }
+
     /** Eliminar un conector por ID. */
     @DeleteMapping("/connectors/{id}")
     @PreAuthorize("hasRole('ADMIN') or (hasRole('CPO') and @terminalAccess.ownsConnector(#id, authentication))")

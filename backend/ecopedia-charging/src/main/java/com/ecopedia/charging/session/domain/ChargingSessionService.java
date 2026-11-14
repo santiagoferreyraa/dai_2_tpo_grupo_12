@@ -1,6 +1,6 @@
 package com.ecopedia.charging.session.domain;
 
-import java.math.BigDecimal;
+import java.util.Optional;
 
 /**
  * Interfaz publicada del componente SesionesDeCarga: el ciclo de vida de una carga, desde que se
@@ -22,8 +22,23 @@ public interface ChargingSessionService {
     /**
      * Detiene la sesión del conductor, libera el conector y liquida el consumo (RF12, RF14). Una
      * sesión de otro conductor se informa igual que una que no existe.
+     *
+     * <p>Los kWh salen del cargador (o, si no contesta, de la última lectura de la telemetría): el
+     * conductor no los informa (ECO-44). Detener una sesión que ya cerró —un reintento, o el corte
+     * automático que llegó primero— devuelve la liquidación que quedó guardada, sin volver a cobrar.
      */
-    SessionStopResult stopSession(String sessionId, Long driverId, BigDecimal reportedKwh);
+    SessionStopResult stopSession(String sessionId, Long driverId);
+
+    /**
+     * Una sesión del conductor, activa o terminada (ECO-44). Una de otro conductor se informa igual
+     * que una que no existe.
+     *
+     * @throws SessionNotFoundException si no existe o es de otro conductor
+     */
+    ChargingSessionView getSession(String sessionId, Long driverId);
+
+    /** La sesión activa del conductor, si tiene una (ECO-44). */
+    Optional<ChargingSessionView> findActiveSession(Long driverId);
 
     /**
      * Corta las sesiones activas cuya ventana ya venció, la reservada o la de la carga sin reserva.

@@ -15,6 +15,7 @@ import com.ecopedia.charging.checkout.domain.PaymentDirectory;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import com.ecopedia.charging.checkout.domain.PricingUnavailableException;
 import com.ecopedia.charging.checkout.domain.TariffDirectory;
+import com.ecopedia.charging.session.domain.AccessCodeDirectory;
 import com.ecopedia.charging.session.domain.ActivationFailureReason;
 import com.ecopedia.charging.session.domain.ActivationRequest;
 import com.ecopedia.charging.session.domain.ActivationResult;
@@ -25,15 +26,22 @@ import com.ecopedia.charging.session.domain.ChargingPointCatalog;
 import com.ecopedia.charging.session.domain.ChargingSession;
 import com.ecopedia.charging.session.domain.ChargingSessionRepository;
 import com.ecopedia.charging.session.domain.ChargingSessionService;
+import com.ecopedia.charging.session.domain.ChargingSessionView;
+import com.ecopedia.charging.session.domain.CutoffDecision;
+import com.ecopedia.charging.session.domain.DriverAlreadyChargingException;
+import com.ecopedia.charging.session.domain.InvalidAccessCodeException;
 import com.ecopedia.charging.session.domain.PhysicalChargerPort;
 import com.ecopedia.charging.session.domain.PhysicalChargerRejectedException;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
 import com.ecopedia.charging.session.domain.PowerDecision;
 import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import com.ecopedia.charging.session.domain.SessionStatus;
+import com.ecopedia.charging.session.domain.SessionStopReason;
 import com.ecopedia.charging.session.domain.SessionStopResult;
 import com.ecopedia.charging.session.domain.TelemetryReading;
+import com.ecopedia.charging.session.domain.TerminalAccessCode;
 import com.ecopedia.charging.session.service.ChargingTransactionalCoordinator.CompletedSessionData;
+import com.ecopedia.charging.session.service.ChargingTransactionalCoordinator.SessionAlreadyClosedException;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
@@ -46,13 +54,18 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 /**
- * Orquestador del flujo de habilitación de carga (Flujo B, RF11, RNF06, ECO-60).
+ * Orquestador del flujo de habilitación de carga (Flujo B, RF11, RNF06, ECO-44, ECO-60).
  *
- * <p>Secuencia de habilitación:
+ * <p>Secuencia de habilitación, <b>escanear → validar → activar</b>:
  * <ol>
+ *   <li><b>Escanear (ECO-44):</b> el código de la terminal —PIN o QR— dice qué conector es, y con
+ *       eso acredita que el conductor está frente a él. Un código errado cuenta para el tope de
+ *       {@link AccessCodeAttemptLimiter}. Con el conector resuelto: que el conductor no esté ya
+ *       cargando, y qué reserva usa (la que trae, o la suya para ese conector si ya se puede usar).
  *   <li><b>Validaciones y llamadas externas previas:</b> consulta de catálogo de terminales,
  *       factibilidad eléctrica a la distribuidora (SOAP) y verificación de tarjeta cobrable sin deuda
  *       (REST). Ninguna mueve dinero ni participa de la transacción local.
@@ -69,6 +82,8 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
 
     private static final Logger log = LoggerFactory.getLogger(ChargingSessionServiceImpl.class);
 
+    private final AccessCodeDirectory accessCodeDirectory;
+    private final AccessCodeAttemptLimiter attemptLimiter;
     private final ChargingPointCatalog chargingPointCatalog;
     private final ChargingPowerPolicy chargingPowerPolicy;
     private final PaymentDirectory paymentDirectory;
@@ -83,6 +98,8 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
     private final Duration earlyActivation;
 
     public ChargingSessionServiceImpl(
+            AccessCodeDirectory accessCodeDirectory,
+            AccessCodeAttemptLimiter attemptLimiter,
             ChargingPointCatalog chargingPointCatalog,
             ChargingPowerPolicy chargingPowerPolicy,
             PaymentDirectory paymentDirectory,
@@ -95,6 +112,8 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
             TariffDirectory tariffDirectory,
             Clock clock,
             @Value("${ecopedia.booking.early-activation:PT15M}") Duration earlyActivation) {
+        this.accessCodeDirectory = accessCodeDirectory;
+        this.attemptLimiter = attemptLimiter;
         this.chargingPointCatalog = chargingPointCatalog;
         this.chargingPowerPolicy = chargingPowerPolicy;
         this.paymentDirectory = paymentDirectory;
@@ -114,23 +133,38 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
         Objects.requireNonNull(request, "request no puede ser null");
         Instant now = clock.instant();
 
-        // 0. Verificación previa de la reserva (pertenencia, conector y estado) antes de llamadas externas
-        if (request.bookingId() != null) {
-            Booking booking = bookingService.getBooking(request.bookingId());
+        // 0. Escanear: el código dice qué conector es y acredita la presencia (ECO-44)
+        Long connectorId = resolveConnector(request);
+
+        chargingSessionRepository.findActiveByDriverId(request.driverId()).ifPresent(active -> {
+            throw new DriverAlreadyChargingException(request.driverId(), active.getSessionId());
+        });
+
+        // Sin reserva elegida: si tiene una para este conector que ya se puede usar, es esa (ECO-44)
+        Long bookingId = request.bookingId() != null
+                ? request.bookingId()
+                : bookingService
+                        .findChargeableBooking(request.driverId(), connectorId, now, earlyActivation)
+                        .map(Booking::getId)
+                        .orElse(null);
+
+        // Verificación previa de la reserva (pertenencia, conector y estado) antes de llamadas externas
+        if (bookingId != null) {
+            Booking booking = bookingService.getBooking(bookingId);
             if (!booking.belongsTo(request.driverId())) {
                 log.warn(
                         "Acceso denegado: el conductor {} quiso habilitar con la reserva {}, que es de otro",
                         request.driverId(),
-                        request.bookingId());
-                throw new BookingNotFoundException(request.bookingId());
+                        bookingId);
+                throw new BookingNotFoundException(bookingId);
             }
-            if (!booking.getConnectorId().equals(request.connectorId())) {
+            if (!booking.getConnectorId().equals(connectorId)) {
                 throw new InvalidBookingRequestException("La reserva es de otro conector");
             }
             if (!booking.isConfirmed()) {
                 // Antes de llamar a nadie, el mismo 409 que daría la propia reserva (patrón State).
                 throw new BookingStateConflictException(
-                        request.bookingId(), "en " + booking.getStatus(), "la habilitación de la carga");
+                        bookingId, "en " + booking.getStatus(), "la habilitación de la carga");
             }
             // Desde 15 minutos antes del turno y hasta su fin (Manuel, 12/11). La reserva lo vuelve
             // a comprobar en la transacción; acá es para no consultar a nadie si ya se sabe que no.
@@ -139,26 +173,25 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
         }
 
         // 1. Validaciones y consultas externas previas (FUERA de la transacción declarativa)
-        ChargingPoint chargingPoint = chargingPointCatalog
-                .find(request.connectorId())
-                .orElseThrow(() -> new ConnectorNotFoundException(request.connectorId()));
+        ChargingPoint chargingPoint =
+                chargingPointCatalog.find(connectorId).orElseThrow(() -> new ConnectorNotFoundException(connectorId));
 
         PowerDecision powerDecision = chargingPowerPolicy.decide(chargingPoint);
         if (!powerDecision.canStart()) {
-            if (request.bookingId() != null) {
-                settlementPolicy.failActivation(request.bookingId(), ActivationFailureReason.REJECTED_BY_GRID);
+            if (bookingId != null) {
+                settlementPolicy.failActivation(bookingId, ActivationFailureReason.REJECTED_BY_GRID);
             }
             throw new ConnectorNotBookableException(
-                    request.connectorId(), "La distribuidora eléctrica rechazó la habilitación de la demanda");
+                    connectorId, "La distribuidora eléctrica rechazó la habilitación de la demanda");
         }
 
         // Validación síncrona completa contra la pasarela y deudas (RF11, RF14, ECO-54)
         paymentDirectory.validatePaymentMethodForCharging(request.driverId(), null);
 
         // Registro de reserva instantánea si es carga sin reserva previa (RF10, ECO-58)
-        Long effectiveBookingId = request.bookingId();
+        Long effectiveBookingId = bookingId;
         if (effectiveBookingId == null) {
-            Booking walkInBooking = bookingService.registerWalkIn(request.connectorId(), request.driverId());
+            Booking walkInBooking = bookingService.registerWalkIn(connectorId, request.driverId());
             effectiveBookingId = walkInBooking.getId();
         }
 
@@ -169,13 +202,13 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
             session = transactionalCoordinator.persistLocalActivation(
                     sessionId,
                     effectiveBookingId,
-                    request.connectorId(),
+                    connectorId,
                     request.driverId(),
                     request.targetBatteryPercent(),
                     powerDecision.powerKw(),
                     now);
         } catch (RuntimeException persistFailure) {
-            if (request.bookingId() == null && effectiveBookingId != null) {
+            if (bookingId == null && effectiveBookingId != null) {
                 settlementPolicy.failActivation(effectiveBookingId, ActivationFailureReason.CHARGER_UNAVAILABLE);
             }
             throw persistFailure;
@@ -183,15 +216,15 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
 
         // 3. Activación física del hardware externo (NO participa del rollback de base de datos)
         try {
-            physicalChargerPort.activate(request.connectorId(), sessionId, powerDecision.powerKw());
+            physicalChargerPort.activate(connectorId, sessionId, powerDecision.powerKw());
         } catch (PhysicalChargerRejectedException | PhysicalChargerUnavailableException chargerFailure) {
             log.error(
                     "Falla en el cargador físico al activar el conector {}: aplicando compensación RNF06 / RF13",
-                    request.connectorId(),
+                    connectorId,
                     chargerFailure);
 
             // Compensación local: marcar sesión FAULTED y liberar conector local
-            transactionalCoordinator.compensateLocalFailure(request.connectorId(), sessionId, clock.instant());
+            transactionalCoordinator.compensateLocalFailure(connectorId, sessionId, clock.instant());
 
             // Compensación de seña (RF13, ECO-59) o liberación de reserva walk-in (ECO-58)
             if (effectiveBookingId != null) {
@@ -202,6 +235,41 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
         }
 
         return ActivationResult.fromSession(session);
+    }
+
+    /**
+     * El conector que abre el código escaneado o tipeado (RF11, ECO-44).
+     *
+     * <p>Los tres rechazos —no tiene la forma de un código, no es de ningún conector, es de otro que
+     * el que dijo el conductor— cuentan para el tope de intentos y salen con el mismo motivo: ver
+     * {@link InvalidAccessCodeException}. El acierto borra la cuenta.
+     */
+    private Long resolveConnector(ActivationRequest request) {
+        attemptLimiter.checkAllowed(request.driverId());
+
+        String code = TerminalAccessCode.parse(request.pinOrQr()).orElse(null);
+        if (code == null) {
+            attemptLimiter.recordFailure(request.driverId());
+            throw new InvalidAccessCodeException("El código no tiene la forma de un PIN ni del QR de una terminal");
+        }
+
+        Long connectorId = accessCodeDirectory.findConnectorId(code).orElse(null);
+        if (connectorId == null) {
+            attemptLimiter.recordFailure(request.driverId());
+            throw new InvalidAccessCodeException("Ningún conector tiene ese código");
+        }
+        if (request.connectorId() != null && !request.connectorId().equals(connectorId)) {
+            attemptLimiter.recordFailure(request.driverId());
+            log.info(
+                    "El conductor {} escaneó el conector {} pero pidió habilitar el {}",
+                    request.driverId(),
+                    connectorId,
+                    request.connectorId());
+            throw new InvalidAccessCodeException("El código es de otro conector");
+        }
+
+        attemptLimiter.recordSuccess(request.driverId());
+        return connectorId;
     }
 
     /**
@@ -229,7 +297,7 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
      * que una caída de Tarificación o Pagos nunca deje bloqueado al conector ni al conductor.
      */
     @Override
-    public SessionStopResult stopSession(String sessionId, Long driverId, BigDecimal reportedKwh) {
+    public SessionStopResult stopSession(String sessionId, Long driverId) {
         Objects.requireNonNull(sessionId, "sessionId no puede ser null");
         Objects.requireNonNull(driverId, "driverId no puede ser null");
 
@@ -243,7 +311,7 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
             throw new SessionNotFoundException(sessionId);
         }
 
-        return stopOwnedOrExpiredSession(session, reportedKwh);
+        return stopOwnedOrExpiredSession(session, SessionStopReason.DRIVER_STOPPED);
     }
 
     /**
@@ -263,7 +331,7 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
             Optional<Booking> booking = bookingRepository.findById(session.getBookingId());
             if (booking.isPresent() && !booking.get().getWindow().end().isAfter(now)) {
                 try {
-                    stopOwnedOrExpiredSession(session, null);
+                    stopOwnedOrExpiredSession(session, SessionStopReason.WINDOW_ENDED);
                     stoppedCount++;
                 } catch (RuntimeException failure) {
                     log.warn(
@@ -276,9 +344,10 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
         return stoppedCount;
     }
 
-    private SessionStopResult stopOwnedOrExpiredSession(ChargingSession session, BigDecimal reportedKwh) {
+    private SessionStopResult stopOwnedOrExpiredSession(ChargingSession session, SessionStopReason reason) {
         if (!session.isActive()) {
-            throw new InvalidBookingRequestException("La sesión de carga no se encuentra activa");
+            // Ya cerró —un reintento, o el corte automático llegó primero—: se devuelve lo que quedó.
+            return stopResultOf(session);
         }
 
         // 1. Desactivación física y consolidación de energía fuera de @Transactional
@@ -293,15 +362,29 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
                     ex.getMessage());
         }
 
-        BigDecimal effectiveKwh = reportedKwh != null ? reportedKwh : chargerKwh.orElse(session.getKwhDelivered());
+        // Los kWh salen del cargador; si no contestó, de la última lectura de la telemetría (ECO-44).
+        BigDecimal effectiveKwh = chargerKwh.orElse(session.getKwhDelivered());
         if (effectiveKwh == null) {
             effectiveKwh = BigDecimal.ZERO;
         }
 
         // 2. Persistencia transaccional local PRIMERO (sesión COMPLETED, conector AVAILABLE, reserva COMPLETED)
         Instant stoppedAt = clock.instant();
-        CompletedSessionData completed =
-                transactionalCoordinator.completeLocalSession(session.getSessionId(), effectiveKwh, stoppedAt);
+        CompletedSessionData completed;
+        try {
+            completed = transactionalCoordinator.completeLocalSession(session.getSessionId(), effectiveKwh, stoppedAt);
+        } catch (OptimisticLockingFailureException | SessionAlreadyClosedException closedMeanwhile) {
+            /*
+             * Otro cierre —el corte automático, un doble clic— se cruzó con este y confirmó primero. El
+             * bloqueo optimista de la sesión es el que lo detecta; la liquidación es de ese otro
+             * cierre, y esta no se repite.
+             */
+            log.info("La sesión {} se cerró por otro camino mientras se la detenía", session.getSessionId());
+            return chargingSessionRepository
+                    .findBySessionId(session.getSessionId())
+                    .map(this::stopResultOf)
+                    .orElseThrow(() -> new SessionNotFoundException(session.getSessionId()));
+        }
 
         // 3. Cálculo del costo real y liquidación con descuento de seña (fuera de @Transactional)
         long excessMinutes = 0L;
@@ -352,20 +435,41 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
             paymentStatus = ConsumptionPaymentStatus.PENDING_SETTLEMENT;
         }
 
-        ChargingSession closed = completed.session();
+        // 4. La liquidación queda guardada en la sesión, para devolverla igual si se repite el pedido
+        ChargingSession settled = transactionalCoordinator.recordSettlement(
+                session.getSessionId(), reason, depositAmount, realCost, finalBilled, additionalCharge, paymentStatus);
+        return stopResultOf(settled);
+    }
+
+    private SessionStopResult stopResultOf(ChargingSession session) {
         return new SessionStopResult(
-                closed.getSessionId(),
-                closed.getBookingId(),
-                closed.getConnectorId(),
-                closed.getStatus(),
-                closed.getStartedAt(),
-                closed.getStoppedAt(),
-                closed.getKwhDelivered(),
-                depositAmount,
-                realCost,
-                finalBilled,
-                additionalCharge,
-                paymentStatus);
+                session.getSessionId(),
+                session.getBookingId(),
+                session.getConnectorId(),
+                session.getStatus(),
+                session.getStartedAt(),
+                session.getStoppedAt(),
+                session.getKwhDelivered(),
+                session.getDepositApplied(),
+                session.getRealCost(),
+                session.getFinalBilled(),
+                session.getAdditionalCharge(),
+                session.getPaymentStatus(),
+                session.getStopReason());
+    }
+
+    @Override
+    public ChargingSessionView getSession(String sessionId, Long driverId) {
+        return chargingSessionRepository
+                .findBySessionId(sessionId)
+                .filter(session -> session.belongsTo(driverId))
+                .map(ChargingSessionView::of)
+                .orElseThrow(() -> new SessionNotFoundException(sessionId));
+    }
+
+    @Override
+    public Optional<ChargingSessionView> findActiveSession(Long driverId) {
+        return chargingSessionRepository.findActiveByDriverId(driverId).map(ChargingSessionView::of);
     }
 
     @Override
@@ -408,15 +512,76 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
             return false;
         }
 
-        if (endReason == ChargerEndReason.BATTERY_FULL || endReason == ChargerEndReason.FAULT) {
+        if (endReason == ChargerEndReason.FAULT) {
+            // Una falla con la carga en curso es RF13: se liquida sin el piso de la seña, y no es este
+            // corte el que la cierra. Queda registrada y la sesión, abierta.
             log.warn(
-                    "El cargador terminó por su cuenta la sesión {} del conector {} ({}), con {} kWh:"
-                            + " quedó registrado y la sesión sigue abierta hasta que se la cierre",
+                    "El cargador falló con la sesión {} del conector {} en curso ({} kWh): quedó registrado y"
+                            + " la sesión sigue abierta hasta que se la cierre",
                     reading.sessionId(),
                     reading.connectorId(),
-                    endReason,
                     reading.energyKwh());
+            return true;
         }
+
+        cutOffIfDue(reading, endReason);
         return true;
+    }
+
+    /**
+     * El corte automático (RF12, ECO-45): con la lectura recién guardada, si la batería llegó al
+     * objetivo o la ventana terminó, la sesión se cierra por el mismo camino que cuando la detiene el
+     * conductor —apagar, cerrar, liquidar, cobrar—. Ver {@link CutoffDecision}.
+     *
+     * <p>Que el cargador avise que la batería se llenó también corta, aunque la lectura no traiga el
+     * porcentaje: lleno es más que cualquier objetivo.
+     *
+     * <p><b>Un error acá no devuelve la lectura al broker.</b> La lectura ya quedó guardada; si el corte
+     * falla, la próxima lectura —a los pocos segundos— lo vuelve a intentar, y el fin de ventana lo
+     * cubre además el barrido. Reentregarla no arreglaría nada y llenaría la cola de reintentos. Si
+     * otro cierre llega a la vez —el conductor, el barrido—, el cierre único ya resuelve que se liquide
+     * una sola vez (ECO-44).
+     */
+    private void cutOffIfDue(TelemetryReading reading, ChargerEndReason endReason) {
+        try {
+            Optional<ChargingSession> found = chargingSessionRepository.findBySessionId(reading.sessionId());
+            if (found.isEmpty() || !found.get().isActive()) {
+                return;
+            }
+            ChargingSession session = found.get();
+
+            Instant windowEnd = session.getBookingId() == null
+                    ? null
+                    : bookingRepository
+                            .findById(session.getBookingId())
+                            .map(booking -> booking.getWindow().end())
+                            .orElse(null);
+            BigDecimal battery = endReason == ChargerEndReason.BATTERY_FULL && reading.batteryPercent() == null
+                    ? BigDecimal.valueOf(100)
+                    : reading.batteryPercent();
+
+            Optional<SessionStopReason> cut =
+                    CutoffDecision.evaluate(battery, session.getTargetBatteryPercent(), reading.timestamp(), windowEnd);
+            if (cut.isEmpty()) {
+                return;
+            }
+
+            log.info(
+                    "Corte automático de la sesión {} del conector {}: {} ({}% de {}%, ventana hasta {})",
+                    session.getSessionId(),
+                    session.getConnectorId(),
+                    cut.get(),
+                    battery,
+                    session.getTargetBatteryPercent(),
+                    windowEnd);
+            stopOwnedOrExpiredSession(session, cut.get());
+        } catch (RuntimeException failure) {
+            log.warn(
+                    "No se pudo cortar automáticamente la sesión {} con la lectura {}: {}. Lo reintenta la próxima"
+                            + " lectura",
+                    reading.sessionId(),
+                    reading.eventId(),
+                    failure.getMessage());
+        }
     }
 }

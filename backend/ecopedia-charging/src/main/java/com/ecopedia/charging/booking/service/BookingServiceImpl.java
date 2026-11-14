@@ -644,6 +644,17 @@ public class BookingServiceImpl implements BookingService {
     }
 
     @Override
+    public Optional<Booking> findChargeableBooking(
+            Long driverId, Long connectorId, Instant at, Duration earlyActivation) {
+        // Se cruza con [at, at + margen): o ya está corriendo, o empieza dentro del margen.
+        return bookingRepository
+                .findOverlappingForDriver(driverId, BookingStatus.CONFIRMED, at, at.plus(earlyActivation))
+                .stream()
+                .filter(booking -> booking.getConnectorId().equals(connectorId))
+                .findFirst();
+    }
+
+    @Override
     public Booking startBookingCharging(Long bookingId) {
         Booking booking = getBooking(bookingId);
         Instant now = clock.instant();

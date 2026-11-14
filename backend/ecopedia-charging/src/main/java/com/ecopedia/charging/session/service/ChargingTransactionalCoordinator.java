@@ -5,11 +5,13 @@ import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.BookingRepository;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
+import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import com.ecopedia.charging.session.domain.ChargingSession;
 import com.ecopedia.charging.session.domain.ChargingSessionRepository;
 import com.ecopedia.charging.session.domain.ConnectorState;
 import com.ecopedia.charging.session.domain.ConnectorStateRepository;
 import com.ecopedia.charging.session.domain.SessionNotFoundException;
+import com.ecopedia.charging.session.domain.SessionStopReason;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
@@ -166,7 +168,7 @@ public class ChargingTransactionalCoordinator {
                 .orElseThrow(() -> new SessionNotFoundException(sessionId));
 
         if (!session.isActive()) {
-            throw new InvalidBookingRequestException("La sesión ya fue finalizada");
+            throw new SessionAlreadyClosedException(sessionId);
         }
 
         session.stop(stoppedAt, kwhDelivered);
@@ -201,4 +203,37 @@ public class ChargingTransactionalCoordinator {
     }
 
     public record CompletedSessionData(ChargingSession session, BigDecimal depositAmount, Instant originalWindowEnd) {}
+
+    /**
+     * Anota en la sesión ya cerrada cómo se liquidó (RF14, ECO-44). Va en su propia transacción,
+     * después del cobro, que es externo: si esto fallara, la sesión ya está cerrada y el conector
+     * libre, que es lo que no puede esperar.
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public ChargingSession recordSettlement(
+            String sessionId,
+            SessionStopReason stopReason,
+            BigDecimal depositApplied,
+            BigDecimal realCost,
+            BigDecimal finalBilled,
+            BigDecimal additionalCharge,
+            ConsumptionPaymentStatus paymentStatus) {
+        ChargingSession session = chargingSessionRepository
+                .findBySessionId(sessionId)
+                .orElseThrow(() -> new SessionNotFoundException(sessionId));
+        session.recordSettlement(stopReason, depositApplied, realCost, finalBilled, additionalCharge, paymentStatus);
+        return chargingSessionRepository.save(session);
+    }
+
+    /**
+     * La sesión ya estaba cerrada cuando llegó este cierre: la cerró otro camino (el corte automático,
+     * un reintento). Sigue siendo un {@link InvalidBookingRequestException}, como antes de ECO-44,
+     * pero con nombre propio para que quien cierra la distinga y no liquide dos veces.
+     */
+    public static class SessionAlreadyClosedException extends InvalidBookingRequestException {
+
+        public SessionAlreadyClosedException(String sessionId) {
+            super("La sesión " + sessionId + " ya fue finalizada");
+        }
+    }
 }

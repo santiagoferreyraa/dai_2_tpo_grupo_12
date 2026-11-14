@@ -31,20 +31,28 @@ import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import com.ecopedia.charging.checkout.domain.PricingUnavailableException;
 import com.ecopedia.charging.checkout.domain.TariffDirectory;
+import com.ecopedia.charging.session.domain.AccessCodeDirectory;
 import com.ecopedia.charging.session.domain.ActivationFailureReason;
 import com.ecopedia.charging.session.domain.ActivationRequest;
 import com.ecopedia.charging.session.domain.ActivationResult;
 import com.ecopedia.charging.session.domain.ChargeSettlement;
+import com.ecopedia.charging.session.domain.ChargerEndReason;
 import com.ecopedia.charging.session.domain.ChargingPoint;
 import com.ecopedia.charging.session.domain.ChargingPointCatalog;
 import com.ecopedia.charging.session.domain.ChargingSession;
 import com.ecopedia.charging.session.domain.ChargingSessionRepository;
+import com.ecopedia.charging.session.domain.DriverAlreadyChargingException;
+import com.ecopedia.charging.session.domain.InvalidAccessCodeException;
 import com.ecopedia.charging.session.domain.PhysicalChargerPort;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
 import com.ecopedia.charging.session.domain.PowerDecision;
 import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import com.ecopedia.charging.session.domain.SessionStatus;
+import com.ecopedia.charging.session.domain.SessionStopReason;
 import com.ecopedia.charging.session.domain.SessionStopResult;
+import com.ecopedia.charging.session.domain.TelemetryReading;
+import com.ecopedia.charging.session.domain.TooManyAccessCodeAttemptsException;
+import com.ecopedia.charging.session.service.AccessCodeAttemptLimiter;
 import com.ecopedia.charging.session.service.ChargingPowerPolicy;
 import com.ecopedia.charging.session.service.ChargingSessionServiceImpl;
 import com.ecopedia.charging.session.service.ChargingSettlementPolicy;
@@ -61,9 +69,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.OptimisticLockingFailureException;
 
 class ChargingSessionServiceImplTest {
 
+    private final AccessCodeDirectory accessCodes = mock(AccessCodeDirectory.class);
     private final ChargingPointCatalog catalog = mock(ChargingPointCatalog.class);
     private final ChargingPowerPolicy powerPolicy = mock(ChargingPowerPolicy.class);
     private final PaymentDirectory paymentDirectory = mock(PaymentDirectory.class);
@@ -76,6 +86,7 @@ class ChargingSessionServiceImplTest {
     private final TariffDirectory tariffDirectory = mock(TariffDirectory.class);
     private final Clock clock = Clock.fixed(Instant.parse("2026-11-02T15:00:00Z"), ZoneOffset.UTC);
 
+    private AccessCodeAttemptLimiter attemptLimiter;
     private ChargingSessionServiceImpl activationService;
 
     private static final Long CONNECTOR_ID = 10L;
@@ -85,7 +96,10 @@ class ChargingSessionServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        attemptLimiter = new AccessCodeAttemptLimiter(3, Duration.ofMinutes(10), clock);
         activationService = new ChargingSessionServiceImpl(
+                accessCodes,
+                attemptLimiter,
                 catalog,
                 powerPolicy,
                 paymentDirectory,
@@ -99,6 +113,26 @@ class ChargingSessionServiceImplTest {
                 clock,
                 EARLY_ACTIVATION);
         stubBooking(BOOKING_ID, DRIVER_ID, CONNECTOR_ID);
+        // El código de la terminal de todos los pedidos de abajo abre el conector CONNECTOR_ID.
+        when(accessCodes.findConnectorId("123456")).thenReturn(Optional.of(CONNECTOR_ID));
+    }
+
+    /**
+     * El coordinador es un mock: lo que haría guardando la liquidación en la sesión cerrada se hace
+     * acá sobre el mismo objeto, para que el resultado salga de la sesión como en producción.
+     */
+    private void settlesOn(ChargingSession closed) {
+        when(coordinator.recordSettlement(eq(closed.getSessionId()), any(), any(), any(), any(), any(), any()))
+                .thenAnswer(inv -> {
+                    closed.recordSettlement(
+                            inv.getArgument(1),
+                            inv.getArgument(2),
+                            inv.getArgument(3),
+                            inv.getArgument(4),
+                            inv.getArgument(5),
+                            inv.getArgument(6));
+                    return closed;
+                });
     }
 
     private void stubBooking(Long bookingId, Long ownerDriverId, Long connectorId) {
@@ -152,7 +186,7 @@ class ChargingSessionServiceImplTest {
                             new BigDecimal("150.00"),
                             clock.instant()));
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
             ActivationResult result = activationService.activate(request, "bearer-token");
 
             assertThat(result.sessionId()).isNotBlank();
@@ -173,7 +207,7 @@ class ChargingSessionServiceImplTest {
             when(powerPolicy.decide(point))
                     .thenReturn(new PowerDecision(BigDecimal.ZERO, PowerDecision.Outcome.REJECTED_BY_GRID));
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(ConnectorNotBookableException.class);
@@ -194,7 +228,7 @@ class ChargingSessionServiceImplTest {
                     .when(paymentDirectory)
                     .validatePaymentMethodForCharging(eq(DRIVER_ID), any());
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(PaymentMethodInvalidException.class);
@@ -214,7 +248,7 @@ class ChargingSessionServiceImplTest {
                     .when(paymentDirectory)
                     .validatePaymentMethodForCharging(eq(DRIVER_ID), any());
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(PaymentMethodsUnavailableException.class);
@@ -246,7 +280,7 @@ class ChargingSessionServiceImplTest {
                     .when(chargerPort)
                     .activate(anyLong(), any(), any());
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(PhysicalChargerUnavailableException.class);
@@ -283,7 +317,8 @@ class ChargingSessionServiceImplTest {
                             new BigDecimal("150.00"),
                             clock.instant()));
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, null, 80, "QR-WALKIN");
+            ActivationRequest request =
+                    new ActivationRequest(CONNECTOR_ID, DRIVER_ID, null, 80, "ecopedia:connector:123456");
 
             ActivationResult result = activationService.activate(request, "token");
 
@@ -308,7 +343,8 @@ class ChargingSessionServiceImplTest {
             when(bookingService.registerWalkIn(CONNECTOR_ID, DRIVER_ID))
                     .thenThrow(new SlotUnavailableException(CONNECTOR_ID));
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, null, 80, "QR-WALKIN");
+            ActivationRequest request =
+                    new ActivationRequest(CONNECTOR_ID, DRIVER_ID, null, 80, "ecopedia:connector:123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(SlotUnavailableException.class);
@@ -345,7 +381,8 @@ class ChargingSessionServiceImplTest {
                     .when(chargerPort)
                     .activate(anyLong(), any(), any());
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, null, 80, "QR-WALKIN");
+            ActivationRequest request =
+                    new ActivationRequest(CONNECTOR_ID, DRIVER_ID, null, 80, "ecopedia:connector:123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(PhysicalChargerUnavailableException.class);
@@ -371,7 +408,8 @@ class ChargingSessionServiceImplTest {
                             any(), eq(walkInBookingId), eq(CONNECTOR_ID), eq(DRIVER_ID), eq(80), any(), any()))
                     .thenThrow(new SlotUnavailableException(CONNECTOR_ID));
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, null, 80, "QR-WALKIN");
+            ActivationRequest request =
+                    new ActivationRequest(CONNECTOR_ID, DRIVER_ID, null, 80, "ecopedia:connector:123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(SlotUnavailableException.class);
@@ -385,7 +423,7 @@ class ChargingSessionServiceImplTest {
         void foreignBooking_isRejectedAsNotFound_beforeAnyExternalCall() {
             stubBooking(BOOKING_ID, 999L, CONNECTOR_ID);
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(BookingNotFoundException.class);
@@ -403,7 +441,7 @@ class ChargingSessionServiceImplTest {
             when(powerPolicy.decide(point))
                     .thenReturn(new PowerDecision(BigDecimal.ZERO, PowerDecision.Outcome.REJECTED_BY_GRID));
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(BookingNotFoundException.class);
@@ -417,7 +455,7 @@ class ChargingSessionServiceImplTest {
         void bookingOfAnotherConnector_isRejectedBeforeExternalCalls() {
             stubBooking(BOOKING_ID, DRIVER_ID, 999L);
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(InvalidBookingRequestException.class);
@@ -436,7 +474,7 @@ class ChargingSessionServiceImplTest {
             when(powerPolicy.decide(point))
                     .thenReturn(new PowerDecision(BigDecimal.ZERO, PowerDecision.Outcome.REJECTED_BY_GRID));
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(BookingStateConflictException.class);
@@ -450,7 +488,7 @@ class ChargingSessionServiceImplTest {
         void tooEarly_isRejectedBeforeExternalCalls() {
             stubRealBooking(clock.instant().plus(Duration.ofHours(3)));
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(ActivationTooEarlyException.class);
@@ -467,7 +505,7 @@ class ChargingSessionServiceImplTest {
             when(bookingRepository.existsOverlapping(CONNECTOR_ID, BookingStatus.CONFIRMED, clock.instant(), start))
                     .thenReturn(true);
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThatThrownBy(() -> activationService.activate(request, "token"))
                     .isInstanceOf(SlotUnavailableException.class);
@@ -495,7 +533,7 @@ class ChargingSessionServiceImplTest {
                             new BigDecimal("22.00"),
                             clock.instant()));
 
-            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "QR123");
+            ActivationRequest request = new ActivationRequest(CONNECTOR_ID, DRIVER_ID, BOOKING_ID, 80, "123456");
 
             assertThat(activationService.activate(request, "token").status()).isEqualTo(SessionStatus.ACTIVE);
             verify(bookingRepository).existsOverlapping(CONNECTOR_ID, BookingStatus.CONFIRMED, clock.instant(), start);
@@ -515,6 +553,7 @@ class ChargingSessionServiceImplTest {
             ChargingSession closed = ChargingSession.start(
                     "sess-1", BOOKING_ID, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), startedAt);
             closed.stop(clock.instant(), new BigDecimal("25.000"));
+            settlesOn(closed);
 
             when(sessionRepository.findBySessionId("sess-1")).thenReturn(Optional.of(active));
             when(chargerPort.deactivate(CONNECTOR_ID)).thenReturn(Optional.of(new BigDecimal("25.000")));
@@ -535,7 +574,7 @@ class ChargingSessionServiceImplTest {
             when(paymentDirectory.chargeConsumption(DRIVER_ID, "sess-1", new BigDecimal("2200.00")))
                     .thenReturn(ConsumptionPaymentStatus.CHARGED);
 
-            SessionStopResult result = activationService.stopSession("sess-1", DRIVER_ID, null);
+            SessionStopResult result = activationService.stopSession("sess-1", DRIVER_ID);
 
             assertThat(result.status()).isEqualTo(SessionStatus.COMPLETED);
             assertThat(result.kwhDelivered()).isEqualByComparingTo("25.000");
@@ -556,9 +595,10 @@ class ChargingSessionServiceImplTest {
             ChargingSession closed = ChargingSession.start(
                     "sess-2", BOOKING_ID, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("22.00"), startedAt);
             closed.stop(clock.instant(), new BigDecimal("4.000"));
+            settlesOn(closed);
 
             when(sessionRepository.findBySessionId("sess-2")).thenReturn(Optional.of(active));
-            when(chargerPort.deactivate(CONNECTOR_ID)).thenReturn(Optional.empty());
+            when(chargerPort.deactivate(CONNECTOR_ID)).thenReturn(Optional.of(new BigDecimal("4.000")));
             when(coordinator.completeLocalSession("sess-2", new BigDecimal("4.000"), clock.instant()))
                     .thenReturn(new CompletedSessionData(
                             closed, new BigDecimal("5000.00"), clock.instant().plusSeconds(1800)));
@@ -574,7 +614,7 @@ class ChargingSessionServiceImplTest {
                             BigDecimal.ZERO,
                             ChargeSettlement.Outcome.COMPLETED));
 
-            SessionStopResult result = activationService.stopSession("sess-2", DRIVER_ID, new BigDecimal("4.000"));
+            SessionStopResult result = activationService.stopSession("sess-2", DRIVER_ID);
 
             assertThat(result.additionalCharge()).isEqualByComparingTo(BigDecimal.ZERO);
             assertThat(result.finalBilled()).isEqualByComparingTo("5000.00");
@@ -592,6 +632,7 @@ class ChargingSessionServiceImplTest {
             ChargingSession closed = ChargingSession.start(
                     "sess-walkin", 77L, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), startedAt);
             closed.stop(clock.instant(), new BigDecimal("10.000"));
+            settlesOn(closed);
 
             when(sessionRepository.findBySessionId("sess-walkin")).thenReturn(Optional.of(active));
             when(chargerPort.deactivate(CONNECTOR_ID)).thenReturn(Optional.of(new BigDecimal("10.000")));
@@ -612,7 +653,7 @@ class ChargingSessionServiceImplTest {
             when(paymentDirectory.chargeConsumption(DRIVER_ID, "sess-walkin", new BigDecimal("2500.00")))
                     .thenReturn(ConsumptionPaymentStatus.DEBT_RECORDED);
 
-            SessionStopResult result = activationService.stopSession("sess-walkin", DRIVER_ID, null);
+            SessionStopResult result = activationService.stopSession("sess-walkin", DRIVER_ID);
 
             assertThat(result.status()).isEqualTo(SessionStatus.COMPLETED);
             assertThat(result.additionalCharge()).isEqualByComparingTo("2500.00");
@@ -627,9 +668,9 @@ class ChargingSessionServiceImplTest {
             when(sessionRepository.findBySessionId("sess-other")).thenReturn(Optional.of(othersSession));
             when(sessionRepository.findBySessionId("sess-missing")).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> activationService.stopSession("sess-other", DRIVER_ID, null))
+            assertThatThrownBy(() -> activationService.stopSession("sess-other", DRIVER_ID))
                     .isInstanceOf(SessionNotFoundException.class);
-            assertThatThrownBy(() -> activationService.stopSession("sess-missing", DRIVER_ID, null))
+            assertThatThrownBy(() -> activationService.stopSession("sess-missing", DRIVER_ID))
                     .isInstanceOf(SessionNotFoundException.class);
 
             verifyNoInteractions(chargerPort, coordinator, tariffDirectory, paymentDirectory);
@@ -645,6 +686,7 @@ class ChargingSessionServiceImplTest {
             ChargingSession closed = ChargingSession.start(
                     "sess-resilient", BOOKING_ID, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("22.00"), startedAt);
             closed.stop(clock.instant(), BigDecimal.ZERO);
+            settlesOn(closed);
 
             when(sessionRepository.findBySessionId("sess-resilient")).thenReturn(Optional.of(active));
             when(chargerPort.deactivate(CONNECTOR_ID))
@@ -655,7 +697,7 @@ class ChargingSessionServiceImplTest {
             when(tariffDirectory.calculateRealCost(any(), any(), any(), any(), anyLong()))
                     .thenThrow(new PricingUnavailableException(new RuntimeException("core down")));
 
-            SessionStopResult result = activationService.stopSession("sess-resilient", DRIVER_ID, null);
+            SessionStopResult result = activationService.stopSession("sess-resilient", DRIVER_ID);
 
             assertThat(result.status()).isEqualTo(SessionStatus.COMPLETED);
             assertThat(result.paymentStatus()).isEqualTo(ConsumptionPaymentStatus.PENDING_SETTLEMENT);
@@ -682,6 +724,7 @@ class ChargingSessionServiceImplTest {
             ChargingSession expiredClosed = ChargingSession.start(
                     "sess-exp", 101L, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), now.minusSeconds(1800));
             expiredClosed.stop(now, new BigDecimal("12.000"));
+            settlesOn(expiredClosed);
 
             Booking expiredBooking = new Booking(
                     CONNECTOR_ID,
@@ -723,6 +766,259 @@ class ChargingSessionServiceImplTest {
             assertThat(stopped).isEqualTo(1);
             verify(coordinator).completeLocalSession("sess-exp", new BigDecimal("12.000"), now);
             verify(coordinator, never()).completeLocalSession(eq("sess-ok"), any(), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("Escanear y detener: el código de la terminal y el cierre único (RF11, ECO-44)")
+    class AccessCodeAndSingleClose {
+
+        private void stubHappyPath(Long bookingId) {
+            ChargingPoint point = new ChargingPoint(CONNECTOR_ID, 1L, new BigDecimal("22.00"), null);
+            when(catalog.find(CONNECTOR_ID)).thenReturn(Optional.of(point));
+            when(powerPolicy.decide(point))
+                    .thenReturn(new PowerDecision(new BigDecimal("22.00"), PowerDecision.Outcome.STANDARD_CHARGE));
+            when(coordinator.persistLocalActivation(
+                            any(), eq(bookingId), eq(CONNECTOR_ID), eq(DRIVER_ID), eq(80), any(), any()))
+                    .thenAnswer(inv -> ChargingSession.start(
+                            inv.getArgument(0),
+                            bookingId,
+                            CONNECTOR_ID,
+                            DRIVER_ID,
+                            80,
+                            new BigDecimal("22.00"),
+                            clock.instant()));
+        }
+
+        @Test
+        @DisplayName("Sin decir el conector: el código lo resuelve y la carga arranca ahí")
+        void codeAloneResolvesConnector() {
+            stubHappyPath(BOOKING_ID);
+
+            ActivationResult result =
+                    activationService.activate(new ActivationRequest(null, DRIVER_ID, BOOKING_ID, 80, "123456"), "t");
+
+            assertThat(result.connectorId()).isEqualTo(CONNECTOR_ID);
+            verify(chargerPort).activate(eq(CONNECTOR_ID), any(), any());
+        }
+
+        @Test
+        @DisplayName("Un código mal escrito no llega a core ni a nada externo")
+        void malformedCodeIsRejectedLocally() {
+            ActivationRequest request = new ActivationRequest(null, DRIVER_ID, null, 80, "12-34");
+
+            assertThatThrownBy(() -> activationService.activate(request, "t"))
+                    .isInstanceOf(InvalidAccessCodeException.class);
+
+            verifyNoInteractions(accessCodes, catalog, powerPolicy, paymentDirectory, coordinator, chargerPort);
+        }
+
+        @Test
+        @DisplayName("Un código que no es de nadie se rechaza sin tocar reservas ni el cargador")
+        void unknownCodeIsRejected() {
+            when(accessCodes.findConnectorId("999999")).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() ->
+                            activationService.activate(new ActivationRequest(null, DRIVER_ID, null, 80, "999999"), "t"))
+                    .isInstanceOf(InvalidAccessCodeException.class);
+
+            verifyNoInteractions(catalog, powerPolicy, paymentDirectory, coordinator, chargerPort);
+            verify(bookingService, never()).registerWalkIn(any(), any());
+        }
+
+        @Test
+        @DisplayName("El código de la terminal de al lado: rechazado aunque sea un código válido")
+        void codeOfAnotherConnectorIsRejected() {
+            when(accessCodes.findConnectorId("654321")).thenReturn(Optional.of(77L));
+
+            assertThatThrownBy(() -> activationService.activate(
+                            new ActivationRequest(CONNECTOR_ID, DRIVER_ID, null, 80, "654321"), "t"))
+                    .isInstanceOf(InvalidAccessCodeException.class);
+
+            verifyNoInteractions(catalog, coordinator, chargerPort);
+        }
+
+        @Test
+        @DisplayName("Después de errar el tope de veces, ni el código correcto pasa hasta que termine la espera")
+        void tooManyFailuresLockTheDriverOut() {
+            when(accessCodes.findConnectorId("000000")).thenReturn(Optional.empty());
+            for (int i = 0; i < 3; i++) {
+                assertThatThrownBy(() -> activationService.activate(
+                                new ActivationRequest(null, DRIVER_ID, null, 80, "000000"), "t"))
+                        .isInstanceOf(InvalidAccessCodeException.class);
+            }
+
+            assertThatThrownBy(() ->
+                            activationService.activate(new ActivationRequest(null, DRIVER_ID, null, 80, "123456"), "t"))
+                    .isInstanceOf(TooManyAccessCodeAttemptsException.class);
+            verify(accessCodes, never()).findConnectorId("123456");
+        }
+
+        @Test
+        @DisplayName("Con una sesión activa no se inicia otra")
+        void driverAlreadyChargingIsRejected() {
+            ChargingSession active =
+                    ChargingSession.start("ses-1", 1L, 3L, DRIVER_ID, 80, new BigDecimal("22"), clock.instant());
+            when(sessionRepository.findActiveByDriverId(DRIVER_ID)).thenReturn(Optional.of(active));
+
+            assertThatThrownBy(() ->
+                            activationService.activate(new ActivationRequest(null, DRIVER_ID, null, 80, "123456"), "t"))
+                    .isInstanceOf(DriverAlreadyChargingException.class);
+
+            verifyNoInteractions(catalog, coordinator, chargerPort);
+        }
+
+        @Test
+        @DisplayName(
+                "Sin elegir reserva, si tiene una para este conector que ya se puede usar, la usa en vez de un walk-in")
+        void ownBookingIsFoundWithoutBeingChosen() {
+            Booking own = mock(Booking.class);
+            when(own.getId()).thenReturn(BOOKING_ID);
+            when(bookingService.findChargeableBooking(DRIVER_ID, CONNECTOR_ID, clock.instant(), EARLY_ACTIVATION))
+                    .thenReturn(Optional.of(own));
+            stubHappyPath(BOOKING_ID);
+
+            ActivationResult result =
+                    activationService.activate(new ActivationRequest(null, DRIVER_ID, null, 80, "123456"), "t");
+
+            assertThat(result.bookingId()).isEqualTo(BOOKING_ID);
+            verify(bookingService, never()).registerWalkIn(any(), any());
+        }
+
+        @Test
+        @DisplayName("Detener una sesión ya cerrada devuelve la liquidación guardada, sin apagar ni cobrar de nuevo")
+        void stoppingAClosedSessionReturnsTheStoredSettlement() {
+            ChargingSession closed = ChargingSession.start(
+                    "sess-done", BOOKING_ID, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), clock.instant());
+            closed.stop(clock.instant(), new BigDecimal("12.000"));
+            closed.recordSettlement(
+                    SessionStopReason.DRIVER_STOPPED,
+                    new BigDecimal("3000.00"),
+                    new BigDecimal("6000.00"),
+                    new BigDecimal("6000.00"),
+                    new BigDecimal("3000.00"),
+                    ConsumptionPaymentStatus.CHARGED);
+            when(sessionRepository.findBySessionId("sess-done")).thenReturn(Optional.of(closed));
+
+            SessionStopResult result = activationService.stopSession("sess-done", DRIVER_ID);
+
+            assertThat(result.status()).isEqualTo(SessionStatus.COMPLETED);
+            assertThat(result.additionalCharge()).isEqualByComparingTo("3000.00");
+            assertThat(result.paymentStatus()).isEqualTo(ConsumptionPaymentStatus.CHARGED);
+            verifyNoInteractions(chargerPort, coordinator, tariffDirectory, paymentDirectory);
+        }
+
+        @Test
+        @DisplayName("El corte automático se cruzó y cerró primero: no se liquida ni se cobra dos veces")
+        void concurrentCloseDoesNotSettleTwice() {
+            ChargingSession active = ChargingSession.start(
+                    "sess-race", BOOKING_ID, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), clock.instant());
+            when(sessionRepository.findBySessionId("sess-race")).thenReturn(Optional.of(active));
+            when(chargerPort.deactivate(CONNECTOR_ID)).thenReturn(Optional.empty());
+            when(coordinator.completeLocalSession(eq("sess-race"), any(), any()))
+                    .thenThrow(new OptimisticLockingFailureException("versión vieja"));
+
+            activationService.stopSession("sess-race", DRIVER_ID);
+
+            verifyNoInteractions(tariffDirectory, paymentDirectory);
+            verify(coordinator, never()).recordSettlement(any(), any(), any(), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("Los kWh salen del cargador; si no contesta, de la última lectura de la telemetría")
+        void energyComesFromTheCharger() {
+            Instant startedAt = clock.instant().minusSeconds(600);
+            ChargingSession active = ChargingSession.start(
+                    "sess-kwh", BOOKING_ID, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("22.00"), startedAt);
+            ChargingSession closed = ChargingSession.start(
+                    "sess-kwh", BOOKING_ID, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("22.00"), startedAt);
+            closed.stop(clock.instant(), new BigDecimal("9.500"));
+            settlesOn(closed);
+            when(sessionRepository.findBySessionId("sess-kwh")).thenReturn(Optional.of(active));
+            when(chargerPort.deactivate(CONNECTOR_ID)).thenReturn(Optional.of(new BigDecimal("9.500")));
+            when(coordinator.completeLocalSession(eq("sess-kwh"), any(), any()))
+                    .thenReturn(new CompletedSessionData(
+                            closed, BigDecimal.ZERO, clock.instant().plusSeconds(600)));
+            when(tariffDirectory.calculateRealCost(any(), any(), any(), any(), anyLong()))
+                    .thenReturn(BigDecimal.ZERO);
+            when(settlementPolicy.settleCompletedSession(any(), any()))
+                    .thenReturn(new ChargeSettlement(
+                            BigDecimal.ZERO,
+                            BigDecimal.ZERO,
+                            BigDecimal.ZERO,
+                            BigDecimal.ZERO,
+                            BigDecimal.ZERO,
+                            ChargeSettlement.Outcome.COMPLETED));
+
+            activationService.stopSession("sess-kwh", DRIVER_ID);
+
+            verify(coordinator).completeLocalSession(eq("sess-kwh"), eq(new BigDecimal("9.500")), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("Corte automático por telemetría (RF12, ECO-45)")
+    class AutomaticCutoff {
+
+        private TelemetryReading reading(String sessionId, String battery) {
+            return new TelemetryReading(
+                    "evt-1",
+                    TelemetryReading.Type.READING,
+                    sessionId,
+                    CONNECTOR_ID,
+                    clock.instant(),
+                    new BigDecimal("50.00"),
+                    new BigDecimal("10.000"),
+                    battery == null ? null : new BigDecimal(battery),
+                    null);
+        }
+
+        @Test
+        @DisplayName("Si el corte falla, la lectura igual queda guardada y no vuelve al broker")
+        void aFailingCutDoesNotRedeliverTheReading() {
+            ChargingSession active = ChargingSession.start(
+                    "sess-cut", null, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), clock.instant());
+            when(sessionRepository.recordReading(eq("sess-cut"), any(), any(), any(), any(), any()))
+                    .thenReturn(1);
+            when(sessionRepository.findBySessionId("sess-cut")).thenReturn(Optional.of(active));
+            when(chargerPort.deactivate(CONNECTOR_ID)).thenThrow(new IllegalStateException("se rompió algo"));
+
+            assertThat(activationService.processTelemetry(reading("sess-cut", "85.0")))
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("Debajo del objetivo y sin ventana conocida: no apaga nada")
+        void belowTargetDoesNothing() {
+            ChargingSession active = ChargingSession.start(
+                    "sess-low", null, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), clock.instant());
+            when(sessionRepository.recordReading(eq("sess-low"), any(), any(), any(), any(), any()))
+                    .thenReturn(1);
+            when(sessionRepository.findBySessionId("sess-low")).thenReturn(Optional.of(active));
+
+            activationService.processTelemetry(reading("sess-low", "40.0"));
+
+            verifyNoInteractions(chargerPort, coordinator);
+        }
+
+        @Test
+        @DisplayName("Una falla del cargador no la corta este camino: es RF13 y se liquida distinto")
+        void aFaultIsNotCutHere() {
+            when(sessionRepository.recordReading(eq("sess-fault"), any(), any(), any(), any(), any()))
+                    .thenReturn(1);
+
+            activationService.processTelemetry(new TelemetryReading(
+                    "evt-f",
+                    TelemetryReading.Type.FAULT,
+                    "sess-fault",
+                    CONNECTOR_ID,
+                    clock.instant(),
+                    BigDecimal.ZERO,
+                    new BigDecimal("3.000"),
+                    new BigDecimal("99.0"),
+                    ChargerEndReason.FAULT));
+
+            verifyNoInteractions(chargerPort, coordinator);
         }
     }
 }

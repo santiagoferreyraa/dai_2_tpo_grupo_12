@@ -25,9 +25,9 @@ import com.ecopedia.charging.session.domain.PhysicalChargerRejectedException;
 import com.ecopedia.charging.session.domain.PhysicalChargerUnavailableException;
 import com.ecopedia.charging.session.domain.SessionNotFoundException;
 import com.ecopedia.charging.session.domain.SessionStatus;
+import com.ecopedia.charging.session.domain.SessionStopReason;
 import com.ecopedia.charging.session.domain.SessionStopResult;
 import com.ecopedia.charging.session.web.dto.ActivationHttpRequest;
-import com.ecopedia.charging.session.web.dto.StopSessionRequest;
 import com.ecopedia.charging.web.ApiProblems;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
@@ -73,7 +73,7 @@ class SessionApiTest {
 
         when(activationService.activate(any(ActivationRequest.class), any())).thenReturn(result);
 
-        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, 10L, 80, "QR-CONN-8");
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, 10L, 80, "123456");
 
         mockMvc.perform(post("/api/sessions/activation")
                         .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
@@ -89,7 +89,7 @@ class SessionApiTest {
     @Test
     @DisplayName("POST /api/sessions/activation anónimo responde 401 Unauthorized")
     void unauthenticatedActivationReturnsUnauthorized() throws Exception {
-        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, 10L, 80, "QR-CONN-8");
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, 10L, 80, "123456");
 
         mockMvc.perform(post("/api/sessions/activation")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -103,7 +103,7 @@ class SessionApiTest {
         when(activationService.activate(any(ActivationRequest.class), any()))
                 .thenThrow(new SlotUnavailableException(CONNECTOR_ID));
 
-        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, null, 80, null);
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, null, 80, "123456");
 
         mockMvc.perform(post("/api/sessions/activation")
                         .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
@@ -119,7 +119,7 @@ class SessionApiTest {
         when(activationService.activate(any(ActivationRequest.class), any()))
                 .thenThrow(new PaymentMethodInvalidException("Tarjeta rechazada"));
 
-        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, null, 80, null);
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, null, 80, "123456");
 
         mockMvc.perform(post("/api/sessions/activation")
                         .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
@@ -135,7 +135,7 @@ class SessionApiTest {
         when(activationService.activate(any(ActivationRequest.class), any()))
                 .thenThrow(new PhysicalChargerUnavailableException("tok_123 / body del simulador"));
 
-        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, 10L, 80, null);
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, 10L, 80, "123456");
 
         mockMvc.perform(post("/api/sessions/activation")
                         .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
@@ -154,7 +154,7 @@ class SessionApiTest {
         when(activationService.activate(any(ActivationRequest.class), any()))
                 .thenThrow(new PhysicalChargerRejectedException("tok_123 / body del simulador"));
 
-        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, 10L, 80, null);
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, 10L, 80, "123456");
 
         mockMvc.perform(post("/api/sessions/activation")
                         .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
@@ -173,7 +173,7 @@ class SessionApiTest {
         when(activationService.activate(any(ActivationRequest.class), any()))
                 .thenThrow(new ConnectorNotFoundException(CONNECTOR_ID));
 
-        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, null, 80, null);
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, null, 80, "123456");
 
         mockMvc.perform(post("/api/sessions/activation")
                         .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
@@ -187,7 +187,7 @@ class SessionApiTest {
     @Test
     @DisplayName("Reserva inexistente o ajena devuelve exactamente el mismo cuerpo 404 que conector inexistente")
     void bookingNotFound_returnsSameBodyAsConnectorNotFound() throws Exception {
-        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, 10L, 80, null);
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, 10L, 80, "123456");
         String payload = objectMapper.writeValueAsString(request);
         String token = TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR");
 
@@ -218,7 +218,7 @@ class SessionApiTest {
         when(activationService.activate(any(ActivationRequest.class), any()))
                 .thenThrow(new PaymentMethodsUnavailableException(new RuntimeException("timeout")));
 
-        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, null, 80, null);
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, null, 80, "123456");
 
         mockMvc.perform(post("/api/sessions/activation")
                         .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
@@ -244,7 +244,7 @@ class SessionApiTest {
 
         when(activationService.activate(any(ActivationRequest.class), any())).thenReturn(result);
 
-        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, null, 80, "QR-WALKIN");
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, null, 80, "ecopedia:connector:123456");
 
         mockMvc.perform(post("/api/sessions/activation")
                         .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
@@ -263,7 +263,7 @@ class SessionApiTest {
         when(activationService.activate(any(ActivationRequest.class), any()))
                 .thenThrow(DriverAlreadyBookedException.charging(10L, DRIVER_ID));
 
-        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, null, 80, null);
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, null, 80, "123456");
 
         mockMvc.perform(post("/api/sessions/activation")
                         .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
@@ -290,15 +290,13 @@ class SessionApiTest {
                 new BigDecimal("7200.00"),
                 new BigDecimal("7200.00"),
                 new BigDecimal("2200.00"),
-                ConsumptionPaymentStatus.CHARGED);
+                ConsumptionPaymentStatus.CHARGED,
+                SessionStopReason.DRIVER_STOPPED);
 
-        when(activationService.stopSession("session-stop-1", DRIVER_ID, new BigDecimal("18.500")))
-                .thenReturn(result);
+        when(activationService.stopSession("session-stop-1", DRIVER_ID)).thenReturn(result);
 
         mockMvc.perform(post("/api/sessions/session-stop-1/stop")
-                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new StopSessionRequest(new BigDecimal("18.500")))))
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sessionId").value("session-stop-1"))
                 .andExpect(jsonPath("$.status").value("COMPLETED"))
@@ -311,7 +309,7 @@ class SessionApiTest {
     @Test
     @DisplayName("POST /api/sessions/{sessionId}/stop sobre sesión ajena o inexistente responde 404 opaco")
     void stopForeignOrMissingSessionReturnsOpaqueNotFound() throws Exception {
-        when(activationService.stopSession("session-foreign", DRIVER_ID, null))
+        when(activationService.stopSession("session-foreign", DRIVER_ID))
                 .thenThrow(new SessionNotFoundException("session-foreign"));
 
         mockMvc.perform(post("/api/sessions/session-foreign/stop")
@@ -333,7 +331,7 @@ class SessionApiTest {
         when(activationService.activate(any(ActivationRequest.class), any()))
                 .thenThrow(new BookingStateConflictException(10L, "en CANCELLED", "la habilitación de la carga"));
 
-        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, 10L, 80, null);
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, 10L, 80, "123456");
 
         mockMvc.perform(post("/api/sessions/activation")
                         .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
@@ -349,7 +347,7 @@ class SessionApiTest {
     @Test
     @DisplayName("Cerrar la carga de una reserva ya cerrada responde 409 BOOKING_STATE_CONFLICT, no 500")
     void stoppingOnClosedBookingReturnsStateConflict() throws Exception {
-        when(activationService.stopSession("session-closed", DRIVER_ID, null))
+        when(activationService.stopSession("session-closed", DRIVER_ID))
                 .thenThrow(new BookingStateConflictException(10L, "en COMPLETED", "el cierre de la carga"));
 
         mockMvc.perform(post("/api/sessions/session-closed/stop")

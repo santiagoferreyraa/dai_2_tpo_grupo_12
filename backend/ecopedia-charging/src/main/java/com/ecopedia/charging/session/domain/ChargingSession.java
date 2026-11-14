@@ -1,5 +1,6 @@
 package com.ecopedia.charging.session.domain;
 
+import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -80,6 +81,33 @@ public class ChargingSession {
     @Column(name = "charger_end_reason", length = 20)
     private ChargerEndReason chargerEndReason;
 
+    /*
+     * La liquidación, anotada al cerrar (ECO-44). Hace falta guardarla para que detener una sesión ya
+     * cerrada —un reintento del front, o el conductor que aprieta después del corte automático—
+     * devuelva lo mismo que la primera vez en lugar de un error, y para mostrarla después.
+     */
+    @Column(name = "real_cost", precision = 10, scale = 2)
+    private BigDecimal realCost;
+
+    @Column(name = "deposit_applied", precision = 10, scale = 2)
+    private BigDecimal depositApplied;
+
+    @Column(name = "final_billed", precision = 10, scale = 2)
+    private BigDecimal finalBilled;
+
+    @Column(name = "additional_charge", precision = 10, scale = 2)
+    private BigDecimal additionalCharge;
+
+    /** Quién decidió cerrar la sesión (ECO-45). {@code null} mientras sigue activa. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "stop_reason", length = 20)
+    private SessionStopReason stopReason;
+
+    /** Cómo quedó el cobro del consumo. {@code null} mientras la sesión no se liquidó. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_status", length = 20)
+    private ConsumptionPaymentStatus paymentStatus;
+
     @Version
     @Column(name = "version", nullable = false)
     private Long version;
@@ -136,6 +164,26 @@ public class ChargingSession {
         if (kwhDelivered != null) {
             this.kwhDelivered = kwhDelivered;
         }
+    }
+
+    /** Anota por qué se cerró y cómo se liquidó la sesión ya cerrada (RF12, RF14, ECO-44, ECO-45). */
+    public void recordSettlement(
+            SessionStopReason stopReason,
+            BigDecimal depositApplied,
+            BigDecimal realCost,
+            BigDecimal finalBilled,
+            BigDecimal additionalCharge,
+            ConsumptionPaymentStatus paymentStatus) {
+        this.stopReason = stopReason;
+        this.depositApplied = depositApplied;
+        this.realCost = realCost;
+        this.finalBilled = finalBilled;
+        this.additionalCharge = additionalCharge;
+        this.paymentStatus = Objects.requireNonNull(paymentStatus, "paymentStatus no puede ser null");
+    }
+
+    public boolean belongsTo(Long driverId) {
+        return this.driverId.equals(driverId);
     }
 
     public Long getId() {
@@ -209,5 +257,29 @@ public class ChargingSession {
 
     public boolean isActive() {
         return status == SessionStatus.ACTIVE;
+    }
+
+    public BigDecimal getRealCost() {
+        return realCost;
+    }
+
+    public BigDecimal getDepositApplied() {
+        return depositApplied;
+    }
+
+    public BigDecimal getFinalBilled() {
+        return finalBilled;
+    }
+
+    public BigDecimal getAdditionalCharge() {
+        return additionalCharge;
+    }
+
+    public ConsumptionPaymentStatus getPaymentStatus() {
+        return paymentStatus;
+    }
+
+    public SessionStopReason getStopReason() {
+        return stopReason;
     }
 }

@@ -15,6 +15,9 @@ public interface ChargingSessionRepository {
 
     Optional<ChargingSession> findActiveByConnectorId(Long connectorId);
 
+    /** La sesión activa del conductor (ECO-44): tiene a lo sumo una. */
+    Optional<ChargingSession> findActiveByDriverId(Long driverId);
+
     List<ChargingSession> findByDriverId(Long driverId);
 
     List<ChargingSession> findByStatus(SessionStatus status);

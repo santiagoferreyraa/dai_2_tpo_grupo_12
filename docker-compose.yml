@@ -155,7 +155,7 @@ services:
     container_name: ecopedia-core
     command: ["java", "-jar", "/app/ecopedia-core.jar"]
     environment:
-      <<: [*java-env, *db, *jwt]
+      <<: [*java-env, *db, *jwt, *internal-token]
       SERVER_PORT: 8081
       ECOPEDIA_LOGIN_MAX_FAILURES: ${ECOPEDIA_LOGIN_MAX_FAILURES:-5}
       ECOPEDIA_LOGIN_LOCK_MINUTES: ${ECOPEDIA_LOGIN_LOCK_MINUTES:-15}
