@@ -342,8 +342,8 @@ export default function StationsMapPage() {
    * y no cambia porque el conductor ande mirando otros pines.
    */
   const bookedOrigin =
-    departure.departure.kind === 'address' && departure.departure.stationId === bookedStationId
-      ? departure.origin
+    departure.committed.kind === 'address' && departure.committed.stationId === bookedStationId
+      ? departure.committedOrigin
       : departure.deviceOrigin
 
   const bookedRouteState = useRoute(bookedOrigin, bookedStation)
@@ -497,11 +497,17 @@ export default function StationsMapPage() {
             bottomInsetPx={!wide && selectedStation !== null ? SHEET_INSET_PX : 0}
             dimUnselected={selectedStation !== null}
             /*
-              El alfiler del punto de partida se dibuja con la dirección elegida y no con el origen
-              de ESTE recorrido: mientras el recorrido punteado siga en pantalla, el lugar de donde
-              sale tiene que estar marcado, aunque lo que se esté mirando sea otra estación.
+              El alfiler del punto de partida sale del origen de la RESERVA y no del de ESTE
+              recorrido: mientras el recorrido punteado siga en pantalla, el lugar de donde sale
+              tiene que estar marcado, aunque lo que se esté mirando sea otra estación.
+
+              Y por lo mismo aparece recién con la reserva confirmada: `bookedOrigin` es la
+              dirección solo si hay una reserva vigente en la estación para la que se escribió. La
+              dirección elegida a mitad del formulario todavía no es el punto de partida de ningún
+              viaje, y si la reserva no se hacía el alfiler quedaba suelto en el mapa. Sin reserva
+              `bookedOrigin` es el dispositivo, y con ese `kind` el mapa no dibuja alfiler.
             */
-            origin={departure.origin}
+            origin={bookedOrigin}
             deviceLocation={departure.device.location}
             route={selectedIsBooked ? null : selectedRouteState.route}
             bookedRoute={bookedRouteState.route}

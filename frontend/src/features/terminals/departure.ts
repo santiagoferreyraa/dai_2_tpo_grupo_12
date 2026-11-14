@@ -69,7 +69,26 @@ export const DEVICE_DEPARTURE_LABEL = 'Tu ubicación'
 
 const STORAGE_KEY = 'ecopedia.departure'
 
+/** El punto de partida confirmado: el de la reserva que se hizo con él. Es el único que se guarda. */
 let departure: Departure = DEVICE_DEPARTURE
+
+/**
+ * Lo que el conductor eligió en el formulario de una reserva que todavía no confirmó, o `null` si
+ * no está eligiendo nada (ECO-139).
+ *
+ * Existe aparte de `departure` porque elegir una dirección en el formulario NO es todavía el punto
+ * de partida de ningún viaje. Cuando era lo mismo, una reserva que no se terminaba de hacer —se
+ * cerró el diálogo, o el backend la rechazó porque ya había otra— dejaba su dirección puesta: el
+ * recorrido de esa estación salía de un punto que ya no marcaba nada, y peor, la dirección de la
+ * reserva que SÍ se hizo quedaba pisada por la del intento.
+ *
+ * Mientras el borrador existe es lo que se ve (`useDeparture`), así el formulario y la vista previa
+ * del recorrido responden a lo que se está eligiendo. Se vuelve punto de partida con
+ * `commitDeparture`, al confirmar la reserva, y se tira con `discardDepartureDraft`, al salir del
+ * flujo sin confirmar. Vive solo en memoria: nunca llega a `sessionStorage`.
+ */
+let draft: Departure | null = null
+
 const listeners = new Set<() => void>()
 
 /**
@@ -149,7 +168,13 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
+/** Lo que se ve ahora: el borrador del formulario si hay uno, y si no el punto confirmado. */
 export function getDeparture(): Departure {
+  return draft ?? departure
+}
+
+/** Solo el punto de partida confirmado, sin el borrador del formulario. */
+export function getCommittedDeparture(): Departure {
   return departure
 }
 
@@ -166,24 +191,49 @@ export function getDeparture(): Departure {
 export function departFrom(suggestion: AddressSuggestion, stationId: number): void {
   const { label, detail, latitude, longitude, accuracyM } = suggestion
 
-  departure = {
+  draft = {
     kind: 'address',
     stationId,
     address: { label, detail, latitude, longitude, accuracyM },
   }
+  notify()
+}
+
+/** Vuelve a salir desde donde esté el dispositivo. Como `departFrom`, es un borrador. */
+export function departFromDevice(): void {
+  if (getDeparture().kind === 'device') return
+
+  draft = DEVICE_DEPARTURE
+  notify()
+}
+
+/**
+ * La reserva se confirmó: lo elegido en el formulario pasa a ser el punto de partida del viaje.
+ *
+ * Sin borrador no hace nada, y es lo correcto: el conductor reservó sin tocar el campo, así que el
+ * punto de partida es el que ya estaba.
+ */
+export function commitDeparture(): void {
+  if (draft === null) return
+
+  departure = draft
+  draft = null
   persist()
   notify()
 }
 
-/** Vuelve a salir desde donde esté el dispositivo. */
-export function departFromDevice(): void {
-  if (departure.kind === 'device') return
+/** Se salió de la reserva sin confirmarla: lo elegido en el formulario se olvida. */
+export function discardDepartureDraft(): void {
+  if (draft === null) return
 
-  departure = DEVICE_DEPARTURE
-  persist()
+  draft = null
   notify()
 }
 
 export function useDeparture(): Departure {
   return useSyncExternalStore(subscribe, getDeparture, getDeparture)
+}
+
+export function useCommittedDeparture(): Departure {
+  return useSyncExternalStore(subscribe, getCommittedDeparture, getCommittedDeparture)
 }
