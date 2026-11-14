@@ -1,6 +1,7 @@
 package com.ecopedia.charging.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.ecopedia.charging.booking.domain.Booking;
 import com.ecopedia.charging.booking.domain.BookingRepository;
@@ -14,7 +15,10 @@ import com.ecopedia.charging.session.domain.SessionStatus;
 import com.ecopedia.charging.session.domain.SessionStopReason;
 import com.ecopedia.charging.session.domain.TelemetryReading;
 import com.ecopedia.charging.session.service.ChargingTransactionalCoordinator;
+import jakarta.jms.ConnectionFactory;
+import jakarta.jms.TextMessage;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
@@ -22,7 +26,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jms.core.JmsTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
@@ -56,6 +62,12 @@ class AutomaticCutoffTest {
 
     @Autowired
     private ChargingTransactionalCoordinator coordinator;
+
+    @Autowired
+    private ConnectionFactory connectionFactory;
+
+    @Value("${ecopedia.telemetry.topic}")
+    private String telemetryTopic;
 
     /** Una sesión habilitada de verdad: reserva en curso, conector ocupado, sesión activa. */
     private ChargingSession activeSession(long connectorId, int target, Instant windowStart, Instant windowEnd) {
@@ -121,6 +133,80 @@ class AutomaticCutoffTest {
                 .isFalse();
         assertThat(bookingRepository.existsOverlapping(connectorId, BookingStatus.CONFIRMED, remainder, windowEnd))
                 .isFalse();
+    }
+
+    /**
+     * DEF-21, tal como se reportó: objetivo 80 %, la telemetría del cargador informa exactamente ese
+     * porcentaje y la carga tiene que cortarse ahí, no seguir hasta el fin de la ventana. Recorre el
+     * camino completo —el mensaje publicado en {@code telemetry.charging}, el listener, el corte—
+     * porque el defecto era justamente que nadie consumía el tópico.
+     */
+    @Test
+    @DisplayName("DEF-21: una lectura del 80 % publicada en el tópico corta una carga con objetivo 80 %")
+    void def21TargetReadingFromTheTopicCutsTheSession() {
+        long connectorId = NEXT_CONNECTOR.incrementAndGet();
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+        ChargingSession session = activeSession(connectorId, 80, now.minusSeconds(600), now.plusSeconds(3000));
+        String body =
+                """
+                {"eventId":"evt-%s","type":"READING","sessionId":"%s","connectorId":%d,
+                 "timestamp":"%s","powerKw":50.00,"energyKwh":20.000,"batteryPercent":80.0,"endReason":null}
+                """
+                        .formatted(UUID.randomUUID(), session.getSessionId(), connectorId, now.plusSeconds(5));
+
+        JmsTemplate publisher = new JmsTemplate(connectionFactory);
+        publisher.setPubSubDomain(true);
+
+        // El tópico no guarda lo publicado antes de que el listener se suscriba: se publica hasta que
+        // llega. Una lectura repetida después del corte se descarta (ver readingsAfterTheCutAreDiscarded).
+        await().atMost(Duration.ofSeconds(20))
+                .pollInterval(Duration.ofMillis(300))
+                .untilAsserted(() -> {
+                    publisher.send(telemetryTopic, jms -> {
+                        TextMessage message = jms.createTextMessage(body);
+                        message.setStringProperty("_type", "telemetry-event");
+                        return message;
+                    });
+                    ChargingSession closed = sessionRepository
+                            .findBySessionId(session.getSessionId())
+                            .orElseThrow();
+                    assertThat(closed.getStatus()).isEqualTo(SessionStatus.COMPLETED);
+                    assertThat(closed.getStopReason()).isEqualTo(SessionStopReason.TARGET_REACHED);
+                });
+
+        assertThat(connectorStates.findById(connectorId).orElseThrow().isAvailable())
+                .isTrue();
+        assertThat(bookingRepository
+                        .findById(session.getBookingId())
+                        .orElseThrow()
+                        .getStatus())
+                .isEqualTo(BookingStatus.COMPLETED);
+    }
+
+    @Test
+    @DisplayName("DEF-21: una carga sin reserva también se corta al llegar al objetivo")
+    void walkInSessionIsCutAtTheTarget() {
+        long connectorId = NEXT_CONNECTOR.incrementAndGet();
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+        ChargingSession session = coordinator.persistLocalActivation(
+                UUID.randomUUID().toString(), null, connectorId, DRIVER_ID, 60, new BigDecimal("22.00"), now);
+
+        sessions.processTelemetry(reading(session, now.plusSeconds(2), "4.000", "59.9"));
+        assertThat(sessionRepository
+                        .findBySessionId(session.getSessionId())
+                        .orElseThrow()
+                        .getStatus())
+                .isEqualTo(SessionStatus.ACTIVE);
+
+        sessions.processTelemetry(reading(session, now.plusSeconds(4), "4.200", "60.0"));
+
+        ChargingSession closed =
+                sessionRepository.findBySessionId(session.getSessionId()).orElseThrow();
+        assertThat(closed.getStatus()).isEqualTo(SessionStatus.COMPLETED);
+        assertThat(closed.getStopReason()).isEqualTo(SessionStopReason.TARGET_REACHED);
+        assertThat(closed.getKwhDelivered()).isEqualByComparingTo("4.200");
+        assertThat(connectorStates.findById(connectorId).orElseThrow().isAvailable())
+                .isTrue();
     }
 
     @Test

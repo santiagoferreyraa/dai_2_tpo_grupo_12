@@ -59,14 +59,19 @@ export default function ActiveSessionCard({
     try {
       const stopped = await stopCharging(session.sessionId)
       /*
-        La respuesta del stop trae la liquidación, pero no la batería ni el objetivo: se completan
-        con lo último que se sabía de la sesión, para que el resumen los muestre.
+        La respuesta del stop trae la liquidación, pero no la batería ni el objetivo. La sesión ya
+        cerrada sí tiene la batería de la última lectura del cargador; la de esta pantalla puede tener
+        hasta un refresco de atraso. Si ese pedido falla, alcanza con lo último que se sabía.
       */
+      const closed = await fetchSession(session.sessionId).catch(() => null)
       onFinished({
         ...stopped,
-        targetBatteryPercent: stopped.targetBatteryPercent ?? session.targetBatteryPercent,
-        powerLimitKw: stopped.powerLimitKw ?? session.powerLimitKw,
-        batteryPercent: stopped.batteryPercent ?? session.batteryPercent,
+        targetBatteryPercent:
+          stopped.targetBatteryPercent ??
+          closed?.targetBatteryPercent ??
+          session.targetBatteryPercent,
+        powerLimitKw: stopped.powerLimitKw ?? closed?.powerLimitKw ?? session.powerLimitKw,
+        batteryPercent: stopped.batteryPercent ?? closed?.batteryPercent ?? session.batteryPercent,
         currentPowerKw: null,
       })
     } catch (failure) {
