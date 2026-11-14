@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { refreshNotificationsSoon } from '@/features/notifications/data/notificationsStore'
+import { commitDeparture, discardDepartureDraft } from '@/features/terminals/departure'
 import { ApiError } from '@/lib/api'
 
 import { checkoutBooking, startHold } from './data/bookingsRepository'
@@ -149,6 +150,13 @@ export function useBookingFlow(connectorId: number): BookingFlow {
     mounted.current = true
     return () => {
       mounted.current = false
+      /*
+       * Salir del flujo sin haber confirmado tira lo que se eligió como punto de partida en el
+       * formulario (ECO-139): si no, el recorrido de esa estación seguía saliendo de una dirección
+       * que no era de ninguna reserva. Si la reserva se confirmó, el borrador ya pasó a ser el
+       * punto de partida y esto no hace nada.
+       */
+      discardDepartureDraft()
     }
   }, [])
 
@@ -197,6 +205,8 @@ export function useBookingFlow(connectorId: number): BookingFlow {
         (booking) => {
           uncertainAttempt = null
           forgetHold(connectorId)
+          /* Recién ahora la dirección elegida es el punto de partida de un viaje. Ver `departure`. */
+          commitDeparture()
           /* La franja y el perfil muestran las reservas: se enteran de la nueva sin recargar. */
           refreshMyBookings()
           /*

@@ -16,7 +16,7 @@
 
 import { useMemo } from 'react'
 
-import { useDeparture, type Departure } from './departure'
+import { useCommittedDeparture, useDeparture, type Departure } from './departure'
 import { useDeviceLocation, type DeviceLocationState } from './useDeviceLocation'
 import type { RouteOrigin } from './useRoute'
 
@@ -35,8 +35,18 @@ export interface DeparturePoint extends RouteOrigin {
 }
 
 export interface DepartureOriginState {
-  /** Qué eligió el conductor. Ver `departure`. */
+  /** Qué eligió el conductor, incluido lo que está eligiendo en el formulario. Ver `departure`. */
   departure: Departure
+  /**
+   * El punto de partida confirmado con una reserva, sin el borrador del formulario.
+   *
+   * Es el que manda en el recorrido de la reserva y en el alfiler: lo que se está eligiendo para
+   * una reserva que todavía no existe no tiene que mover ninguno de los dos. Ver ECO-139 en
+   * `departure`.
+   */
+  committed: Departure
+  /** El origen que sale de `committed`, con las mismas reglas que `origin`. */
+  committedOrigin: DeparturePoint | null
   /**
    * Desde dónde se calcula el recorrido, o `null` si todavía no se sabe.
    *
@@ -68,6 +78,7 @@ export interface DepartureOriginState {
 
 export function useDepartureOrigin(): DepartureOriginState {
   const departure = useDeparture()
+  const committed = useCommittedDeparture()
   const device = useDeviceLocation()
 
   /*
@@ -83,14 +94,25 @@ export function useDepartureOrigin(): DepartureOriginState {
     return { kind: 'device', latitude, longitude, accuracyM }
   }, [device.location])
 
-  const origin = useMemo<DeparturePoint | null>(() => {
-    if (departure.kind === 'address') {
-      const { latitude, longitude, accuracyM } = departure.address
-      return { kind: 'address', latitude, longitude, accuracyM }
-    }
+  /*
+   * La dirección se memoriza aparte y SOLO contra `departure` (ECO-139). Antes estaba en el mismo
+   * `useMemo` que elegía entre las dos, con `deviceOrigin` en las dependencias: cada aviso del GPS
+   * fabricaba un origen nuevo con las MISMAS coordenadas de la dirección, y como una dirección no
+   * pasa por el umbral de deriva de `useRoute`, cada aviso volvía a pedir la ruta. Entre pedido y
+   * respuesta la ruta quedaba en 'loading' sin recorrido, y eso era el parpadeo.
+   */
+  const addressOrigin = useMemo(() => addressPoint(departure), [departure])
+  const committedAddressOrigin = useMemo(() => addressPoint(committed), [committed])
 
-    return deviceOrigin
-  }, [departure, deviceOrigin])
+  const origin = addressOrigin ?? deviceOrigin
+  const committedOrigin = committedAddressOrigin ?? deviceOrigin
 
-  return { departure, origin, deviceOrigin, device }
+  return { departure, committed, origin, committedOrigin, deviceOrigin, device }
+}
+
+function addressPoint(departure: Departure): DeparturePoint | null {
+  if (departure.kind !== 'address') return null
+
+  const { latitude, longitude, accuracyM } = departure.address
+  return { kind: 'address', latitude, longitude, accuracyM }
 }
