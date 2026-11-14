@@ -583,20 +583,27 @@ Si se cambia la tolerancia, hay que cambiar también los textos que dicen "15 mi
 
 ### La sesión de carga
 
-Habilitar y detener una carga son dos rutas de `charging` (8082), las dos del conductor. **Todavía no
-tienen pantalla**: se prueban con `curl` o Postman, con el token de un `CONDUCTOR` que tenga una
-tarjeta cargada.
+Habilitar, seguir y detener una carga son rutas de `charging` (8082), todas del conductor. **En la
+app es la pantalla `/charge`** ("Cargar" en el menú, o "Iniciar carga" desde el aviso de la reserva):
+el conductor tipea el PIN de la terminal o escanea su QR, elige el porcentaje objetivo, ve la carga en
+curso y la detiene. También se prueban con `curl` o Postman, con el token de un `CONDUCTOR` que tenga
+una tarjeta cargada.
 
 | Ruta | Qué hace |
 |------|----------|
-| `POST /api/sessions/activation` | Habilita la carga: valida la reserva, consulta a la distribuidora si es carga rápida, valida la tarjeta (sin cobrar), guarda la sesión y enciende el cargador. Responde 201 con el `sessionId` y la potencia permitida |
+| `POST /api/sessions/activation` | Habilita la carga: valida la reserva, consulta a la distribuidora si es carga rápida, valida la tarjeta (sin cobrar), guarda la sesión y enciende el cargador. Responde 201 con la sesión |
+| `GET /api/sessions/active` | La sesión en curso del conductor, o 204 si no está cargando |
+| `GET /api/sessions/{sessionId}` | Una sesión del conductor: kWh, potencia y batería de la última lectura, o la liquidación si ya terminó |
 | `POST /api/sessions/{sessionId}/stop` | Detiene la carga: apaga el cargador, libera el conector, calcula el costo real y cobra el consumo menos la seña |
 
 El cuerpo de la habilitación:
 
 ```json
-{ "connectorId": 2, "bookingId": 7, "targetBatteryPercent": 80 }
+{ "pinOrQr": "483920", "bookingId": 7, "targetBatteryPercent": 80 }
 ```
+
+- **`pinOrQr`** es el código de la terminal (el PIN o el contenido del QR) y dice qué conector es. El
+  operador lo ve en `/stations`, en el panel de cada conector. `connectorId` es opcional.
 
 - **Con `bookingId`**, es la carga de una reserva confirmada. Se puede habilitar **desde 15 minutos
   antes del turno y hasta que termina**, si la terminal no está tomada por el turno de otro.
