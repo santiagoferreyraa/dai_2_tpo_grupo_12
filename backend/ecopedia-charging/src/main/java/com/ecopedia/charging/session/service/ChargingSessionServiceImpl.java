@@ -429,9 +429,9 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
                     "Tarificación no disponible al liquidar sesión {}: queda PENDING_SETTLEMENT",
                     session.getSessionId(),
                     unavailable);
-            realCost = BigDecimal.ZERO;
+            realCost = null;
             finalBilled = depositAmount;
-            additionalCharge = BigDecimal.ZERO;
+            additionalCharge = null;
             paymentStatus = ConsumptionPaymentStatus.PENDING_SETTLEMENT;
         }
 
@@ -583,5 +583,85 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
                     reading.eventId(),
                     failure.getMessage());
         }
+    }
+
+    @Override
+    public int retryPendingSettlements() {
+        List<ChargingSession> pending = chargingSessionRepository.findByStatusAndPaymentStatus(
+                SessionStatus.COMPLETED, ConsumptionPaymentStatus.PENDING_SETTLEMENT);
+        int settledCount = 0;
+
+        for (ChargingSession session : pending) {
+            try {
+                settlePendingSession(session);
+                settledCount++;
+            } catch (RuntimeException failure) {
+                log.warn(
+                        "No se pudo regularizar la sesión pendiente {}: {}",
+                        session.getSessionId(),
+                        failure.getMessage());
+            }
+        }
+        return settledCount;
+    }
+
+    private void settlePendingSession(ChargingSession session) {
+        BigDecimal depositAmount = session.getDepositApplied() != null ? session.getDepositApplied() : BigDecimal.ZERO;
+        long excessMinutes = 0L;
+
+        if (session.getBookingId() != null) {
+            Optional<Booking> booking = bookingRepository.findById(session.getBookingId());
+            if (booking.isPresent()) {
+                Booking b = booking.get();
+                if (depositAmount.signum() == 0 && b.getDepositAmount() != null) {
+                    depositAmount = b.getDepositAmount();
+                }
+                if (session.getStoppedAt() != null
+                        && b.getWindow().end() != null
+                        && session.getStoppedAt().isAfter(b.getWindow().end())) {
+                    excessMinutes = Duration.between(b.getWindow().end(), session.getStoppedAt())
+                            .toMinutes();
+                }
+            }
+        }
+
+        BigDecimal realCost = session.getRealCost();
+        BigDecimal finalBilled = session.getFinalBilled();
+        BigDecimal additionalCharge = session.getAdditionalCharge();
+
+        if (realCost == null) {
+            realCost = tariffDirectory.calculateRealCost(
+                    session.getConnectorId(),
+                    session.getKwhDelivered(),
+                    session.getPowerLimitKw(),
+                    session.getStartedAt(),
+                    excessMinutes);
+            ChargeSettlement settlement = settlementPolicy.settleCompletedSession(depositAmount, realCost);
+            finalBilled = settlement.finalBilledAmount();
+            additionalCharge = settlement.amountToCharge();
+        } else if (additionalCharge == null || finalBilled == null) {
+            ChargeSettlement settlement = settlementPolicy.settleCompletedSession(depositAmount, realCost);
+            finalBilled = settlement.finalBilledAmount();
+            additionalCharge = settlement.amountToCharge();
+        }
+
+        ConsumptionPaymentStatus paymentStatus;
+        if (additionalCharge.signum() > 0) {
+            paymentStatus =
+                    paymentDirectory.chargeConsumption(session.getDriverId(), session.getSessionId(), additionalCharge);
+        } else {
+            paymentStatus = ConsumptionPaymentStatus.NOT_REQUIRED;
+        }
+
+        SessionStopReason stopReason =
+                session.getStopReason() != null ? session.getStopReason() : SessionStopReason.DRIVER_STOPPED;
+        transactionalCoordinator.recordSettlement(
+                session.getSessionId(),
+                stopReason,
+                depositAmount,
+                realCost,
+                finalBilled,
+                additionalCharge,
+                paymentStatus);
     }
 }

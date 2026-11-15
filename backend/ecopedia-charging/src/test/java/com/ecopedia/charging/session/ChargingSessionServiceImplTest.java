@@ -16,6 +16,7 @@ import static org.mockito.Mockito.when;
 
 import com.ecopedia.charging.booking.domain.ActivationTooEarlyException;
 import com.ecopedia.charging.booking.domain.Booking;
+import com.ecopedia.charging.booking.domain.BookingDeposit;
 import com.ecopedia.charging.booking.domain.BookingNotFoundException;
 import com.ecopedia.charging.booking.domain.BookingRepository;
 import com.ecopedia.charging.booking.domain.BookingService;
@@ -65,11 +66,13 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class ChargingSessionServiceImplTest {
 
@@ -705,6 +708,62 @@ class ChargingSessionServiceImplTest {
         }
 
         @Test
+        @DisplayName("Si el cargador no responde al desactivar, liquida con los kWh acumulados por telemetría (no 0)")
+        void stopSession_whenChargerUnavailable_usesTelemetryAccumulatedKwh() {
+            Instant startedAt = clock.instant().minusSeconds(1200);
+            BigDecimal telemetryKwh = new BigDecimal("14.250");
+            ChargingSession active = ChargingSession.start(
+                    "sess-telemetry-fallback",
+                    BOOKING_ID,
+                    CONNECTOR_ID,
+                    DRIVER_ID,
+                    80,
+                    new BigDecimal("50.00"),
+                    startedAt);
+            ReflectionTestUtils.setField(active, "kwhDelivered", telemetryKwh);
+
+            ChargingSession closed = ChargingSession.start(
+                    "sess-telemetry-fallback",
+                    BOOKING_ID,
+                    CONNECTOR_ID,
+                    DRIVER_ID,
+                    80,
+                    new BigDecimal("50.00"),
+                    startedAt);
+            closed.stop(clock.instant(), telemetryKwh);
+            settlesOn(closed);
+
+            when(sessionRepository.findBySessionId("sess-telemetry-fallback")).thenReturn(Optional.of(active));
+            when(chargerPort.deactivate(CONNECTOR_ID))
+                    .thenThrow(new PhysicalChargerUnavailableException("Cargador desconectado"));
+            when(coordinator.completeLocalSession("sess-telemetry-fallback", telemetryKwh, clock.instant()))
+                    .thenReturn(new CompletedSessionData(
+                            closed, new BigDecimal("5000.00"), clock.instant().plusSeconds(600)));
+            when(tariffDirectory.calculateRealCost(CONNECTOR_ID, telemetryKwh, new BigDecimal("50.00"), startedAt, 0L))
+                    .thenReturn(new BigDecimal("6100.00"));
+            when(settlementPolicy.settleCompletedSession(new BigDecimal("5000.00"), new BigDecimal("6100.00")))
+                    .thenReturn(new ChargeSettlement(
+                            new BigDecimal("5000.00"),
+                            new BigDecimal("6100.00"),
+                            new BigDecimal("6100.00"),
+                            new BigDecimal("1100.00"),
+                            BigDecimal.ZERO,
+                            ChargeSettlement.Outcome.COMPLETED));
+            when(paymentDirectory.chargeConsumption(DRIVER_ID, "sess-telemetry-fallback", new BigDecimal("1100.00")))
+                    .thenReturn(ConsumptionPaymentStatus.CHARGED);
+
+            SessionStopResult result = activationService.stopSession("sess-telemetry-fallback", DRIVER_ID);
+
+            assertThat(result.status()).isEqualTo(SessionStatus.COMPLETED);
+            assertThat(result.kwhDelivered()).isEqualByComparingTo("14.250");
+            assertThat(result.realCost()).isEqualByComparingTo("6100.00");
+            assertThat(result.additionalCharge()).isEqualByComparingTo("1100.00");
+            assertThat(result.paymentStatus()).isEqualTo(ConsumptionPaymentStatus.CHARGED);
+            verify(coordinator).completeLocalSession("sess-telemetry-fallback", telemetryKwh, clock.instant());
+            verify(paymentDirectory).chargeConsumption(DRIVER_ID, "sess-telemetry-fallback", new BigDecimal("1100.00"));
+        }
+
+        @Test
         @DisplayName("Corte automático (stopExpiredSessions): detiene solo sesiones cuya ventana ya venció")
         void stopExpiredSessions_cutsOnlyExpiredWindows() {
             Instant now = clock.instant();
@@ -766,6 +825,123 @@ class ChargingSessionServiceImplTest {
             assertThat(stopped).isEqualTo(1);
             verify(coordinator).completeLocalSession("sess-exp", new BigDecimal("12.000"), now);
             verify(coordinator, never()).completeLocalSession(eq("sess-ok"), any(), any());
+        }
+
+        @Test
+        @DisplayName("retryPendingSettlements: si faltaba calcular tarifa, la calcula y cobra el consumo pendiente")
+        void retryPendingSettlements_whenPricingWasUnavailable_calculatesAndCharges() {
+            Instant startedAt = clock.instant().minusSeconds(3600);
+            ChargingSession pending = ChargingSession.start(
+                    "sess-pending", BOOKING_ID, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), startedAt);
+            pending.stop(clock.instant(), new BigDecimal("30.000"));
+            settlesOn(pending);
+
+            Booking booking = new Booking(
+                    CONNECTOR_ID,
+                    DRIVER_ID,
+                    new TimeWindow(startedAt, clock.instant().minusSeconds(600)),
+                    startedAt.minusSeconds(600),
+                    new BookingDeposit(new BigDecimal("5000.00"), 1L, "4242"),
+                    startedAt.minusSeconds(300),
+                    UUID.randomUUID(),
+                    "checkout-key-retry");
+
+            when(sessionRepository.findByStatusAndPaymentStatus(
+                            SessionStatus.COMPLETED, ConsumptionPaymentStatus.PENDING_SETTLEMENT))
+                    .thenReturn(List.of(pending));
+            when(bookingRepository.findById(BOOKING_ID)).thenReturn(Optional.of(booking));
+            when(tariffDirectory.calculateRealCost(
+                            CONNECTOR_ID, new BigDecimal("30.000"), new BigDecimal("50.00"), startedAt, 10L))
+                    .thenReturn(new BigDecimal("8000.00"));
+            when(settlementPolicy.settleCompletedSession(new BigDecimal("5000.00"), new BigDecimal("8000.00")))
+                    .thenReturn(new ChargeSettlement(
+                            new BigDecimal("5000.00"),
+                            new BigDecimal("8000.00"),
+                            new BigDecimal("8000.00"),
+                            new BigDecimal("3000.00"),
+                            BigDecimal.ZERO,
+                            ChargeSettlement.Outcome.COMPLETED));
+            when(paymentDirectory.chargeConsumption(DRIVER_ID, "sess-pending", new BigDecimal("3000.00")))
+                    .thenReturn(ConsumptionPaymentStatus.CHARGED);
+
+            int settled = activationService.retryPendingSettlements();
+
+            assertThat(settled).isEqualTo(1);
+            verify(coordinator)
+                    .recordSettlement(
+                            "sess-pending",
+                            SessionStopReason.DRIVER_STOPPED,
+                            new BigDecimal("5000.00"),
+                            new BigDecimal("8000.00"),
+                            new BigDecimal("8000.00"),
+                            new BigDecimal("3000.00"),
+                            ConsumptionPaymentStatus.CHARGED);
+        }
+
+        @Test
+        @DisplayName("retryPendingSettlements: si la tarifa ya estaba calculada, solo reintenta el cobro en Pagos")
+        void retryPendingSettlements_whenPricingAlreadySucceeded_onlyRetriesPayment() {
+            Instant startedAt = clock.instant().minusSeconds(1800);
+            ChargingSession pending = ChargingSession.start(
+                    "sess-pending-pay", BOOKING_ID, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), startedAt);
+            pending.stop(clock.instant(), new BigDecimal("25.000"));
+            pending.recordSettlement(
+                    SessionStopReason.WINDOW_ENDED,
+                    new BigDecimal("5000.00"),
+                    new BigDecimal("7200.00"),
+                    new BigDecimal("7200.00"),
+                    new BigDecimal("2200.00"),
+                    ConsumptionPaymentStatus.PENDING_SETTLEMENT);
+            settlesOn(pending);
+
+            when(sessionRepository.findByStatusAndPaymentStatus(
+                            SessionStatus.COMPLETED, ConsumptionPaymentStatus.PENDING_SETTLEMENT))
+                    .thenReturn(List.of(pending));
+            when(bookingRepository.findById(BOOKING_ID)).thenReturn(Optional.empty());
+            when(paymentDirectory.chargeConsumption(DRIVER_ID, "sess-pending-pay", new BigDecimal("2200.00")))
+                    .thenReturn(ConsumptionPaymentStatus.DEBT_RECORDED);
+
+            int settled = activationService.retryPendingSettlements();
+
+            assertThat(settled).isEqualTo(1);
+            verify(tariffDirectory, never()).calculateRealCost(any(), any(), any(), any(), anyLong());
+            verify(coordinator)
+                    .recordSettlement(
+                            "sess-pending-pay",
+                            SessionStopReason.WINDOW_ENDED,
+                            new BigDecimal("5000.00"),
+                            new BigDecimal("7200.00"),
+                            new BigDecimal("7200.00"),
+                            new BigDecimal("2200.00"),
+                            ConsumptionPaymentStatus.DEBT_RECORDED);
+        }
+
+        @Test
+        @DisplayName("retryPendingSettlements: si Pagos sigue caído, captura la falla y continúa el barrido")
+        void retryPendingSettlements_whenPaymentStillDown_returnsZero() {
+            Instant startedAt = clock.instant().minusSeconds(1800);
+            ChargingSession pending = ChargingSession.start(
+                    "sess-still-down", BOOKING_ID, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("50.00"), startedAt);
+            pending.stop(clock.instant(), new BigDecimal("25.000"));
+            pending.recordSettlement(
+                    SessionStopReason.DRIVER_STOPPED,
+                    new BigDecimal("5000.00"),
+                    new BigDecimal("7200.00"),
+                    new BigDecimal("7200.00"),
+                    new BigDecimal("2200.00"),
+                    ConsumptionPaymentStatus.PENDING_SETTLEMENT);
+
+            when(sessionRepository.findByStatusAndPaymentStatus(
+                            SessionStatus.COMPLETED, ConsumptionPaymentStatus.PENDING_SETTLEMENT))
+                    .thenReturn(List.of(pending));
+            when(bookingRepository.findById(BOOKING_ID)).thenReturn(Optional.empty());
+            when(paymentDirectory.chargeConsumption(DRIVER_ID, "sess-still-down", new BigDecimal("2200.00")))
+                    .thenThrow(new PaymentMethodsUnavailableException(new RuntimeException("gateway down")));
+
+            int settled = activationService.retryPendingSettlements();
+
+            assertThat(settled).isEqualTo(0);
+            verify(coordinator, never()).recordSettlement(any(), any(), any(), any(), any(), any(), any());
         }
     }
 

@@ -1,5 +1,6 @@
 package com.ecopedia.charging.session.data;
 
+import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import com.ecopedia.charging.session.domain.ChargerEndReason;
 import com.ecopedia.charging.session.domain.ChargingSession;
 import com.ecopedia.charging.session.domain.ChargingSessionRepository;
@@ -44,6 +45,9 @@ public interface JpaChargingSessionRepository extends JpaRepository<ChargingSess
 
     @Override
     List<ChargingSession> findByStatus(SessionStatus status);
+
+    @Override
+    List<ChargingSession> findByStatusAndPaymentStatus(SessionStatus status, ConsumptionPaymentStatus paymentStatus);
 
     /*
      * Una sentencia y no leer-modificar-guardar: las lecturas llegan cada pocos segundos mientras el

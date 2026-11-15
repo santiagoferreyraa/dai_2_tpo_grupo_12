@@ -148,6 +148,7 @@ public class ChargingSession {
 
     public void stop(Instant stoppedAt, BigDecimal kwhDelivered) {
         this.status = SessionStatus.COMPLETED;
+        this.paymentStatus = ConsumptionPaymentStatus.PENDING_SETTLEMENT;
         this.stoppedAt = stoppedAt != null
                 ? stoppedAt.truncatedTo(ChronoUnit.MICROS)
                 : Instant.now().truncatedTo(ChronoUnit.MICROS);

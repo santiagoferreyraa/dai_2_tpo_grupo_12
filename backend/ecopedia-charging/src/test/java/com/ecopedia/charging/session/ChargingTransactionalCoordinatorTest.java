@@ -11,6 +11,7 @@ import com.ecopedia.charging.booking.domain.BookingStateConflictException;
 import com.ecopedia.charging.booking.domain.BookingStatus;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
 import com.ecopedia.charging.booking.domain.TimeWindow;
+import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import com.ecopedia.charging.session.domain.ChargingSession;
 import com.ecopedia.charging.session.domain.ChargingSessionRepository;
 import com.ecopedia.charging.session.domain.ConnectorOperationalStatus;
@@ -256,6 +257,7 @@ class ChargingTransactionalCoordinatorTest {
             var completed = coordinator.completeLocalSession(sessionId, new BigDecimal("18.500"), stopTime);
 
             assertThat(completed.session().getStatus()).isEqualTo(SessionStatus.COMPLETED);
+            assertThat(completed.session().getPaymentStatus()).isEqualTo(ConsumptionPaymentStatus.PENDING_SETTLEMENT);
             assertThat(completed.session().getStoppedAt()).isEqualTo(stopTime);
             assertThat(completed.session().getKwhDelivered()).isEqualByComparingTo("18.500");
             assertThat(completed.depositAmount()).isEqualByComparingTo("5000.00");
@@ -270,6 +272,10 @@ class ChargingTransactionalCoordinatorTest {
                     bookingRepository.findById(savedBooking.getId()).orElseThrow();
             assertThat(closedBooking.getStatus()).isEqualTo(BookingStatus.COMPLETED);
             assertThat(closedBooking.getWindow().end()).isEqualTo(stopTime);
+
+            var pending = chargingSessionRepository.findByStatusAndPaymentStatus(
+                    SessionStatus.COMPLETED, ConsumptionPaymentStatus.PENDING_SETTLEMENT);
+            assertThat(pending).extracting(ChargingSession::getSessionId).contains(sessionId);
         }
     }
 }

@@ -48,6 +48,14 @@ public interface ChargingSessionService {
     int stopExpiredSessions();
 
     /**
+     * Reintenta la liquidación de consumo para sesiones completadas cuyo cobro quedó en
+     * {@code PENDING_SETTLEMENT} por caídas temporales de Tarificación o Pagos (RF14, RNF06, ECO-55).
+     *
+     * @return cuántas sesiones pendientes se regularizaron
+     */
+    int retryPendingSettlements();
+
+    /**
      * Guarda en la sesión lo que informa el cargador: kWh acumulados, potencia y porcentaje de
      * batería (RF16). Una lectura de una sesión que no existe o ya cerró, o que llega después de una
      * más nueva, se descarta sin error.
