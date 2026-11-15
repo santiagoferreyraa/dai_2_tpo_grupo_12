@@ -1104,4 +1104,16 @@ textarea:-webkit-autofill {
     rgb(0 0 0 / 0.2) 5.9rem,
     transparent 6.25rem
   );
+
+  /*
+    Apagado hasta que algo pasa por debajo: lo prende `TopBar` cuando se scrollea. Sin esto, con
+    la página arriba de todo el desenfoque arrastraba el borde de las tarjetas de abajo y dejaba un
+    resplandor debajo de la franja.
+  */
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.top-bar__fade[data-active] {
+  opacity: 1;
 }

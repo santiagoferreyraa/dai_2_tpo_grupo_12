@@ -86,12 +86,12 @@ export default function ConnectorEditor({ value, onChange }: ConnectorEditorProp
           >
             &#8592;
           </button>
-          <h3 className="text-st-muted text-lg font-bold">CONNECTOR</h3>
+          <h3 className="text-st-muted text-lg font-bold">CONECTOR</h3>
         </header>
 
         <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-5">
           <label className="block">
-            <span className="text-st-muted block text-base font-bold">MAX POWER</span>
+            <span className="text-st-muted block text-base font-bold">POTENCIA MÁXIMA</span>
             <span className="mt-2 flex items-center gap-2">
               <input
                 type="text"
@@ -109,7 +109,7 @@ export default function ConnectorEditor({ value, onChange }: ConnectorEditorProp
           </label>
 
           <label className="block">
-            <span className="text-st-muted block text-base font-bold">STATUS</span>
+            <span className="text-st-muted block text-base font-bold">ESTADO</span>
             <select
               value={selected.operationalStatus}
               onChange={(event) =>
@@ -127,7 +127,7 @@ export default function ConnectorEditor({ value, onChange }: ConnectorEditorProp
         </div>
 
         <label className="mt-5 block">
-          <span className="text-st-muted block text-base font-bold">TYPE</span>
+          <span className="text-st-muted block text-base font-bold">TIPO</span>
           <select
             value={selected.connectorType}
             onChange={(event) => patch({ connectorType: event.target.value as ConnectorType })}
@@ -146,7 +146,7 @@ export default function ConnectorEditor({ value, onChange }: ConnectorEditorProp
           onClick={remove}
           className="text-st-offline hover:text-st-offline/80 focus-visible:outline-st-accent mt-5 text-xs font-bold tracking-wide underline underline-offset-4 focus-visible:outline-2"
         >
-          DELETE CONNECTOR
+          QUITAR CONECTOR
         </button>
       </section>
     )
@@ -154,7 +154,7 @@ export default function ConnectorEditor({ value, onChange }: ConnectorEditorProp
 
   return (
     <section className="mt-6">
-      <h3 className="text-st-muted text-lg font-bold">CONNECTORS</h3>
+      <h3 className="text-st-muted text-lg font-bold">CONECTORES</h3>
 
       <ul className="mt-3 grid grid-cols-2 gap-3">
         {value.map((connector, index) => (
@@ -162,7 +162,7 @@ export default function ConnectorEditor({ value, onChange }: ConnectorEditorProp
             <button
               type="button"
               onClick={() => openAt(index)}
-              className="bg-st-surface hover:bg-st-surface-raised focus-visible:outline-st-accent w-full rounded-2xl px-4 py-3 text-left transition-colors focus-visible:outline-2"
+              className="glass-inset hover:border-primary/60 focus-visible:outline-st-accent w-full rounded-2xl px-4 py-3 text-left transition-colors focus-visible:outline-2"
             >
               <span className="text-st-text block text-sm font-bold">
                 {CONNECTOR_TYPE_LABEL[connector.connectorType]}
@@ -190,7 +190,7 @@ export default function ConnectorEditor({ value, onChange }: ConnectorEditorProp
             onClick={add}
             className="border-st-muted/60 text-st-muted hover:border-st-accent hover:text-st-accent focus-visible:outline-st-accent flex h-full min-h-[76px] w-full items-center justify-center rounded-2xl border-2 border-dashed text-xs font-bold tracking-widest transition-colors focus-visible:outline-2"
           >
-            + CONNECTOR
+            + CONECTOR
           </button>
         </li>
       </ul>

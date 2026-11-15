@@ -19,17 +19,17 @@ import type {
  * vez sobre la lista de conectores, que es lo único que ambas comparten.
  */
 
-/** Etiqueta visible de un tipo de conector. En el enum es TYPE_2; en pantalla, "TYPE 2". */
+/** Etiqueta visible de un tipo de conector. En el enum es TYPE_2; en pantalla, "TIPO 2". */
 export const CONNECTOR_TYPE_LABEL: Record<ConnectorType, string> = {
   CCS2: 'CCS2',
   CHADEMO: 'CHADEMO',
-  TYPE_2: 'TYPE 2',
+  TYPE_2: 'TIPO 2',
 }
 
 export const STATUS_LABEL: Record<OperationalStatus, string> = {
-  AVAILABLE: 'AVAILABLE',
-  OCCUPIED: 'OCCUPIED',
-  OUT_OF_SERVICE: 'OUT OF SERVICE',
+  AVAILABLE: 'DISPONIBLE',
+  OCCUPIED: 'OCUPADO',
+  OUT_OF_SERVICE: 'FUERA DE SERVICIO',
 }
 
 /** Color de cada estado, como clase de texto. Los tokens están en terminals.css. */

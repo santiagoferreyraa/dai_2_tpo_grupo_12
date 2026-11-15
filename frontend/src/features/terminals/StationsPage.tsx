@@ -214,7 +214,7 @@ export default function StationsPage() {
     `shrink-0 rounded-full px-4 py-2 text-xs whitespace-nowrap transition-colors ${
       active
         ? 'brand-fill text-on-primary font-bold'
-        : 'bg-st-surface text-st-muted hover:text-st-text'
+        : 'glass-panel text-st-muted hover:text-st-text'
     }`
 
   /*
@@ -245,13 +245,24 @@ export default function StationsPage() {
       acá sin tocarle el scroll al resto de la aplicación, y en pantalla ancha cada columna
       scrollea por su cuenta sin arrastrar a la otra.
     */
-    <div className="bg-st-bg no-scrollbar h-full overflow-y-auto lg:flex lg:gap-6 lg:overflow-hidden lg:p-6">
+    /*
+      Sin fondo propio: detrás está el de la aplicación, como en el resto de las pantallas. Tenía
+      uno opaco y oscuro, y era la única que tapaba el fondo animado.
+    */
+    <div className="no-scrollbar h-full overflow-y-auto lg:flex lg:gap-6 lg:overflow-hidden lg:p-6">
       {/*
         Columna del listado. El ancho máximo va creciendo con la pantalla en vez de saltar:
         `max-w-md` es el diseño del celular, y en tablet se ensancha antes de que aparezca
         la segunda columna.
       */}
-      <div className="no-scrollbar mx-auto w-full max-w-md px-5 pt-5 pb-10 md:max-w-2xl lg:mx-0 lg:min-w-0 lg:max-w-none lg:flex-1 lg:overflow-y-auto lg:px-3 lg:pt-0">
+      {/*
+        `pb-36` en el celular por la barra de navegación flotante: con menos, la última estación
+        quedaba debajo de ella. Es el mismo margen que usan las demás pantallas.
+
+        En pantalla ancha la columna no scrollea entera: el resumen y los filtros quedan fijos
+        arriba y lo que scrollea es solo el listado (ver el `<ul>`).
+      */}
+      <div className="no-scrollbar mx-auto w-full max-w-md px-5 pt-5 pb-36 md:max-w-2xl lg:mx-0 lg:flex lg:min-w-0 lg:max-w-none lg:flex-1 lg:flex-col lg:overflow-hidden lg:px-3 lg:pt-0 lg:pb-0">
         {/*
           El estado de la infraestructura, antes del listado: es lo primero que el operador quiere
           saber al entrar. No pide nada al backend, cuenta las estaciones que ya están cargadas.
@@ -269,7 +280,8 @@ export default function StationsPage() {
             <svg
               aria-hidden="true"
               viewBox="0 0 24 24"
-              className="text-st-muted pointer-events-none absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2"
+              /* `z-10`: el input de vidrio arma su propia capa y, sin esto, tapaba la lupa. */
+              className="text-st-muted pointer-events-none absolute top-1/2 left-4 z-10 h-5 w-5 -translate-y-1/2"
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
@@ -281,8 +293,8 @@ export default function StationsPage() {
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search name station"
-              className="bg-st-surface text-st-text placeholder:text-st-muted focus:outline-st-accent w-full rounded-full py-3.5 pr-4 pl-12 text-sm focus:outline-2"
+              placeholder="Buscar estación por nombre"
+              className="glass-panel text-st-text placeholder:text-st-muted focus:outline-st-accent w-full rounded-full py-3.5 pr-4 pl-12 text-sm focus:outline-2"
             />
           </label>
 
@@ -313,7 +325,7 @@ export default function StationsPage() {
         {/* Los filtros scrollean de costado: en un celular no entran todos. */}
         <div
           ref={filtersRef}
-          className="no-scrollbar -mx-5 mt-4 flex items-center gap-2 overflow-x-auto px-5 pb-1 lg:-mx-3 lg:px-3"
+          className="no-scrollbar -mx-5 mt-4 flex shrink-0 items-center gap-2 overflow-x-auto px-5 pb-1 lg:-mx-3 lg:px-3"
         >
           <button
             type="button"
@@ -324,7 +336,7 @@ export default function StationsPage() {
             aria-pressed={!filtering}
             className={chipClass(!filtering)}
           >
-            All
+            Todas
           </button>
 
           {CONNECTOR_TYPES.map((type) => {
@@ -372,7 +384,14 @@ export default function StationsPage() {
           </p>
         )}
 
-        <ul className="mt-4 flex flex-col gap-3">
+        {/*
+          El listado scrollea por su cuenta: con muchas estaciones, el operador no tiene que bajar
+          toda la pantalla para llegar a la que busca, y el resumen y los filtros siguen a mano.
+          En el celular tiene un alto máximo; en pantalla ancha ocupa lo que queda de la columna.
+          El `p-1` con `-m-1` le da aire al anillo de la estación elegida, que si no se recorta
+          contra el borde del scroll.
+        */}
+        <ul className="slim-scrollbar -mx-1 mt-3 flex max-h-[60svh] flex-col gap-3 overflow-y-auto overscroll-contain p-1 lg:min-h-0 lg:max-h-none lg:flex-1 lg:pb-6">
           {visible.map((station) => (
             <StationCard
               key={station.id}
@@ -391,7 +410,7 @@ export default function StationsPage() {
         listado en vez de taparlo.
       */}
       {wide && (
-        <aside className="no-scrollbar border-st-border bg-st-surface/30 w-[26rem] min-w-0 shrink-0 overflow-y-auto rounded-2xl border p-5 shadow-lg shadow-black/40">
+        <aside className="no-scrollbar glass-panel w-[26rem] min-w-0 shrink-0 overflow-y-auto rounded-3xl p-5">
           {sheet.kind === 'none' || (sheet.kind !== 'add' && openStation === null) ? (
             <p className="text-st-muted mt-10 text-center text-sm">
               Elegí una estación de la lista para ver su información, o agregá una nueva.
@@ -400,8 +419,8 @@ export default function StationsPage() {
             detail
           ) : (
             <>
-              <h2 className="text-st-muted mb-5 text-lg font-bold">
-                {sheet.kind === 'edit' ? 'EDIT STATION' : 'ADD STATION'}
+              <h2 className="text-st-text mb-5 text-lg font-bold">
+                {sheet.kind === 'edit' ? 'Editar estación' : 'Nueva estación'}
               </h2>
               {form}
             </>
