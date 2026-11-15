@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 
+import { refreshMyBookings } from '@/features/bookings/data/myBookingsStore'
+
 import { startCharging } from '../data/sessionsRepository'
 import { activationErrorMessage, errorCode } from '../messages'
 import { canScanQr } from '../qrSupport'
@@ -75,6 +77,12 @@ export default function StartChargingForm({
         return
       }
       setError(activationErrorMessage(failure))
+      /*
+        Un rechazo puede haber cambiado la reserva: si la distribuidora no autoriza o el cargador no
+        enciende, el backend la cancela y devuelve la seña (RF13). Sin esto, la franja y el perfil
+        seguían mostrándola activa hasta recargar la página.
+      */
+      refreshMyBookings()
     } finally {
       setSubmitting(false)
     }
