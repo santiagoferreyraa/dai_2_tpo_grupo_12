@@ -72,6 +72,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class ChargingSessionServiceImplTest {
 
@@ -704,6 +705,62 @@ class ChargingSessionServiceImplTest {
             assertThat(result.status()).isEqualTo(SessionStatus.COMPLETED);
             assertThat(result.paymentStatus()).isEqualTo(ConsumptionPaymentStatus.PENDING_SETTLEMENT);
             verify(coordinator).completeLocalSession("sess-resilient", BigDecimal.ZERO, clock.instant());
+        }
+
+        @Test
+        @DisplayName("Si el cargador no responde al desactivar, liquida con los kWh acumulados por telemetría (no 0)")
+        void stopSession_whenChargerUnavailable_usesTelemetryAccumulatedKwh() {
+            Instant startedAt = clock.instant().minusSeconds(1200);
+            BigDecimal telemetryKwh = new BigDecimal("14.250");
+            ChargingSession active = ChargingSession.start(
+                    "sess-telemetry-fallback",
+                    BOOKING_ID,
+                    CONNECTOR_ID,
+                    DRIVER_ID,
+                    80,
+                    new BigDecimal("50.00"),
+                    startedAt);
+            ReflectionTestUtils.setField(active, "kwhDelivered", telemetryKwh);
+
+            ChargingSession closed = ChargingSession.start(
+                    "sess-telemetry-fallback",
+                    BOOKING_ID,
+                    CONNECTOR_ID,
+                    DRIVER_ID,
+                    80,
+                    new BigDecimal("50.00"),
+                    startedAt);
+            closed.stop(clock.instant(), telemetryKwh);
+            settlesOn(closed);
+
+            when(sessionRepository.findBySessionId("sess-telemetry-fallback")).thenReturn(Optional.of(active));
+            when(chargerPort.deactivate(CONNECTOR_ID))
+                    .thenThrow(new PhysicalChargerUnavailableException("Cargador desconectado"));
+            when(coordinator.completeLocalSession("sess-telemetry-fallback", telemetryKwh, clock.instant()))
+                    .thenReturn(new CompletedSessionData(
+                            closed, new BigDecimal("5000.00"), clock.instant().plusSeconds(600)));
+            when(tariffDirectory.calculateRealCost(CONNECTOR_ID, telemetryKwh, new BigDecimal("50.00"), startedAt, 0L))
+                    .thenReturn(new BigDecimal("6100.00"));
+            when(settlementPolicy.settleCompletedSession(new BigDecimal("5000.00"), new BigDecimal("6100.00")))
+                    .thenReturn(new ChargeSettlement(
+                            new BigDecimal("5000.00"),
+                            new BigDecimal("6100.00"),
+                            new BigDecimal("6100.00"),
+                            new BigDecimal("1100.00"),
+                            BigDecimal.ZERO,
+                            ChargeSettlement.Outcome.COMPLETED));
+            when(paymentDirectory.chargeConsumption(DRIVER_ID, "sess-telemetry-fallback", new BigDecimal("1100.00")))
+                    .thenReturn(ConsumptionPaymentStatus.CHARGED);
+
+            SessionStopResult result = activationService.stopSession("sess-telemetry-fallback", DRIVER_ID);
+
+            assertThat(result.status()).isEqualTo(SessionStatus.COMPLETED);
+            assertThat(result.kwhDelivered()).isEqualByComparingTo("14.250");
+            assertThat(result.realCost()).isEqualByComparingTo("6100.00");
+            assertThat(result.additionalCharge()).isEqualByComparingTo("1100.00");
+            assertThat(result.paymentStatus()).isEqualTo(ConsumptionPaymentStatus.CHARGED);
+            verify(coordinator).completeLocalSession("sess-telemetry-fallback", telemetryKwh, clock.instant());
+            verify(paymentDirectory).chargeConsumption(DRIVER_ID, "sess-telemetry-fallback", new BigDecimal("1100.00"));
         }
 
         @Test

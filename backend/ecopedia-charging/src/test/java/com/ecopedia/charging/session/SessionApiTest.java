@@ -307,6 +307,41 @@ class SessionApiTest {
     }
 
     @Test
+    @DisplayName("Regresión DEF-23 / ECO-299: POST /api/sessions/{sessionId}/stop ignora kwhDelivered=0 en el body")
+    void stopSession_ignoresClientReportedZeroKwhBody() throws Exception {
+        Instant startedAt = Instant.parse("2026-11-02T15:00:00Z");
+        Instant stoppedAt = Instant.parse("2026-11-02T15:30:00Z");
+        SessionStopResult result = new SessionStopResult(
+                "session-stop-def23",
+                10L,
+                CONNECTOR_ID,
+                SessionStatus.COMPLETED,
+                startedAt,
+                stoppedAt,
+                new BigDecimal("18.500"),
+                new BigDecimal("5000.00"),
+                new BigDecimal("7200.00"),
+                new BigDecimal("7200.00"),
+                new BigDecimal("2200.00"),
+                ConsumptionPaymentStatus.CHARGED,
+                SessionStopReason.DRIVER_STOPPED);
+
+        when(activationService.stopSession("session-stop-def23", DRIVER_ID)).thenReturn(result);
+
+        mockMvc.perform(post("/api/sessions/session-stop-def23/stop")
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"kwhDelivered\": 0}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sessionId").value("session-stop-def23"))
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.kwhDelivered").value(18.500))
+                .andExpect(jsonPath("$.realCost").value(7200.00))
+                .andExpect(jsonPath("$.additionalCharge").value(2200.00))
+                .andExpect(jsonPath("$.paymentStatus").value("CHARGED"));
+    }
+
+    @Test
     @DisplayName("POST /api/sessions/{sessionId}/stop sobre sesión ajena o inexistente responde 404 opaco")
     void stopForeignOrMissingSessionReturnsOpaqueNotFound() throws Exception {
         when(activationService.stopSession("session-foreign", DRIVER_ID))
