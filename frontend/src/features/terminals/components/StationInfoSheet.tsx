@@ -31,7 +31,7 @@ export default function StationInfoSheet({ station, onEdit }: StationInfoSheetPr
           loading="lazy"
         />
       ) : (
-        <div className="bg-st-surface text-st-muted flex h-52 w-full items-center justify-center rounded-2xl text-sm">
+        <div className="glass-inset text-st-muted flex h-52 w-full items-center justify-center rounded-2xl text-sm">
           Sin fotos
         </div>
       )}
@@ -43,14 +43,14 @@ export default function StationInfoSheet({ station, onEdit }: StationInfoSheetPr
           onClick={onEdit}
           className="text-st-muted hover:text-st-text focus-visible:outline-st-accent shrink-0 text-xs font-medium tracking-wide underline underline-offset-4 focus-visible:outline-2"
         >
-          EDIT STATION
+          EDITAR ESTACIÓN
         </button>
       </header>
 
       <p className="text-st-muted mt-1 text-[11px]">{station.address}</p>
 
       <div className="mt-4">
-        <h3 className="text-st-muted text-base font-bold">LAT/LON</h3>
+        <h3 className="text-st-muted text-base font-bold">LATITUD Y LONGITUD</h3>
         <p className="text-st-text mt-1 text-sm">
           {formatCoordinate(station.latitude)} &nbsp; {formatCoordinate(station.longitude)}
         </p>
@@ -59,7 +59,7 @@ export default function StationInfoSheet({ station, onEdit }: StationInfoSheetPr
       <ConnectorPanel connectors={station.connectors} />
 
       <section className="mt-6">
-        <h3 className="text-st-muted text-lg font-bold">IMAGES</h3>
+        <h3 className="text-st-muted text-lg font-bold">FOTOS</h3>
         {gallery.length === 0 ? (
           <p className="text-st-muted mt-2 text-sm italic">
             Esta estación no tiene fotos cargadas.

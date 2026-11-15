@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { Link, NavLink, useLocation } from 'react-router'
 
 import { useSession } from '@/features/auth/session'
@@ -43,6 +43,41 @@ export default function TopBar() {
     tengan que saber de una capa que no es suya.
   */
   const fades = !(pathname === '/stations' || pathname.startsWith('/stations/'))
+
+  /*
+    **Y aun donde se usa, se prende recién cuando hay algo que desvanecer.** Con la página arriba
+    de todo no pasa nada por debajo de la franja, pero el desenfoque muestrea más allá de su
+    borde: arrastraba hacia arriba el filo claro de las tarjetas que arrancan justo abajo, y bajo
+    el tema y la sesión quedaba un resplandor sin motivo. Ahora se enciende cuando el contenedor
+    que corre por debajo de la franja dejó de estar arriba de todo.
+
+    Va como atributo sobre el elemento y no como estado: es la reacción a cada evento de scroll, y
+    pasarlo por React haría renderizar la barra entera en cada uno.
+  */
+  const fadeRef = useRef<HTMLSpanElement>(null)
+
+  useEffect(() => {
+    const fade = fadeRef.current
+    if (!fades || fade === null) return
+
+    /* Pantalla nueva, arriba de todo: sin velo hasta que se scrollee. */
+    fade.removeAttribute('data-active')
+
+    const onScroll = (event: Event) => {
+      const element = event.target instanceof Element ? event.target : document.scrollingElement
+      if (element === null) return
+      /*
+        Solo cuenta lo que pasa por DEBAJO de la franja. Una tira que scrollea de costado más abajo
+        también dispara el evento, con `scrollTop` en cero, y apagaría el velo con la página bajada.
+      */
+      if (element.getBoundingClientRect().top > fade.getBoundingClientRect().bottom) return
+      fade.toggleAttribute('data-active', element.scrollTop > 0)
+    }
+
+    /* El scroll no burbujea: en la fase de captura se lo ve en cualquier contenedor. */
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true })
+    return () => document.removeEventListener('scroll', onScroll, { capture: true })
+  }, [fades, pathname])
 
   const listRef = useRef<HTMLElement>(null)
   const dotRef = useRef<HTMLSpanElement>(null)
@@ -140,7 +175,7 @@ export default function TopBar() {
       de la tira, y la franja en 1150, encima.
     */
     <>
-      {fades && <span className="top-bar__fade hidden md:block" aria-hidden="true" />}
+      {fades && <span ref={fadeRef} className="top-bar__fade hidden md:block" aria-hidden="true" />}
 
       <header className="fixed inset-x-0 top-0 z-[1150] hidden md:block">
         {/*

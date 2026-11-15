@@ -248,6 +248,7 @@ export default function PaymentMethodsPage() {
         label="Nueva tarjeta"
         // Los tokens compartidos, no los `st-*` oscuros del ABM: esta pantalla es clara.
         backgroundClass="bg-surface"
+        textClass="text-text"
       >
         <h2 className="mb-4 text-lg font-semibold">Nueva tarjeta</h2>
         {form}

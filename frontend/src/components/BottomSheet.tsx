@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 /**
  * Panel que entra desde abajo y se cierra arrastrándolo hacia abajo, tocando fuera o con Escape.
@@ -35,7 +36,7 @@ interface BottomSheetProps {
    */
   dimBackground?: boolean
   /**
-   * Clase de fondo del panel. Por omisión el oscuro de los tokens `st-` del ABM.
+   * Clase de fondo del panel. Por omisión el vidrio modal de la aplicación.
    *
    * El mapa lo cambia por `bg-surface` porque esa pantalla está escrita contra los tokens
    * compartidos y no contra los de Terminales: con el fondo por omisión, el mismo panel se
@@ -44,6 +45,11 @@ interface BottomSheetProps {
    * borra junto con terminals.css—.
    */
   backgroundClass?: string
+  /**
+   * Clase del color de texto. Va explícita porque el panel se monta en `document.body` (ver el
+   * portal de abajo) y ya no hereda el color de la pantalla que lo abre.
+   */
+  textClass?: string
   children: ReactNode
 }
 
@@ -52,7 +58,13 @@ export default function BottomSheet({
   onClose,
   label,
   dimBackground = true,
-  backgroundClass = 'bg-st-bg',
+  /*
+    El vidrio de las ventanas modales (`.glass-modal`, en index.css): el mismo de los paneles de
+    la aplicación, con cuerpo suficiente para separarse del oscurecedor. Era el fondo oscuro y
+    sólido del ABM, y el detalle de una estación era el único panel que no se veía como el resto.
+  */
+  backgroundClass = 'glass-panel glass-modal',
+  textClass = 'text-text',
   children,
 }: BottomSheetProps) {
   /*
@@ -194,7 +206,13 @@ export default function BottomSheet({
   const visible = entered && open
   const translate = visible ? dragOffset : window.innerHeight
 
-  return (
+  /*
+    Se monta en `document.body` y no donde lo pone la pantalla. Un ancestro con `transform`,
+    `filter` o `backdrop-filter` —los vidrios del perfil los tienen— pasa a ser el contenedor de
+    todo lo `fixed` que tenga adentro: el panel quedaba encerrado en la tarjeta de la sección,
+    flotando a media pantalla y por debajo de la barra de navegación del celular.
+  */
+  return createPortal(
     /*
       z por encima de los 1000 que usa Leaflet para sus panes y controles. Con el z-50 que
       tenía, sobre el mapa el panel quedaba por DEBAJO del control de zoom. En el ABM, que no
@@ -226,7 +244,7 @@ export default function BottomSheet({
           dedo. El arrastre del panel no lo necesita, porque el tirador ya declara
           `touch-none` por su cuenta.
         */
-        className={`${backgroundClass} relative flex max-h-[92svh] w-full flex-col rounded-t-3xl shadow-[0_-8px_40px_rgba(0,0,0,0.5)]`}
+        className={`${backgroundClass} ${textClass} relative flex max-h-[92svh] w-full flex-col rounded-t-3xl shadow-[0_-8px_40px_rgba(0,0,0,0.5)]`}
         style={{
           transform: `translateY(${translate}px)`,
           /* Durante el arrastre no hay transición: el panel tiene que seguir al dedo. */
@@ -254,6 +272,7 @@ export default function BottomSheet({
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

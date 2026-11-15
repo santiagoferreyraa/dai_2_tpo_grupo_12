@@ -23,7 +23,7 @@ interface ConnectorPanelProps {
 export default function ConnectorPanel({ connectors }: ConnectorPanelProps) {
   return (
     <section className="mt-6">
-      <h3 className="text-st-muted text-lg font-bold">CONNECTORS</h3>
+      <h3 className="text-st-muted text-lg font-bold">CONECTORES</h3>
 
       {connectors.length === 0 ? (
         <p className="text-st-muted mt-2 text-sm italic">
@@ -32,7 +32,7 @@ export default function ConnectorPanel({ connectors }: ConnectorPanelProps) {
       ) : (
         <ul className="mt-3 grid grid-cols-2 gap-3">
           {connectors.map((connector) => (
-            <li key={connector.id} className="bg-st-surface rounded-2xl px-4 py-3">
+            <li key={connector.id} className="glass-inset rounded-2xl px-4 py-3">
               <span className="text-st-text block text-sm font-bold">
                 {CONNECTOR_TYPE_LABEL[connector.connectorType]}
               </span>

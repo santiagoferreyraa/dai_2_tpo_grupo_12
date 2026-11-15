@@ -704,6 +704,7 @@ export default function StationsMapPage() {
             Con el panel apenas translúcido conservan el escalón que se ve en el diseño.
           */
             backgroundClass="bg-surface/95 backdrop-blur"
+            textClass="text-text"
           >
             {detail}
           </BottomSheet>

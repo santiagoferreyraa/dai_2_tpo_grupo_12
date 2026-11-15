@@ -6,8 +6,64 @@ import { refreshMyBookings } from '@/features/bookings/data/myBookingsStore'
 import ActiveSessionCard from './components/ActiveSessionCard'
 import SessionSummary from './components/SessionSummary'
 import StartChargingForm from './components/StartChargingForm'
-import { fetchActiveSession } from './data/sessionsRepository'
+import { fetchActiveSession, fetchSession } from './data/sessionsRepository'
 import type { ChargingSession } from './types'
+
+/**
+ * La última sesión que esta pantalla vio activa, para mostrar su resumen si terminó sin que el
+ * conductor estuviera mirando.
+ *
+ * La carga se corta sola al llegar al objetivo, y con el simulador eso pasa en segundos. Antes, al
+ * volver a esta pantalla ya no había sesión activa y se ofrecía escanear de nuevo: el conductor
+ * creía que la carga se había cancelado, y si volvía a tipear el PIN arrancaba otra desde cero.
+ *
+ * Es solo una comodidad de este navegador: si el almacenamiento no está, se pierde el resumen,
+ * no la carga. La sesión es del conductor que la inició; con otra cuenta, el backend contesta 404
+ * y se descarta.
+ */
+const LAST_SESSION_KEY = 'ecopedia.charging.lastSessionId'
+
+function rememberSession(sessionId: string): void {
+  try {
+    localStorage.setItem(LAST_SESSION_KEY, sessionId)
+  } catch {
+    // Sin almacenamiento no hay resumen al volver, y nada más.
+  }
+}
+
+function lastSessionId(): string | null {
+  try {
+    return localStorage.getItem(LAST_SESSION_KEY)
+  } catch {
+    return null
+  }
+}
+
+function forgetSession(): void {
+  try {
+    localStorage.removeItem(LAST_SESSION_KEY)
+  } catch {
+    // Idem.
+  }
+}
+
+/**
+ * La sesión que terminó mientras el conductor no miraba, o `null`. Ya mostrada, se olvida: el
+ * resumen se ve una vez, como si hubiera estado en la pantalla cuando se cortó.
+ */
+async function unseenFinishedSession(signal?: AbortSignal): Promise<ChargingSession | null> {
+  const sessionId = lastSessionId()
+  if (sessionId === null) return null
+  try {
+    const session = await fetchSession(sessionId, signal)
+    if (session.status === 'ACTIVE') return null
+    forgetSession()
+    return session
+  } catch {
+    if (signal?.aborted !== true) forgetSession()
+    return null
+  }
+}
 
 type PageState =
   | { kind: 'loading' }
@@ -40,12 +96,24 @@ export default function ChargePage() {
   const bookingId =
     bookingParam !== null && /^\d+$/.test(bookingParam) ? Number(bookingParam) : undefined
 
-  /* Pregunta por la sesión activa y decide qué momento mostrar. */
+  /*
+   * Pregunta por la sesión activa y decide qué momento mostrar. Sin sesión activa, antes de
+   * ofrecer escanear se fija si la última que vio terminó mientras el conductor estaba en otra
+   * pantalla: en ese caso lo que corresponde es el resumen, no empezar otra.
+   */
   const checkActive = useCallback((signal?: AbortSignal) => {
     fetchActiveSession(signal)
-      .then((session) =>
-        setState(session === null ? { kind: 'start' } : { kind: 'active', session }),
-      )
+      .then(async (session) => {
+        if (session !== null) {
+          rememberSession(session.sessionId)
+          setState({ kind: 'active', session })
+          return
+        }
+        const finished = await unseenFinishedSession(signal)
+        if (signal?.aborted === true) return
+        setState(finished === null ? { kind: 'start' } : { kind: 'finished', session: finished })
+        if (finished !== null) refreshMyBookings()
+      })
       .catch(() => {
         if (signal?.aborted !== true) setState({ kind: 'error' })
       })
@@ -68,11 +136,14 @@ export default function ChargePage() {
    * perfil la leen del mismo almacén, así que se le pide que se actualice.
    */
   const handleStarted = useCallback((session: ChargingSession) => {
+    rememberSession(session.sessionId)
     setState({ kind: 'active', session })
     refreshMyBookings()
   }, [])
 
+  /* El resumen ya se está viendo: no hace falta guardarlo para la vuelta. */
   const handleFinished = useCallback((session: ChargingSession) => {
+    forgetSession()
     setState({ kind: 'finished', session })
     refreshMyBookings()
   }, [])
