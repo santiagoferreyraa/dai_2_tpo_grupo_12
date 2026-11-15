@@ -27,7 +27,9 @@
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
-		Permissions-Policy "geolocation=(self), camera=(), microphone=()"
+		# camera=(self) desde ECO-44: la pantalla de iniciar carga lee el QR de la terminal con la
+		# cámara. Solo la página propia; ningún iframe ajeno la pide.
+		Permissions-Policy "geolocation=(self), camera=(self), microphone=()"
 		-Server
 	}
 

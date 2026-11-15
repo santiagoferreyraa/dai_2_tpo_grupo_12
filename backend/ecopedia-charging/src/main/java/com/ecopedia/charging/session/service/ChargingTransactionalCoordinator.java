@@ -11,12 +11,14 @@ import com.ecopedia.charging.session.domain.ChargingSessionRepository;
 import com.ecopedia.charging.session.domain.ConnectorState;
 import com.ecopedia.charging.session.domain.ConnectorStateRepository;
 import com.ecopedia.charging.session.domain.SessionNotFoundException;
+import com.ecopedia.charging.session.domain.SessionStopReason;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
-import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,14 +45,17 @@ public class ChargingTransactionalCoordinator {
     private final BookingRepository bookingRepository;
     private final ConnectorStateRepository connectorStateRepository;
     private final ChargingSessionRepository chargingSessionRepository;
+    private final Duration earlyActivation;
 
     public ChargingTransactionalCoordinator(
             BookingRepository bookingRepository,
             ConnectorStateRepository connectorStateRepository,
-            ChargingSessionRepository chargingSessionRepository) {
+            ChargingSessionRepository chargingSessionRepository,
+            @Value("${ecopedia.booking.early-activation:PT15M}") Duration earlyActivation) {
         this.bookingRepository = bookingRepository;
         this.connectorStateRepository = connectorStateRepository;
         this.chargingSessionRepository = chargingSessionRepository;
+        this.earlyActivation = earlyActivation;
     }
 
     /**
@@ -105,8 +110,9 @@ public class ChargingTransactionalCoordinator {
                         driverId);
                 throw new BookingNotFoundException(bookingId);
             }
-            // Si la reserva dejó de estar confirmada, la propia reserva lo rechaza con 409 (patrón State).
-            booking.startCharging(now);
+            // Si la reserva dejó de estar confirmada, o todavía no es su rango de habilitación, la
+            // propia reserva lo rechaza con 409 (patrón State).
+            booking.startCharging(now, earlyActivation);
             bookingRepository.save(booking);
         }
 
@@ -162,7 +168,7 @@ public class ChargingTransactionalCoordinator {
                 .orElseThrow(() -> new SessionNotFoundException(sessionId));
 
         if (!session.isActive()) {
-            throw new InvalidBookingRequestException("La sesión ya fue finalizada");
+            throw new SessionAlreadyClosedException(sessionId);
         }
 
         session.stop(stoppedAt, kwhDelivered);
@@ -196,47 +202,38 @@ public class ChargingTransactionalCoordinator {
         return new CompletedSessionData(savedSession, depositAmount, originalWindowEnd);
     }
 
+    public record CompletedSessionData(ChargingSession session, BigDecimal depositAmount, Instant originalWindowEnd) {}
+
     /**
-     * Persiste el estado y los montos finales de la liquidación de la sesión (RF14, RNF06, ECO-55).
+     * Anota en la sesión ya cerrada cómo se liquidó (RF14, ECO-44). Va en su propia transacción,
+     * después del cobro, que es externo: si esto fallara, la sesión ya está cerrada y el conector
+     * libre, que es lo que no puede esperar.
      */
     @Transactional(rollbackFor = Exception.class)
-    public ChargingSession updateSessionSettlement(
+    public ChargingSession recordSettlement(
             String sessionId,
-            ConsumptionPaymentStatus paymentStatus,
+            SessionStopReason stopReason,
+            BigDecimal depositApplied,
             BigDecimal realCost,
-            BigDecimal additionalCharge) {
-        Objects.requireNonNull(sessionId, "sessionId no puede ser null");
-        Objects.requireNonNull(paymentStatus, "paymentStatus no puede ser null");
-
+            BigDecimal finalBilled,
+            BigDecimal additionalCharge,
+            ConsumptionPaymentStatus paymentStatus) {
         ChargingSession session = chargingSessionRepository
                 .findBySessionId(sessionId)
                 .orElseThrow(() -> new SessionNotFoundException(sessionId));
-
-        session.markSettlement(paymentStatus, realCost, additionalCharge);
-        ChargingSession saved = chargingSessionRepository.save(session);
-        log.info(
-                "Liquidación de sesión {} actualizada: status={}, realCost={}, additionalCharge={}",
-                sessionId,
-                paymentStatus,
-                realCost,
-                additionalCharge);
-        return saved;
+        session.recordSettlement(stopReason, depositApplied, realCost, finalBilled, additionalCharge, paymentStatus);
+        return chargingSessionRepository.save(session);
     }
 
     /**
-     * Actualiza la energía entregada por telemetría si la sesión sigue activa (RF11, RF16, ECO-45).
+     * La sesión ya estaba cerrada cuando llegó este cierre: la cerró otro camino (el corte automático,
+     * un reintento). Sigue siendo un {@link InvalidBookingRequestException}, como antes de ECO-44,
+     * pero con nombre propio para que quien cierra la distinga y no liquide dos veces.
      */
-    @Transactional(rollbackFor = Exception.class)
-    public Optional<ChargingSession> updateTelemetryProgress(String sessionId, BigDecimal kwhDelivered) {
-        Objects.requireNonNull(sessionId, "sessionId no puede ser null");
-        return chargingSessionRepository.findBySessionId(sessionId).map(session -> {
-            if (session.isActive()) {
-                session.updateTelemetry(kwhDelivered);
-                return chargingSessionRepository.save(session);
-            }
-            return session;
-        });
-    }
+    public static class SessionAlreadyClosedException extends InvalidBookingRequestException {
 
-    public record CompletedSessionData(ChargingSession session, BigDecimal depositAmount, Instant originalWindowEnd) {}
+        public SessionAlreadyClosedException(String sessionId) {
+            super("La sesión " + sessionId + " ya fue finalizada");
+        }
+    }
 }

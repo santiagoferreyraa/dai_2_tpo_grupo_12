@@ -4,31 +4,32 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.ecopedia.charging.session.domain.ChargingSessionService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class PendingSettlementSweepSchedulerTest {
 
-    private final ChargingActivationService activationService = mock(ChargingActivationService.class);
-    private final PendingSettlementSweepScheduler scheduler = new PendingSettlementSweepScheduler(activationService);
+    private final ChargingSessionService sessionService = mock(ChargingSessionService.class);
+    private final PendingSettlementSweepScheduler scheduler = new PendingSettlementSweepScheduler(sessionService);
 
     @Test
-    @DisplayName("El barrido invoca retryPendingSettlements en ChargingActivationService")
+    @DisplayName("El barrido invoca retryPendingSettlements en ChargingSessionService")
     void sweep_callsRetryPendingSettlements() {
-        when(activationService.retryPendingSettlements()).thenReturn(2);
+        when(sessionService.retryPendingSettlements()).thenReturn(2);
 
         scheduler.sweep();
 
-        verify(activationService).retryPendingSettlements();
+        verify(sessionService).retryPendingSettlements();
     }
 
     @Test
     @DisplayName("Fallas durante el barrido son capturadas sin abortar la ejecución programada")
     void sweep_catchesExceptions() {
-        when(activationService.retryPendingSettlements()).thenThrow(new RuntimeException("Broker caído"));
+        when(sessionService.retryPendingSettlements()).thenThrow(new RuntimeException("Broker caído"));
 
         scheduler.sweep();
 
-        verify(activationService).retryPendingSettlements();
+        verify(sessionService).retryPendingSettlements();
     }
 }

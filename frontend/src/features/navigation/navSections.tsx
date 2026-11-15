@@ -1,6 +1,14 @@
 import type { Role } from '@/features/auth/types'
 
-import { ContactIcon, HomeIcon, KeyIcon, MapIcon, ProfileIcon, StationsIcon } from './icons'
+import {
+  BoltIcon,
+  ContactIcon,
+  HomeIcon,
+  KeyIcon,
+  MapIcon,
+  ProfileIcon,
+  StationsIcon,
+} from './icons'
 
 /**
  * Las secciones de la navegación, en un solo lugar.
@@ -43,6 +51,8 @@ export const MAIN_SECTIONS: NavSection[] = [
   { to: '/', label: 'Inicio', Icon: HomeIcon, end: true },
   { to: '/stations', label: 'Estaciones', Icon: StationsIcon, end: true, roles: ['CPO'] },
   { to: '/stations/map', label: 'Mapa', Icon: MapIcon },
+  /* Iniciar, seguir y detener la carga (ECO-44). Solo el conductor carga autos. */
+  { to: '/charge', label: 'Cargar', Icon: BoltIcon, roles: ['CONDUCTOR'] },
   { to: '/contact', label: 'Contacto', Icon: ContactIcon },
   { to: '/admin', label: 'Backoffice', Icon: KeyIcon, roles: ['ADMIN'] },
 ]
@@ -61,6 +71,8 @@ export const BASE_MOBILE_SECTIONS: NavSection[] = [
   { to: '/', label: 'Inicio', Icon: HomeIcon, end: true },
   { to: '/stations', label: 'Estaciones', Icon: StationsIcon, end: true, roles: ['CPO'] },
   { to: '/stations/map', label: 'Mapa', Icon: MapIcon },
+  /* Iniciar, seguir y detener la carga (ECO-44). Solo el conductor carga autos. */
+  { to: '/charge', label: 'Cargar', Icon: BoltIcon, roles: ['CONDUCTOR'] },
   { to: '/contact', label: 'Contacto', Icon: ContactIcon },
 ]
 

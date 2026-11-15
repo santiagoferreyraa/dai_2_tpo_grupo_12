@@ -1,6 +1,7 @@
 package com.ecopedia.charging.booking.domain;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 
 /**
@@ -43,7 +44,7 @@ interface BookingState {
     }
 
     /** Se habilita la carga y la reserva se consume (RF11, ECO-60). */
-    default void startCharging(Booking booking, Instant now) {
+    default void startCharging(Booking booking, Instant now, Duration earlyActivation) {
         throw conflict(booking, "la habilitación de la carga");
     }
 

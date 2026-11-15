@@ -84,11 +84,17 @@ public class IntegrationDepositGateway implements DepositGateway {
     @Override
     public void refund(Long chargeId, BigDecimal amount) {
         try {
-            var request = restClient.post().uri("/internal/payments/deposits/{id}/refund", chargeId);
-            if (amount != null) {
-                request.contentType(MediaType.APPLICATION_JSON).body(new RefundBody(amount));
-            }
-            request.retrieve().toBodilessEntity();
+            // Siempre con cuerpo JSON, también la devolución total (importe nulo). Un POST sin cuerpo
+            // sale por HttpURLConnection con Content-Type application/x-www-form-urlencoded, y la ruta
+            // de integration, que acepta un cuerpo opcional, lo rechazaba con 415: ninguna devolución
+            // total salía y el barrido reintentaba para siempre.
+            restClient
+                    .post()
+                    .uri("/internal/payments/deposits/{id}/refund", chargeId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(new RefundBody(amount))
+                    .retrieve()
+                    .toBodilessEntity();
         } catch (RestClientResponseException response) {
             int status = response.getStatusCode().value();
             if (status == 404 || status == 409) {

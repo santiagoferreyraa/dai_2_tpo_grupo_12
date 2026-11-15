@@ -1183,7 +1183,7 @@ class BookingServiceImplTest {
                     DRIVER,
                     new TimeWindow(now.minus(Duration.ofMinutes(10)), now.plus(Duration.ofMinutes(50))),
                     now.minus(Duration.ofMinutes(10)));
-            inProgress.startCharging(now.minus(Duration.ofMinutes(5)));
+            inProgress.startCharging(now.minus(Duration.ofMinutes(5)), Duration.ofMinutes(15));
             repository.save(inProgress);
 
             assertThatThrownBy(() -> service.registerWalkIn(CONNECTOR, DRIVER))
@@ -1201,7 +1201,7 @@ class BookingServiceImplTest {
                     DRIVER,
                     new TimeWindow(now.minus(Duration.ofMinutes(10)), now.plus(Duration.ofMinutes(50))),
                     now.minus(Duration.ofMinutes(10)));
-            inProgress.startCharging(now.minus(Duration.ofMinutes(5)));
+            inProgress.startCharging(now.minus(Duration.ofMinutes(5)), Duration.ofMinutes(15));
             repository.save(inProgress);
 
             assertThatThrownBy(() -> service.registerWalkIn(CONNECTOR, DRIVER))
@@ -1221,7 +1221,7 @@ class BookingServiceImplTest {
                     OTHER_DRIVER,
                     new TimeWindow(now.minus(Duration.ofMinutes(20)), now.plus(Duration.ofMinutes(40))),
                     now.minus(Duration.ofMinutes(20)));
-            ongoing.startCharging(now.minus(Duration.ofMinutes(15)));
+            ongoing.startCharging(now.minus(Duration.ofMinutes(15)), Duration.ofMinutes(15));
             repository.save(ongoing);
 
             assertThatThrownBy(() -> service.calculateWalkInWindow(CONNECTOR, now))
@@ -1239,7 +1239,7 @@ class BookingServiceImplTest {
             Instant start = now.plus(Duration.ofHours(1));
             Instant end = now.plus(Duration.ofHours(2));
             Booking active = new Booking(CONNECTOR, OTHER_DRIVER, new TimeWindow(start, end), now);
-            active.startCharging(now);
+            active.startCharging(start, Duration.ofMinutes(15));
             repository.save(active);
 
             List<TimeWindow> free = service.getAvailability(CONNECTOR, now, now.plus(Duration.ofHours(3)));

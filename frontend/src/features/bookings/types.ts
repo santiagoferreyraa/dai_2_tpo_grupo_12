@@ -21,9 +21,11 @@ import type { ConnectorType } from '@/features/terminals/types'
 
 /**
  * Equivale al enum BookingStatus. `NO_SHOW` es la incomparecencia (RF09, ECO-57): pasó la
- * tolerancia sin que el conductor se presentara. El consumo de la reserva (RF11) todavía no existe.
+ * tolerancia sin que el conductor se presentara. `IN_PROGRESS` es la reserva consumida al iniciar la
+ * carga (RF11, ECO-44), y `COMPLETED`, la carga ya terminada: la ventana queda recortada al instante
+ * en que se cortó.
  */
-export type BookingStatus = 'CONFIRMED' | 'CANCELLED' | 'NO_SHOW'
+export type BookingStatus = 'CONFIRMED' | 'CANCELLED' | 'NO_SHOW' | 'IN_PROGRESS' | 'COMPLETED'
 
 /**
  * Qué pasó con la seña. Equivale al enum DepositStatus (ECO-53).

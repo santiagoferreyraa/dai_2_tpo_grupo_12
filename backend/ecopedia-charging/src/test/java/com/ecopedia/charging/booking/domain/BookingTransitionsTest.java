@@ -42,11 +42,14 @@ class BookingTransitionsTest {
     /** El "ahora" de todas las pruebas. La ventana de las reservas vigentes empieza 2 h después. */
     private static final Instant NOW = Instant.parse("2026-11-10T15:00:00Z");
 
+    /** Cuánto antes del turno se puede habilitar (Manuel, 12/11). La tabla habilita al inicio. */
+    private static final Duration EARLY_ACTIVATION = Duration.ofMinutes(15);
+
     /** Las seis transiciones, en el orden de las columnas de la tabla. */
     private enum Transition {
         CANCEL("cancelar", Booking::cancel),
         NO_SHOW("la incomparecencia", (b, now) -> b.markNoShow()),
-        START("habilitar la carga", Booking::startCharging),
+        START("habilitar la carga", (b, now) -> b.startCharging(b.getWindow().start(), EARLY_ACTIVATION)),
         FAIL_ACTIVATION("liberar por falla de habilitación", (b, now) -> b.failActivation()),
         SETTLE_FAULT("liquidar por falla", (b, now) -> b.settleFaultedCharge(new BigDecimal("3000"), now)),
         COMPLETE("cerrar la carga", Booking::completeCharging);
@@ -162,6 +165,35 @@ class BookingTransitionsTest {
         assertThat(faulted.getDepositRefundAmount()).isEqualByComparingTo("5000");
     }
 
+    @Test
+    @DisplayName("Habilitar: desde 15 min antes del turno y hasta su fin; antes es ACTIVATION_TOO_EARLY")
+    void startChargingOnlyWithinActivationRange() {
+        Instant start = NOW.plus(Duration.ofHours(2));
+
+        Booking tooEarly = withWindow(start, start.plus(Duration.ofHours(1)));
+        assertThatThrownBy(() -> tooEarly.startCharging(start.minus(Duration.ofMinutes(16)), EARLY_ACTIVATION))
+                .isInstanceOfSatisfying(ActivationTooEarlyException.class, ex -> assertThat(ex.getAvailableFrom())
+                        .isEqualTo(start.minus(EARLY_ACTIVATION)));
+        assertThat(tooEarly.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+
+        Booking hoursEarly = withWindow(start, start.plus(Duration.ofHours(1)));
+        assertThatThrownBy(() -> hoursEarly.startCharging(NOW, EARLY_ACTIVATION))
+                .isInstanceOf(ActivationTooEarlyException.class);
+
+        Booking justInTime = withWindow(start, start.plus(Duration.ofHours(1)));
+        justInTime.startCharging(start.minus(EARLY_ACTIVATION), EARLY_ACTIVATION);
+        assertThat(justInTime.getStatus()).isEqualTo(BookingStatus.IN_PROGRESS);
+
+        Booking during = withWindow(start, start.plus(Duration.ofHours(1)));
+        during.startCharging(start.plus(Duration.ofMinutes(30)), EARLY_ACTIVATION);
+        assertThat(during.getStatus()).isEqualTo(BookingStatus.IN_PROGRESS);
+
+        Booking ended = withWindow(start, start.plus(Duration.ofHours(1)));
+        assertThatThrownBy(() -> ended.startCharging(start.plus(Duration.ofHours(1)), EARLY_ACTIVATION))
+                .isInstanceOf(BookingStateConflictException.class);
+        assertThat(ended.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+    }
+
     static Stream<Arguments> allowedCells() {
         return ALLOWED.entrySet().stream().flatMap(row -> row.getValue().entrySet().stream()
                 .map(cell -> Arguments.of(row.getKey(), cell.getKey(), cell.getValue())));
@@ -180,11 +212,11 @@ class BookingTransitionsTest {
             case CONFIRMED -> {
                 // Recién confirmada.
             }
-            case IN_PROGRESS -> booking.startCharging(NOW);
+            case IN_PROGRESS -> booking.startCharging(booking.getWindow().start(), EARLY_ACTIVATION);
             case CANCELLED -> booking.cancel(NOW);
             case NO_SHOW -> booking.markNoShow();
             case COMPLETED -> {
-                booking.startCharging(NOW);
+                booking.startCharging(booking.getWindow().start(), EARLY_ACTIVATION);
                 booking.completeCharging(NOW);
             }
         }

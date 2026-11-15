@@ -17,5 +17,10 @@ public interface ConnectorRepository {
 
     List<Connector> findAll();
 
+    /** El conector de ese código de acceso (RF11, ECO-44). */
+    Optional<Connector> findByAccessCode(String accessCode);
+
+    boolean existsByAccessCode(String accessCode);
+
     void delete(Connector connector);
 }

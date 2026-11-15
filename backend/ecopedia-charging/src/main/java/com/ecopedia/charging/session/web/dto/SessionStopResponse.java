@@ -2,6 +2,7 @@ package com.ecopedia.charging.session.web.dto;
 
 import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
 import com.ecopedia.charging.session.domain.SessionStatus;
+import com.ecopedia.charging.session.domain.SessionStopReason;
 import com.ecopedia.charging.session.domain.SessionStopResult;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -21,7 +22,8 @@ public record SessionStopResponse(
         BigDecimal realCost,
         BigDecimal finalBilled,
         BigDecimal additionalCharge,
-        ConsumptionPaymentStatus paymentStatus) {
+        ConsumptionPaymentStatus paymentStatus,
+        SessionStopReason stopReason) {
 
     public static SessionStopResponse fromDomain(SessionStopResult result) {
         return new SessionStopResponse(
@@ -36,6 +38,7 @@ public record SessionStopResponse(
                 result.realCost(),
                 result.finalBilled(),
                 result.additionalCharge(),
-                result.paymentStatus());
+                result.paymentStatus(),
+                result.stopReason());
     }
 }

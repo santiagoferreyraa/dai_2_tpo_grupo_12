@@ -58,6 +58,16 @@ ecopedia:
     queue: notifications.dispatch
     # Cada cuánto se reintentan los avisos que no salieron porque el broker no estaba (ECO-177).
     retry-interval: ${ECOPEDIA_NOTIFICATIONS_RETRY_INTERVAL:PT15S}
+  telemetry:
+    # El tópico donde los cargadores publican sus lecturas (RF16, ECO-40). El nombre tiene que
+    # coincidir con el del simulador (simulation.charger.telemetry-topic).
+    topic: telemetry.charging
+    # El nombre de la suscripción durable de SesionesDeCarga en ese tópico. Otro suscriptor
+    # (Estadísticas) usa el suyo, y así cada uno recibe todas las lecturas.
+    subscription: ecopedia-charging.sessions
+    # Los intentos antes de que Artemis aparte una lectura en la cola de mensajes muertos. Lo decide
+    # el broker (docker/artemis/broker.properties); acá se repite solo para decirlo en el log.
+    max-delivery-attempts: 5
 
   jwt:
     # El MISMO secreto que ecopedia-core. Core firma el token al hacer login y este artefacto
@@ -97,8 +107,11 @@ ecopedia:
     # en alterna. Decidido por Manuel el 28/10: ver ChargingPowerPolicy.
     fast-charge-threshold-kw: 22
     normal-power-kw: 22
-    # Tópico de telemetría de cargadores en Artemis (RF11, RF16, ECO-45)
-    telemetry-topic: ${ECOPEDIA_CHARGING_TELEMETRY_TOPIC:telemetry.charging}
+    # Cuántas veces seguidas puede errar un conductor el código de la terminal antes de quedar en
+    # espera, y cuánto dura la espera (ECO-44). Un PIN de 6 dígitos son un millón de combinaciones:
+    # sin tope, un script las recorre; con 5 cada 10 minutos, no. Ver AccessCodeAttemptLimiter.
+    access-code-max-failures: 5
+    access-code-lockout: PT10M
     # Intervalo de barrido para regularizar sesiones con liquidación pendiente (ECO-55)
     settlement-sweep-ms: ${ECOPEDIA_CHARGING_SETTLEMENT_SWEEP_MS:30000}
 
@@ -134,6 +147,11 @@ ecopedia:
 
     # Buffer mínimo previo a una reserva existente para permitir iniciar una carga sin reserva (RF10, ECO-58).
     walk-in-buffer: ${ECOPEDIA_BOOKING_WALK_IN_BUFFER:PT15M}
+
+    # Cuánto antes del inicio del turno se puede habilitar la carga de una reserva, si la terminal no
+    # está ocupada (Manuel, 12/11). Antes de eso, 409 ACTIVATION_TOO_EARLY. Coincide con el buffer
+    # del walk-in: en esos 15 minutos no hay cargas sin reserva.
+    early-activation: ${ECOPEDIA_BOOKING_EARLY_ACTIVATION:PT15M}
 
 ---
 # Perfil de desarrollo: base en memoria, para levantar el módulo sin PostgreSQL instalado.

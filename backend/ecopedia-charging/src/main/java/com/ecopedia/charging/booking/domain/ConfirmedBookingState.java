@@ -1,5 +1,6 @@
 package com.ecopedia.charging.booking.domain;
 
+import java.time.Duration;
 import java.time.Instant;
 
 /**
@@ -31,9 +32,13 @@ final class ConfirmedBookingState extends ActiveBookingState {
         booking.forfeitDeposit();
     }
 
-    /** La reserva se consume al habilitar la carga. */
+    /**
+     * La reserva se consume al habilitar la carga, y solo dentro de su rango: desde 15 minutos
+     * antes del inicio hasta el fin de la ventana (Manuel, 12/11).
+     */
     @Override
-    public void startCharging(Booking booking, Instant now) {
+    public void startCharging(Booking booking, Instant now, Duration earlyActivation) {
+        booking.checkActivationWindow(now, earlyActivation);
         booking.moveTo(BookingStatus.IN_PROGRESS);
     }
 }

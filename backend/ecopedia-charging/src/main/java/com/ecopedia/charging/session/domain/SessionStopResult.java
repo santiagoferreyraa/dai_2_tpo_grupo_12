@@ -19,4 +19,5 @@ public record SessionStopResult(
         BigDecimal realCost,
         BigDecimal finalBilled,
         BigDecimal additionalCharge,
-        ConsumptionPaymentStatus paymentStatus) {}
+        ConsumptionPaymentStatus paymentStatus,
+        SessionStopReason stopReason) {}

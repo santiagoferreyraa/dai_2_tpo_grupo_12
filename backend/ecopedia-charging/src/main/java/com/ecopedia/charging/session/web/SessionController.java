@@ -2,10 +2,11 @@ package com.ecopedia.charging.session.web;
 
 import com.ecopedia.charging.security.AuthenticatedUser;
 import com.ecopedia.charging.session.domain.ActivationResult;
+import com.ecopedia.charging.session.domain.ChargingSessionService;
 import com.ecopedia.charging.session.domain.SessionStopResult;
-import com.ecopedia.charging.session.service.ChargingActivationService;
 import com.ecopedia.charging.session.web.dto.ActivationHttpRequest;
 import com.ecopedia.charging.session.web.dto.ActivationHttpResponse;
+import com.ecopedia.charging.session.web.dto.SessionHttpResponse;
 import com.ecopedia.charging.session.web.dto.SessionStopResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
@@ -13,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -27,9 +29,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/sessions")
 public class SessionController {
 
-    private final ChargingActivationService activationService;
+    private final ChargingSessionService activationService;
 
-    public SessionController(ChargingActivationService activationService) {
+    public SessionController(ChargingSessionService activationService) {
         this.activationService = activationService;
     }
 
@@ -52,16 +54,37 @@ public class SessionController {
     /**
      * Detiene una sesión de carga activa, libera el conector, recorta la ventana remanente de la
      * reserva y liquida el consumo real descontando la seña (Flujo C, RF12, RF14, ECO-55).
-     *
-     * <p>No acepta parámetros en el cuerpo de la petición: el consumo se toma del cargador físico
-     * o del acumulado fidedigno por telemetría.
+     */
+    /**
+     * El conductor detiene su carga (RF11, ECO-44): apaga el cargador, libera el conector y liquida.
+     * Sin cuerpo: los kWh los dice el cargador, no el conductor. Repetirlo devuelve lo mismo.
      */
     @PostMapping("/{sessionId}/stop")
     @PreAuthorize("hasRole('CONDUCTOR')")
     public ResponseEntity<SessionStopResponse> stopSession(
             @AuthenticationPrincipal AuthenticatedUser driver, @PathVariable String sessionId) {
-
         SessionStopResult result = activationService.stopSession(sessionId, driver.id());
         return ResponseEntity.ok(SessionStopResponse.fromDomain(result));
+    }
+
+    /**
+     * La sesión activa del conductor, si tiene una (ECO-44): 200 con la sesión, o 204. Es lo primero
+     * que pregunta la pantalla de carga, para no ofrecer escanear a quien ya está cargando.
+     */
+    @GetMapping("/active")
+    @PreAuthorize("hasRole('CONDUCTOR')")
+    public ResponseEntity<SessionHttpResponse> activeSession(@AuthenticationPrincipal AuthenticatedUser driver) {
+        return activationService
+                .findActiveSession(driver.id())
+                .map(view -> ResponseEntity.ok(SessionHttpResponse.fromDomain(view)))
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    /** Una sesión del conductor, activa o terminada (ECO-44). La de otro es el mismo 404 que una que no existe. */
+    @GetMapping("/{sessionId}")
+    @PreAuthorize("hasRole('CONDUCTOR')")
+    public SessionHttpResponse getSession(
+            @AuthenticationPrincipal AuthenticatedUser driver, @PathVariable String sessionId) {
+        return SessionHttpResponse.fromDomain(activationService.getSession(sessionId, driver.id()));
     }
 }

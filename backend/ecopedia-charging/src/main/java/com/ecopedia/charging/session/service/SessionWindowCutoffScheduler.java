@@ -1,5 +1,6 @@
 package com.ecopedia.charging.session.service;
 
+import com.ecopedia.charging.session.domain.ChargingSessionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -14,9 +15,9 @@ public class SessionWindowCutoffScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(SessionWindowCutoffScheduler.class);
 
-    private final ChargingActivationService activationService;
+    private final ChargingSessionService activationService;
 
-    public SessionWindowCutoffScheduler(ChargingActivationService activationService) {
+    public SessionWindowCutoffScheduler(ChargingSessionService activationService) {
         this.activationService = activationService;
     }
 

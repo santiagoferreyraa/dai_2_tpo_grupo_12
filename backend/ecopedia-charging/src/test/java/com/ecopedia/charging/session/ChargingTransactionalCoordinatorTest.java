@@ -272,44 +272,10 @@ class ChargingTransactionalCoordinatorTest {
                     bookingRepository.findById(savedBooking.getId()).orElseThrow();
             assertThat(closedBooking.getStatus()).isEqualTo(BookingStatus.COMPLETED);
             assertThat(closedBooking.getWindow().end()).isEqualTo(stopTime);
-        }
 
-        @Test
-        @DisplayName("updateSessionSettlement: actualiza y persiste estado de pago y montos en base de datos")
-        void updateSessionSettlement_persistsAmountsAndStatus() {
-            Instant start = Instant.parse("2026-11-02T19:00:00Z");
-            String sessionId = UUID.randomUUID().toString();
-            coordinator.persistLocalActivation(
-                    sessionId, null, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("22.00"), start);
-            coordinator.completeLocalSession(sessionId, new BigDecimal("10.000"), start.plusSeconds(1800));
-
-            ChargingSession updated = coordinator.updateSessionSettlement(
-                    sessionId, ConsumptionPaymentStatus.CHARGED, new BigDecimal("3500.00"), new BigDecimal("3500.00"));
-
-            assertThat(updated.getPaymentStatus()).isEqualTo(ConsumptionPaymentStatus.CHARGED);
-            assertThat(updated.getRealCost()).isEqualByComparingTo("3500.00");
-            assertThat(updated.getAdditionalCharge()).isEqualByComparingTo("3500.00");
-
-            ChargingSession fromDb =
-                    chargingSessionRepository.findBySessionId(sessionId).orElseThrow();
-            assertThat(fromDb.getPaymentStatus()).isEqualTo(ConsumptionPaymentStatus.CHARGED);
-            assertThat(fromDb.getRealCost()).isEqualByComparingTo("3500.00");
-            assertThat(fromDb.getAdditionalCharge()).isEqualByComparingTo("3500.00");
-        }
-
-        @Test
-        @DisplayName("updateTelemetryProgress: incrementa kwhDelivered de la sesión activa en base de datos")
-        void updateTelemetryProgress_updatesKwhDeliveredWhenActive() {
-            Instant start = Instant.parse("2026-11-02T19:00:00Z");
-            String sessionId = UUID.randomUUID().toString();
-            coordinator.persistLocalActivation(
-                    sessionId, null, CONNECTOR_ID, DRIVER_ID, 80, new BigDecimal("22.00"), start);
-
-            coordinator.updateTelemetryProgress(sessionId, new BigDecimal("7.250"));
-
-            ChargingSession fromDb =
-                    chargingSessionRepository.findBySessionId(sessionId).orElseThrow();
-            assertThat(fromDb.getKwhDelivered()).isEqualByComparingTo("7.250");
+            var pending = chargingSessionRepository.findByStatusAndPaymentStatus(
+                    SessionStatus.COMPLETED, ConsumptionPaymentStatus.PENDING_SETTLEMENT);
+            assertThat(pending).extracting(ChargingSession::getSessionId).contains(sessionId);
         }
     }
 }

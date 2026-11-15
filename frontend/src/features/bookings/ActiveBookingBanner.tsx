@@ -4,7 +4,14 @@ import { CONNECTOR_TYPE_LABEL, formatPower } from '@/features/terminals/format'
 
 import BookingTicket from './components/BookingTicket'
 import { useMyBookings } from './data/myBookingsStore'
-import { formatCountdown, formatRelative, formatTime, formatWindow, isSameDay } from './slots'
+import {
+  activationOpensAt,
+  formatCountdown,
+  formatRelative,
+  formatTime,
+  formatWindow,
+  isSameDay,
+} from './slots'
 import { bookingPhase, nextBooking, timeRemaining } from './timeline'
 import { useNow } from './useNow'
 
@@ -54,6 +61,11 @@ export default function ActiveBookingBanner() {
   const phase = bookingPhase(booking, now)
   const remaining = timeRemaining(booking, now) ?? 0
   const inProgress = phase === 'inProgress'
+  /*
+    Se puede empezar a cargar desde 15 minutos antes del turno, si la terminal está libre: desde ahí
+    se ofrece el botón. Si la terminal está ocupada, la pantalla de carga lo dice.
+  */
+  const canStartCharging = inProgress || now.getTime() >= activationOpensAt(booking.start).getTime()
 
   /*
    * Con la ventana corriendo, cuánto de ella ya pasó. Es la barra del borde de abajo: dice de un
@@ -178,12 +190,30 @@ export default function ActiveBookingBanner() {
                 Cómo llegar
               </a>
             )}
-            <Link
-              to="/profile/reservations"
-              className="brand-fill text-on-primary focus-visible:outline-primary rounded-xl px-4 py-2 text-sm font-bold focus-visible:outline-2 focus-visible:outline-offset-2"
-            >
-              Ver reserva
-            </Link>
+            {/*
+              Con la ventana corriendo —o a menos de 15 minutos de empezar—, lo que el conductor
+              quiere es cargar: el botón lo lleva a escanear la terminal con esta reserva ya elegida
+              (ECO-44). Si la carga ya arrancó, a verla.
+            */}
+            {canStartCharging ? (
+              <Link
+                to={
+                  booking.status === 'IN_PROGRESS'
+                    ? '/charge'
+                    : `/charge?bookingId=${String(booking.id)}`
+                }
+                className="brand-fill text-on-primary focus-visible:outline-primary rounded-xl px-4 py-2 text-sm font-bold focus-visible:outline-2 focus-visible:outline-offset-2"
+              >
+                {booking.status === 'IN_PROGRESS' ? 'Ver carga' : 'Iniciar carga'}
+              </Link>
+            ) : (
+              <Link
+                to="/profile/reservations"
+                className="brand-fill text-on-primary focus-visible:outline-primary rounded-xl px-4 py-2 text-sm font-bold focus-visible:outline-2 focus-visible:outline-offset-2"
+              >
+                Ver reserva
+              </Link>
+            )}
           </div>
 
           {inProgress && (

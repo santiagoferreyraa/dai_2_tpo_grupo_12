@@ -37,6 +37,8 @@ export type BookingPhase = 'upcoming' | 'inProgress' | 'finished' | 'cancelled' 
 export function bookingPhase(booking: Booking, now: Date): BookingPhase {
   if (booking.status === 'CANCELLED') return 'cancelled'
   if (booking.status === 'NO_SHOW') return 'noShow'
+  // La carga terminó: la ventana ya viene recortada al corte, pero la fase no depende de la hora.
+  if (booking.status === 'COMPLETED') return 'finished'
   if (now.getTime() >= booking.end.getTime()) return 'finished'
   if (now.getTime() >= booking.start.getTime()) return 'inProgress'
   return 'upcoming'

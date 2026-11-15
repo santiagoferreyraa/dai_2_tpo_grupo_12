@@ -88,4 +88,22 @@ public interface TerminalService {
 
     /** Elimina un conector por su identificador. */
     void removeConnector(Long connectorId);
+
+    /**
+     * El conector cuyo código de acceso es el que escaneó o tipeó el conductor (RF11, ECO-44). Acepta
+     * el PIN solo o el contenido del QR; ver {@link ConnectorAccessCode#parse}.
+     *
+     * <p>Interna: la consume SesionesDeCarga por {@code /internal/terminals}, nunca un usuario. Si fuera
+     * pública, recorrer el millón de códigos sería la forma de mapear todas las terminales.
+     *
+     * @throws com.ecopedia.core.shared.ResourceNotFoundException si no es un código válido o ningún
+     *     conector lo tiene: para quien llama son lo mismo, un código que no abre nada
+     */
+    Connector getConnectorByAccessCode(String rawCode);
+
+    /**
+     * Le da al conector un código nuevo, y el anterior deja de servir (ECO-44). Es lo que hace el
+     * operador si el PIN se filtró —una foto en un foro, un QR despegado y pegado en otro lado—.
+     */
+    Connector regenerateAccessCode(Long connectorId);
 }

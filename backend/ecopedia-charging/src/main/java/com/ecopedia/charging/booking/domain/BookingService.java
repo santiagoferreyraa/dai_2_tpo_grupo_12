@@ -1,6 +1,7 @@
 package com.ecopedia.charging.booking.domain;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -137,6 +138,17 @@ public interface BookingService {
 
     /** Obtiene una reserva por su identificador o lanza BookingNotFoundException. */
     Booking getBooking(Long bookingId);
+
+    /**
+     * La reserva confirmada del conductor sobre ese conector que ya se puede usar para cargar en
+     * {@code at}: la que está corriendo o empieza dentro de {@code earlyActivation} (RF11, ECO-44).
+     *
+     * <p>Es lo que deja al conductor escanear la terminal sin decir con qué reserva viene: si tiene
+     * una para ese conector y es la hora, la habilitación la usa; si no, la carga es sin reserva. Las
+     * demás condiciones de la habilitación anticipada —que la terminal esté libre— las sigue
+     * controlando la habilitación, igual que con una reserva elegida.
+     */
+    Optional<Booking> findChargeableBooking(Long driverId, Long connectorId, Instant at, Duration earlyActivation);
 
     /**
      * Libera una reserva sin penalización y encola el reintegro total de la seña cuando la carga no
