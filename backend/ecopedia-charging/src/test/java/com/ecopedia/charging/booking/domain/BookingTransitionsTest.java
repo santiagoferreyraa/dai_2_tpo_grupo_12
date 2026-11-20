@@ -23,12 +23,12 @@ import org.junit.jupiter.params.provider.MethodSource;
  * {@link BookingStateConflictException}, que la API responde con 409, y la reserva queda como estaba.
  *
  * <pre>
- *                cancelar   no-show    habilitar    falla habil.  liquidar falla  cerrar carga
- *   CONFIRMED    CANCELLED  NO_SHOW    IN_PROGRESS  CANCELLED     CONFIRMED       COMPLETED
- *   IN_PROGRESS  409        409        409          CANCELLED     IN_PROGRESS     COMPLETED
- *   CANCELLED    409        409        409          409           409             409
- *   NO_SHOW      409        409        409          409           409             409
- *   COMPLETED    409        409        409          409           409             409
+ *                cancelar   no-show    habilitar    falla habil.  liquidar falla  cerrar carga  deuda
+ *   CONFIRMED    CANCELLED  NO_SHOW    IN_PROGRESS  CANCELLED     CONFIRMED       COMPLETED     CANCELLED
+ *   IN_PROGRESS  409        409        409          CANCELLED     IN_PROGRESS     COMPLETED     409
+ *   CANCELLED    409        409        409          409           409             409           409
+ *   NO_SHOW      409        409        409          409           409             409           409
+ *   COMPLETED    409        409        409          409           409             409           409
  * </pre>
  *
  * Además, una {@code CONFIRMED} cuya ventana ya terminó no se cancela. Cancelar una ya cancelada no
@@ -45,14 +45,15 @@ class BookingTransitionsTest {
     /** Cuánto antes del turno se puede habilitar (Manuel, 12/11). La tabla habilita al inicio. */
     private static final Duration EARLY_ACTIVATION = Duration.ofMinutes(15);
 
-    /** Las seis transiciones, en el orden de las columnas de la tabla. */
+    /** Las siete transiciones, en el orden de las columnas de la tabla. */
     private enum Transition {
         CANCEL("cancelar", Booking::cancel),
         NO_SHOW("la incomparecencia", (b, now) -> b.markNoShow()),
         START("habilitar la carga", (b, now) -> b.startCharging(b.getWindow().start(), EARLY_ACTIVATION)),
         FAIL_ACTIVATION("liberar por falla de habilitación", (b, now) -> b.failActivation()),
         SETTLE_FAULT("liquidar por falla", (b, now) -> b.settleFaultedCharge(new BigDecimal("3000"), now)),
-        COMPLETE("cerrar la carga", Booking::completeCharging);
+        COMPLETE("cerrar la carga", Booking::completeCharging),
+        CANCEL_FOR_DEBT("anular por deuda", Booking::cancelForDebt);
 
         private final String label;
         private final BiConsumer<Booking, Instant> apply;
@@ -80,6 +81,7 @@ class BookingTransitionsTest {
         fromConfirmed.put(Transition.FAIL_ACTIVATION, BookingStatus.CANCELLED);
         fromConfirmed.put(Transition.SETTLE_FAULT, BookingStatus.CONFIRMED);
         fromConfirmed.put(Transition.COMPLETE, BookingStatus.COMPLETED);
+        fromConfirmed.put(Transition.CANCEL_FOR_DEBT, BookingStatus.CANCELLED);
         ALLOWED.put(BookingStatus.CONFIRMED, fromConfirmed);
 
         Map<Transition, BookingStatus> fromInProgress = new EnumMap<>(Transition.class);
@@ -163,6 +165,30 @@ class BookingTransitionsTest {
         Booking faulted = inStatus(BookingStatus.IN_PROGRESS);
         faulted.settleFaultedCharge(new BigDecimal("3000"), NOW);
         assertThat(faulted.getDepositRefundAmount()).isEqualByComparingTo("5000");
+    }
+
+    @Test
+    @DisplayName("ECO-62: anulada por deuda, la seña se devuelve entera aunque falte menos que el plazo de preaviso")
+    void cancelForDebtRefundsTheWholeDepositEvenLate() {
+        // Empieza en 1 h: cancelar ahora la perdería (preaviso de 5 h); anularla por deuda, no.
+        Instant start = NOW.plus(Duration.ofHours(1));
+        Booking booking = withWindow(start, start.plus(Duration.ofHours(1)));
+
+        booking.cancelForDebt(NOW);
+
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.CANCELLED);
+        assertThat(booking.getDepositStatus()).isEqualTo(DepositStatus.REFUND_PENDING);
+        assertThat(booking.getDepositRefundAmount()).isEqualByComparingTo("8000");
+    }
+
+    @Test
+    @DisplayName("ECO-62: una confirmada cuya ventana ya terminó no se anula por deuda: 409")
+    void cancelForDebtRejectsAFinishedWindow() {
+        Booking booking = withWindow(NOW.minus(Duration.ofHours(2)), NOW.minus(Duration.ofHours(1)));
+
+        assertThatThrownBy(() -> booking.cancelForDebt(NOW)).isInstanceOf(BookingStateConflictException.class);
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+        assertThat(booking.getDepositStatus()).isEqualTo(DepositStatus.CHARGED);
     }
 
     @Test

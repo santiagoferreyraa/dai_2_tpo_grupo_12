@@ -1,5 +1,9 @@
 package com.ecopedia.integration.payment.web;
 
+import com.ecopedia.integration.payment.domain.DebtNotFoundException;
+import com.ecopedia.integration.payment.domain.DebtPaymentDeclinedException;
+import com.ecopedia.integration.payment.domain.DebtPaymentInProgressException;
+import com.ecopedia.integration.payment.domain.NoUsablePaymentMethodException;
 import com.ecopedia.integration.payment.domain.PaymentGatewayUnavailableException;
 import com.ecopedia.integration.payment.domain.PaymentMethodNotFoundException;
 import com.ecopedia.integration.web.ApiProblems;
@@ -33,9 +37,33 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class PaymentExceptionHandler {
 
-    @ExceptionHandler(PaymentMethodNotFoundException.class)
-    public ProblemDetail handleNotFound(PaymentMethodNotFoundException exception) {
+    @ExceptionHandler({PaymentMethodNotFoundException.class, DebtNotFoundException.class})
+    public ProblemDetail handleNotFound(RuntimeException exception) {
         return ApiProblems.notFound();
+    }
+
+    /** La pasarela rechazó el pago de la deuda: 402, como la seña rechazada en el checkout (ECO-62). */
+    @ExceptionHandler(DebtPaymentDeclinedException.class)
+    public ProblemDetail handleDebtPaymentDeclined(DebtPaymentDeclinedException exception) {
+        return withCode(HttpStatus.PAYMENT_REQUIRED, exception.getMessage(), "CARD_DECLINED");
+    }
+
+    /** No hay con qué pagar la deuda: la tarjeta elegida no sirve, o no tiene ninguna (ECO-62). */
+    @ExceptionHandler(NoUsablePaymentMethodException.class)
+    public ProblemDetail handleNoUsableCard(NoUsablePaymentMethodException exception) {
+        return withCode(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage(), "PAYMENT_METHOD_INVALID");
+    }
+
+    /** Ya hay otro cobro de esa deuda en curso: el reintento del barrido o el mismo conductor (ECO-62). */
+    @ExceptionHandler(DebtPaymentInProgressException.class)
+    public ProblemDetail handleDebtPaymentInProgress(DebtPaymentInProgressException exception) {
+        return withCode(HttpStatus.CONFLICT, exception.getMessage(), "DEBT_PAYMENT_IN_PROGRESS");
+    }
+
+    private static ProblemDetail withCode(HttpStatus status, String detail, String code) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
+        problem.setProperty("code", code);
+        return problem;
     }
 
     /**

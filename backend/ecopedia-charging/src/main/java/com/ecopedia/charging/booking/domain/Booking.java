@@ -184,6 +184,15 @@ public class Booking {
     }
 
     /**
+     * La cuenta del conductor quedó marcada porque no se pudo cobrar una carga anterior (ECO-62): la
+     * reserva se anula con la seña devuelta entera. Solo sobre una reserva confirmada cuya ventana
+     * todavía no terminó; una carga en curso no se corta.
+     */
+    public void cancelForDebt(Instant now) {
+        state().cancelForDebt(this, now);
+    }
+
+    /**
      * La carga no pudo iniciarse por causas ajenas al conductor —conector fuera de servicio,
      * cargador que no responde o rechazo de la distribuidora (RF13, ECO-59)—: la reserva se libera
      * sin penalización y la seña se reintegra entera, sin importar el plazo de preaviso. Solo sobre

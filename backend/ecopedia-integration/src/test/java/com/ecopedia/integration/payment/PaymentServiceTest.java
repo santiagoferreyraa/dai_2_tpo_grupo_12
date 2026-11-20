@@ -275,7 +275,7 @@ class PaymentServiceTest {
         PaymentMethod card = existing(DRIVER, CardBrand.VISA, "1111", 12, 2029);
         when(paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(DRIVER))
                 .thenReturn(List.of(card));
-        when(pendingPaymentRepository.existsByDriverIdAndStatus(DRIVER, PendingPaymentStatus.PENDING))
+        when(pendingPaymentRepository.existsByDriverIdAndStatusIn(DRIVER, PendingPaymentStatus.OPEN))
                 .thenReturn(false);
         when(paymentGateway.validate("tok_previo")).thenReturn(new CardValidation(true, "chargeable"));
 
@@ -292,7 +292,7 @@ class PaymentServiceTest {
         PaymentMethod card = existing(DRIVER, CardBrand.VISA, "1111", 12, 2029);
         when(paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(DRIVER))
                 .thenReturn(List.of(card));
-        when(pendingPaymentRepository.existsByDriverIdAndStatus(DRIVER, PendingPaymentStatus.PENDING))
+        when(pendingPaymentRepository.existsByDriverIdAndStatusIn(DRIVER, PendingPaymentStatus.OPEN))
                 .thenReturn(true);
 
         PaymentValidationResult result = paymentService.validatePaymentMethod(DRIVER, null);
@@ -308,7 +308,7 @@ class PaymentServiceTest {
         PaymentMethod card = existing(DRIVER, CardBrand.VISA, "1111", 12, 2029);
         when(paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(DRIVER))
                 .thenReturn(List.of(card));
-        when(pendingPaymentRepository.existsByDriverIdAndStatus(DRIVER, PendingPaymentStatus.PENDING))
+        when(pendingPaymentRepository.existsByDriverIdAndStatusIn(DRIVER, PendingPaymentStatus.OPEN))
                 .thenReturn(false);
         when(paymentGateway.validate("tok_previo"))
                 .thenReturn(new CardValidation(false, "cc_rejected_insufficient_amount"));
@@ -325,7 +325,7 @@ class PaymentServiceTest {
         PaymentMethod card = existing(DRIVER, CardBrand.VISA, "1111", 12, 2029);
         when(paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(DRIVER))
                 .thenReturn(List.of(card));
-        when(pendingPaymentRepository.existsByDriverIdAndStatus(DRIVER, PendingPaymentStatus.PENDING))
+        when(pendingPaymentRepository.existsByDriverIdAndStatusIn(DRIVER, PendingPaymentStatus.OPEN))
                 .thenReturn(false);
         when(paymentGateway.validate("tok_previo"))
                 .thenThrow(new PaymentGatewayUnavailableException(new RuntimeException("timeout")));
@@ -366,7 +366,7 @@ class PaymentServiceTest {
     void validatePaymentMethod_shouldUseExplicitPaymentMethodId_whenProvided() {
         PaymentMethod card = existing(DRIVER, CardBrand.VISA, "1111", 12, 2029);
         when(paymentMethodRepository.findById(1L)).thenReturn(Optional.of(card));
-        when(pendingPaymentRepository.existsByDriverIdAndStatus(DRIVER, PendingPaymentStatus.PENDING))
+        when(pendingPaymentRepository.existsByDriverIdAndStatusIn(DRIVER, PendingPaymentStatus.OPEN))
                 .thenReturn(false);
         when(paymentGateway.validate("tok_previo")).thenReturn(new CardValidation(true, "chargeable"));
 

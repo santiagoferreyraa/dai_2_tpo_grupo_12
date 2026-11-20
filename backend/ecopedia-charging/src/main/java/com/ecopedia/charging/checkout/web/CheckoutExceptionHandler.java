@@ -6,6 +6,7 @@ import com.ecopedia.charging.booking.domain.HoldNotFoundException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
 import com.ecopedia.charging.checkout.domain.CardDeclinedException;
 import com.ecopedia.charging.checkout.domain.DepositPaymentUnavailableException;
+import com.ecopedia.charging.checkout.domain.DriverHasDebtException;
 import com.ecopedia.charging.checkout.domain.GracePeriodNotAcceptedException;
 import com.ecopedia.charging.checkout.domain.IdempotencyKeyRequiredException;
 import com.ecopedia.charging.checkout.domain.IdempotencyKeyReusedException;
@@ -37,6 +38,12 @@ public class CheckoutExceptionHandler {
     @ExceptionHandler(GracePeriodNotAcceptedException.class)
     public ProblemDetail handleGraceNotAccepted(GracePeriodNotAcceptedException exception) {
         return withCode(HttpStatus.BAD_REQUEST, exception.getMessage(), "GRACE_PERIOD_NOT_ACCEPTED");
+    }
+
+    /** El conductor debe una carga anterior: no reserva hasta pagarla (RF02, ECO-62). */
+    @ExceptionHandler(DriverHasDebtException.class)
+    public ProblemDetail handleDriverHasDebt(DriverHasDebtException exception) {
+        return withCode(HttpStatus.CONFLICT, exception.getMessage(), "DRIVER_HAS_DEBT");
     }
 
     @ExceptionHandler(PaymentMethodRequiredException.class)

@@ -193,6 +193,16 @@ public interface BookingService {
     void cancelBooking(Long bookingId, Long driverId);
 
     /**
+     * Anula las reservas confirmadas del conductor porque su cuenta quedó marcada por una deuda vencida
+     * (ECO-62): la seña se devuelve entera (la pide el barrido de devoluciones) y sale un aviso por
+     * cada una. La carga en curso no se toca, y una reserva cuya ventana ya terminó tampoco.
+     * Idempotente: la segunda vez no encuentra nada que anular. Lo pide Pagos, no el conductor.
+     *
+     * @return cuántas se anularon
+     */
+    int cancelConfirmedBookingsForDebt(Long driverId);
+
+    /**
      * Las reservas de un conductor, de la más próxima a la más lejana (ECO-32).
      *
      * <p>No estaba en el contrato de ECO-31 y se suma acá porque sin esto la cancelación no se

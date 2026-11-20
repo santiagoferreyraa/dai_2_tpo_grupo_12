@@ -81,6 +81,20 @@ ecopedia:
   internal:
     token: ${ECOPEDIA_INTERNAL_TOKEN}
 
+  # Reservas (ecopedia-charging), para anular las reservas de una cuenta marcada por deuda (ECO-62).
+  # Va por su ruta interna con la misma clave de servicio de arriba.
+  charging:
+    url: ${ECOPEDIA_CHARGING_URL:http://localhost:8082}
+
+  # La deuda del conductor (ECO-62, decidido por Manuel el 20/11): después del cobro que falló, tres
+  # reintentos cada 20 minutos; si fallan los tres, la cuenta queda marcada. El barrido mira cada
+  # minuto qué reintentos tocan.
+  payments:
+    debt:
+      retry-interval: ${ECOPEDIA_DEBT_RETRY_INTERVAL:PT20M}
+      max-retries: ${ECOPEDIA_DEBT_MAX_RETRIES:3}
+      sweep-interval: ${ECOPEDIA_DEBT_SWEEP_INTERVAL:PT1M}
+
 ---
 # Perfil de desarrollo: base en memoria, para levantar el módulo sin PostgreSQL instalado.
 spring:

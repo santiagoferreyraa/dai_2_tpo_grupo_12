@@ -191,6 +191,8 @@ services:
       ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN: ${ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN:?Falta ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN en el .env. Correr pnpm env:init}
       ECOPEDIA_POWER_GRID_URL: http://power-grid:8087/ws
       ECOPEDIA_POWER_GRID_PASSWORD: ${ECOPEDIA_POWER_GRID_PASSWORD:?Falta ECOPEDIA_POWER_GRID_PASSWORD en el .env. Correr pnpm env:init}
+      # Reservas, para anular las reservas de una cuenta marcada por deuda (ECO-62).
+      ECOPEDIA_CHARGING_URL: http://charging:8082
     depends_on: *infra
 
   async:

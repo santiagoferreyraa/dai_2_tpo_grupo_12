@@ -21,6 +21,14 @@ public interface PaymentDirectory {
     boolean hasUsablePaymentMethod(Long driverId, String authToken);
 
     /**
+     * Si el conductor debe una carga anterior, pendiente o vencida (RF02, ECO-62). Con deuda no se
+     * reserva.
+     *
+     * @throws PaymentMethodsUnavailableException si Pagos no contestó: no se sabe, y no saber no habilita
+     */
+    boolean hasOutstandingDebt(Long driverId);
+
+    /**
      * Validación completa sin mover dinero (RF11, RF14, ECO-54):
      * Comprueba que la tarjeta sea cobrable ante la pasarela y que el conductor no tenga deuda.
      *

@@ -1052,6 +1052,58 @@ class BookingServiceImplTest {
         }
     }
 
+    /** ECO-62: la cuenta marcada por una deuda vencida pierde sus reservas confirmadas, con la seña devuelta. */
+    @Nested
+    class CancellingForDebt {
+
+        private Booking paidBooking(Long driver, Long connector, long hoursFromNow, String key) {
+            Hold hold = service.startHold(connector, windowIn(hoursFromNow), driver);
+            return service.confirmBooking(hold.id(), driver, PAID, key);
+        }
+
+        @Test
+        @DisplayName("Anula todas las confirmadas del conductor, con la seña por devolver y un aviso por cada una")
+        void cancelsEveryConfirmedBookingOfTheDriver() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking soon = paidBooking(DRIVER, CONNECTOR, 1, "debt-key-0001");
+            Booking later = paidBooking(DRIVER, CONNECTOR, 30, "debt-key-0002");
+            int before = events.published().size();
+
+            int cancelled = service.cancelConfirmedBookingsForDebt(DRIVER);
+
+            assertThat(cancelled).isEqualTo(2);
+            for (Booking booking : List.of(soon, later)) {
+                Booking saved = repository.findById(booking.getId()).orElseThrow();
+                assertThat(saved.getStatus()).isEqualTo(BookingStatus.CANCELLED);
+                // A una hora del inicio, cancelar la perdería: anulada por deuda, se devuelve igual.
+                assertThat(saved.getDepositStatus()).isEqualTo(DepositStatus.REFUND_PENDING);
+            }
+            List<BookingEvent> newEvents =
+                    events.published().subList(before, events.published().size());
+            assertThat(newEvents).hasSize(2).allSatisfy(event -> {
+                assertThat(event.type()).isEqualTo(BookingEventType.BOOKING_CANCELLED_FOR_DEBT);
+                assertThat(event.depositRefunded()).isTrue();
+            });
+        }
+
+        @Test
+        @DisplayName("No toca las reservas de otro conductor, y pedirlo de nuevo no anula nada más")
+        void leavesOtherDriversAloneAndIsIdempotent() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            paidBooking(DRIVER, CONNECTOR, 3, "debt-key-0003");
+            Booking others = paidBooking(OTHER_DRIVER, CONNECTOR, 8, "debt-key-0004");
+
+            assertThat(service.cancelConfirmedBookingsForDebt(DRIVER)).isEqualTo(1);
+            int afterFirst = events.published().size();
+            assertThat(service.cancelConfirmedBookingsForDebt(DRIVER)).isZero();
+
+            assertThat(events.published()).hasSize(afterFirst);
+            Booking untouched = repository.findById(others.getId()).orElseThrow();
+            assertThat(untouched.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+            assertThat(untouched.getDepositStatus()).isEqualTo(DepositStatus.CHARGED);
+        }
+    }
+
     @Nested
     @DisplayName("Carga sin reserva / walk-in con buffer de 15 minutos (RF10, ECO-58)")
     class WalkInCharging {
