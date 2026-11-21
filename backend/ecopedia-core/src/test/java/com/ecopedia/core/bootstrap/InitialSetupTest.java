@@ -10,10 +10,13 @@ import com.ecopedia.core.user.domain.RegistrationData;
 import com.ecopedia.core.user.domain.Role;
 import com.ecopedia.core.user.domain.User;
 import com.ecopedia.core.user.domain.UserService;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.LongStream;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,6 +48,30 @@ class InitialSetupTest {
     @Autowired
     private JdbcTemplate jdbc;
 
+    /* Las sembradas que este test tuvo que reponer, para dejar la base como la encontró. */
+    private final List<Long> restoredSeeds = new ArrayList<>();
+
+    /*
+     * La H2 en memoria es la misma para todas las clases del módulo, y varias (TerminalApiTest,
+     * ApiAttackTest, PricingAuthorizationTest...) limpian con stationRepository.deleteAll(). Si
+     * Surefire corre alguna antes que esta, las 15 sembradas ya no están y el reparto no tiene qué
+     * repartir. Se reponen las que falten (sin conectores: acá solo importa el dueño).
+     */
+    @BeforeEach
+    void ensureSeededStations() {
+        LongStream.rangeClosed(1, 15)
+                .filter(id ->
+                        jdbc.queryForObject("select count(*) from core.stations where id = ?", Long.class, id) == 0)
+                .forEach(id -> {
+                    jdbc.update(
+                            "insert into core.stations (id, name, address, latitude, longitude, owner_id, active)"
+                                    + " values (?, ?, 'Sembrada de prueba', -34.6, -58.4, 1, true)",
+                            id,
+                            "Sembrada " + id);
+                    restoredSeeds.add(id);
+                });
+    }
+
     /* Otros tests del mismo contexto cuentan con las sembradas del usuario 1. */
     @AfterEach
     void cleanUp() {
@@ -52,6 +79,7 @@ class InitialSetupTest {
         jdbc.update("delete from core.one_time_tasks");
         jdbc.update("update core.stations set owner_id = 1 where id <= 15");
         jdbc.update("delete from core.stations where name = 'Alta propia'");
+        restoredSeeds.forEach(id -> jdbc.update("delete from core.stations where id = ?", id));
     }
 
     private static InitialAccounts accounts(String adminEmail, String cpoEmail) {
