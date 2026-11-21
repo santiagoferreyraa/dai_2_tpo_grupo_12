@@ -1,0 +1,48 @@
+/*
+  Los colores del "404" en burbujas de `NotFoundPage`. El movimiento no está acá: lo calcula el
+  componente cuadro a cuadro.
+
+  Cada dígito tiene dos tonos para el cuerpo, arriba y abajo (`-top`, `-bottom`). Los 4 y el 0
+  comparten color; van por separado por si alguna vez se los quiere distinguir.
+
+  **Cada tema tiene su propia burbuja, y no es el mismo dibujo pintado de otro color.**
+
+  - En el CLARO son de la misma materia que los recuadros del inicio (`.glass-panel`: blanco al
+    32%), pero más transparentes todavía, para que se lean como pompas y no como tarjetas. El
+    borde gira en blanco, celeste y violeta, que son los colores del fondo de ese tema.
+  - En el OSCURO parten del verde de la marca, pero casi transparentes: lo que da la forma son
+    los brillos y el borde, no el relleno. El borde gira en blancos y verdes de la misma familia;
+    uno rosa y celeste no combinaba con el fondo oscuro.
+
+  Los colores van en variables y no escritos en el SVG para que el componente no sepa del tema,
+  igual que el resto (ver el comentario del tema en `index.css`).
+*/
+.not-found-digits {
+  --nf-four-top: rgb(185 254 112 / 0.22);
+  --nf-four-bottom: rgb(152 223 75 / 0.06);
+  --nf-zero-top: rgb(185 254 112 / 0.22);
+  --nf-zero-bottom: rgb(152 223 75 / 0.06);
+  --nf-edge: rgb(220 255 180 / 0.55);
+  --nf-shine: #eaffd2;
+  --nf-rim-a: rgb(255 255 255 / 0.85);
+  --nf-rim-b: rgb(185 254 112 / 0.95);
+  --nf-rim-c: rgb(110 231 168 / 0.85);
+  --nf-rim-d: rgb(226 255 196 / 0.9);
+
+  overflow: visible;
+  /* Sin esto, en el celular arrastrar el dedo sobre los números movería la página. */
+  touch-action: pan-y;
+}
+
+[data-theme="light"] .not-found-digits {
+  --nf-four-top: rgb(255 255 255 / 0.3);
+  --nf-four-bottom: rgb(255 255 255 / 0.1);
+  --nf-zero-top: rgb(255 255 255 / 0.3);
+  --nf-zero-bottom: rgb(255 255 255 / 0.1);
+  --nf-edge: rgb(255 255 255 / 0.75);
+  --nf-shine: #ffffff;
+  --nf-rim-a: rgb(255 255 255 / 1);
+  --nf-rim-b: rgb(120 190 250 / 1);
+  --nf-rim-c: rgb(170 140 250 / 1);
+  --nf-rim-d: rgb(230 225 255 / 1);
+}

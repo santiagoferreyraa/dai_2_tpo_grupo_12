@@ -11,6 +11,8 @@
 @import "./features/bookings/bookings.css";
 /* La ventanita de la campanita y los recuadros de aviso que entran solos. */
 @import "./features/notifications/notifications.css";
+/* Los colores del "404" en burbujas, uno por tema. */
+@import "./features/auth/notFound.css";
 
 /*
   Tema de la aplicación (RNF07 y RNF08).
