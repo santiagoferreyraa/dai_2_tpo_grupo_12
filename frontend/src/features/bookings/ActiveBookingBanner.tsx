@@ -58,6 +58,13 @@ export default function ActiveBookingBanner() {
    */
   if (pathname === '/profile' || pathname.startsWith('/profile/')) return null
 
+  /*
+   * En la pantalla de carga tampoco. Todo lo que ofrece —ir a cargar, cómo llegar— ya pasó: quien
+   * está acá está frente al conector. Y en el celular la tarjeta flotante tapaba justo las
+   * estadísticas y el botón de detener, que en esa pantalla van abajo.
+   */
+  if (pathname === '/charge') return null
+
   const phase = bookingPhase(booking, now)
   const remaining = timeRemaining(booking, now) ?? 0
   const inProgress = phase === 'inProgress'

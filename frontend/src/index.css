@@ -13,6 +13,8 @@
 @import "./features/notifications/notifications.css";
 /* Los colores del "404" en burbujas, uno por tema. */
 @import "./features/auth/notFound.css";
+/* El fluido que llena la pantalla de carga: sus colores, las olas y las burbujas. */
+@import "./features/charging/charging.css";
 
 /*
   Tema de la aplicación (RNF07 y RNF08).
