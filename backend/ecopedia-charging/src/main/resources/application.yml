@@ -56,6 +56,18 @@ ecopedia:
   notifications:
     # La cola de avisos. El nombre tiene que coincidir con el que escucha ecopedia-async.
     queue: notifications.dispatch
+    # Cada cuánto se reintentan los avisos que no salieron porque el broker no estaba (ECO-177).
+    retry-interval: ${ECOPEDIA_NOTIFICATIONS_RETRY_INTERVAL:PT15S}
+  telemetry:
+    # El tópico donde los cargadores publican sus lecturas (RF16, ECO-40). El nombre tiene que
+    # coincidir con el del simulador (simulation.charger.telemetry-topic).
+    topic: telemetry.charging
+    # El nombre de la suscripción durable de SesionesDeCarga en ese tópico. Otro suscriptor
+    # (Estadísticas) usa el suyo, y así cada uno recibe todas las lecturas.
+    subscription: ecopedia-charging.sessions
+    # Los intentos antes de que Artemis aparte una lectura en la cola de mensajes muertos. Lo decide
+    # el broker (docker/artemis/broker.properties); acá se repite solo para decirlo en el log.
+    max-delivery-attempts: 5
 
   jwt:
     # El MISMO secreto que ecopedia-core. Core firma el token al hacer login y este artefacto
@@ -76,6 +88,13 @@ ecopedia:
     # Dónde está ecopedia-integration. Checkout le consulta por medios de pago registrados (RF02).
     url: ${ECOPEDIA_INTEGRATION_URL:http://localhost:8083}
 
+  # Los cargadores corren como proceso aparte (simulation/charger, 8088) y SesionesDeCarga les
+  # envía la orden de encendido por REST con chargerHttpClient.
+  charger:
+    url: ${ECOPEDIA_CHARGER_URL:http://localhost:8088}
+    # Sin valor por defecto: en perfil base (pnpm demo, Docker, AWS) sale obligatorio del .env.
+    access-token: ${ECOPEDIA_CHARGER_ACCESS_TOKEN}
+
   # La clave de servicio con la que este artefacto llama a las rutas /internal/** de los otros (hoy,
   # la consulta a la distribuidora en ecopedia-integration). La misma variable la lee integration.
   # Sin valor por defecto, por lo mismo que el secreto del JWT.
@@ -88,6 +107,13 @@ ecopedia:
     # en alterna. Decidido por Manuel el 28/10: ver ChargingPowerPolicy.
     fast-charge-threshold-kw: 22
     normal-power-kw: 22
+    # Cuántas veces seguidas puede errar un conductor el código de la terminal antes de quedar en
+    # espera, y cuánto dura la espera (ECO-44). Un PIN de 6 dígitos son un millón de combinaciones:
+    # sin tope, un script las recorre; con 5 cada 10 minutos, no. Ver AccessCodeAttemptLimiter.
+    access-code-max-failures: 5
+    access-code-lockout: PT10M
+    # Intervalo de barrido para regularizar sesiones con liquidación pendiente (ECO-55)
+    settlement-sweep-ms: ${ECOPEDIA_CHARGING_SETTLEMENT_SWEEP_MS:30000}
 
   booking:
     # Cuánto dura una retención de slot antes de vencer sola (ISO-8601: PT10M = 10 minutos).
@@ -118,6 +144,14 @@ ecopedia:
 
     # Cada cuánto se buscan incomparecencias.
     no-show-sweep-interval: ${ECOPEDIA_BOOKING_NO_SHOW_SWEEP:PT1M}
+
+    # Buffer mínimo previo a una reserva existente para permitir iniciar una carga sin reserva (RF10, ECO-58).
+    walk-in-buffer: ${ECOPEDIA_BOOKING_WALK_IN_BUFFER:PT15M}
+
+    # Cuánto antes del inicio del turno se puede habilitar la carga de una reserva, si la terminal no
+    # está ocupada (Manuel, 12/11). Antes de eso, 409 ACTIVATION_TOO_EARLY. Coincide con el buffer
+    # del walk-in: en esos 15 minutos no hay cargas sin reserva.
+    early-activation: ${ECOPEDIA_BOOKING_EARLY_ACTIVATION:PT15M}
 
 ---
 # Perfil de desarrollo: base en memoria, para levantar el módulo sin PostgreSQL instalado.
@@ -159,6 +193,8 @@ ecopedia:
     secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
   internal:
     token: ${ECOPEDIA_INTERNAL_TOKEN:ecopedia-dev-only-internal-token}
+  charger:
+    access-token: ${ECOPEDIA_CHARGER_ACCESS_TOKEN:ecopedia-dev-only-charger-token}
 
 ---
 # Perfil local: la base de este integrante, en un archivo de su propio disco.
@@ -211,3 +247,5 @@ ecopedia:
     secret: ${ECOPEDIA_JWT_SECRET:ecopedia-dev-only-secret-never-use-in-shared-environments}
   internal:
     token: ${ECOPEDIA_INTERNAL_TOKEN:ecopedia-dev-only-internal-token}
+  charger:
+    access-token: ${ECOPEDIA_CHARGER_ACCESS_TOKEN:ecopedia-dev-only-charger-token}

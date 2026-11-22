@@ -37,7 +37,7 @@ export default function NetworkSummary({ stations }: { stations: StationDetail[]
   if (stats.connectorCount === 0) return null
 
   return (
-    <section className="border-st-border bg-st-surface/40 flex flex-col gap-6 rounded-2xl border p-5 sm:flex-row sm:items-center sm:gap-8">
+    <section className="glass-panel flex flex-col gap-6 rounded-3xl p-5 sm:flex-row sm:items-center sm:gap-8">
       {/* El anillo con el reparto por tipo, y el total adentro. */}
       <div className="flex items-center gap-4">
         <div className="text-st-muted relative h-24 w-24 shrink-0">

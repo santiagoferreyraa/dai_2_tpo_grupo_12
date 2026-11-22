@@ -31,6 +31,9 @@ public interface JpaBookingRepository extends JpaRepository<Booking, Long>, Book
     @Override
     List<Booking> findByDepositStatus(DepositStatus depositStatus);
 
+    @Override
+    List<Booking> findByDriverIdAndStatusAndWindowEndAfter(Long driverId, BookingStatus status, Instant now);
+
     /**
      * El cruce de ventanas, resuelto en la base.
      *

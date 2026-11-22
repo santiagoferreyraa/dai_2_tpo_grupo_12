@@ -46,6 +46,36 @@ public class SessionClientConfig {
                 .build();
     }
 
+    /** Hacia la API REST del cargador físico / simulador (puerto 8088). */
+    /**
+     * Las rutas internas de core, con la clave de servicio (ECO-44): hoy, resolver el código de
+     * acceso que escaneó el conductor. Aparte de {@code coreTerminalHttpClient}, que lee rutas
+     * públicas sin credencial, para que la clave no viaje donde no hace falta.
+     */
+    @Bean
+    public RestClient coreInternalHttpClient(
+            RestClient.Builder builder,
+            @Value("${ecopedia.core.url}") String coreUrl,
+            @Value("${ecopedia.internal.token}") String serviceToken) {
+        return builder.clone()
+                .baseUrl(coreUrl)
+                .requestFactory(timeouts(Duration.ofSeconds(2), Duration.ofSeconds(3)))
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + serviceToken)
+                .build();
+    }
+
+    @Bean
+    public RestClient chargerHttpClient(
+            RestClient.Builder builder,
+            @Value("${ecopedia.charger.url}") String chargerUrl,
+            @Value("${ecopedia.charger.access-token}") String accessToken) {
+        return builder.clone()
+                .baseUrl(chargerUrl)
+                .requestFactory(timeouts(Duration.ofSeconds(2), Duration.ofSeconds(4)))
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                .build();
+    }
+
     private static SimpleClientHttpRequestFactory timeouts(Duration connect, Duration read) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(connect);

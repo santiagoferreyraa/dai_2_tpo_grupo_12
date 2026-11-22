@@ -17,5 +17,5 @@ import jakarta.validation.constraints.Size;
 public record ChangePasswordRequest(
         @NotBlank(message = "Ingresá tu contraseña actual") String currentPassword,
         @NotBlank(message = "Elegí una contraseña nueva")
-                @Size(min = 6, message = "La contraseña debe tener al menos 6 caracteres")
+                @Size(min = 8, message = "La contraseña debe tener al menos 8 caracteres")
                 String newPassword) {}

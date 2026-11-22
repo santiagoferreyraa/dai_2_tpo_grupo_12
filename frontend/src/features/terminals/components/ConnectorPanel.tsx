@@ -6,13 +6,15 @@ import {
   formatPower,
 } from '../format'
 import type { Connector } from '../types'
+import ConnectorAccessCode from './ConnectorAccessCode'
 
 /**
  * Conectores de una estación en el detalle: una grilla de recuadros, y nada más.
  *
  * Cada recuadro ya muestra todo lo que hay para saber de un conector —tipo, potencia y
  * estado—, así que no son botones: no habría nada del otro lado. Editarlos es otra cosa y
- * vive en el formulario (ver ConnectorEditor).
+ * vive en el formulario (ver ConnectorEditor). Lo único que se pide aparte es el PIN de la
+ * terminal, que no viaja con el conector (ver ConnectorAccessCode).
  */
 interface ConnectorPanelProps {
   connectors: Connector[]
@@ -21,7 +23,7 @@ interface ConnectorPanelProps {
 export default function ConnectorPanel({ connectors }: ConnectorPanelProps) {
   return (
     <section className="mt-6">
-      <h3 className="text-st-muted text-lg font-bold">CONNECTORS</h3>
+      <h3 className="text-st-muted text-lg font-bold">CONECTORES</h3>
 
       {connectors.length === 0 ? (
         <p className="text-st-muted mt-2 text-sm italic">
@@ -30,7 +32,7 @@ export default function ConnectorPanel({ connectors }: ConnectorPanelProps) {
       ) : (
         <ul className="mt-3 grid grid-cols-2 gap-3">
           {connectors.map((connector) => (
-            <li key={connector.id} className="bg-st-surface rounded-2xl px-4 py-3">
+            <li key={connector.id} className="glass-inset rounded-2xl px-4 py-3">
               <span className="text-st-text block text-sm font-bold">
                 {CONNECTOR_TYPE_LABEL[connector.connectorType]}
               </span>
@@ -47,6 +49,7 @@ export default function ConnectorPanel({ connectors }: ConnectorPanelProps) {
                   {STATUS_LABEL[connector.operationalStatus]}
                 </span>
               </span>
+              <ConnectorAccessCode connectorId={connector.id} />
             </li>
           ))}
         </ul>

@@ -7,6 +7,7 @@ import { useMediaQuery } from '@/lib/useMediaQuery'
 
 import CardForm from './components/CardForm'
 import CardStack from './components/CardStack'
+import DebtNotice from './components/DebtNotice'
 import PaymentMethodRow from './components/PaymentMethodRow'
 import { listCards, registerCard, removeCard } from './data/paymentMethodsRepository'
 import { describeCard } from './format'
@@ -166,6 +167,12 @@ export default function PaymentMethodsPage() {
       </header>
 
       {/*
+        Las deudas van primero (ECO-62): son lo único de la pantalla que el conductor tiene que
+        resolver antes de poder reservar o cargar. Sin deuda, el recuadro no se dibuja.
+      */}
+      <DebtNotice cards={cards} />
+
+      {/*
         El aviso de que falta una tarjeta vigente se muestra también cuando la lista NO está
         vacía: un conductor con dos tarjetas vencidas ve filas en pantalla y no tiene por qué
         deducir solo que ninguna le sirve.
@@ -248,6 +255,7 @@ export default function PaymentMethodsPage() {
         label="Nueva tarjeta"
         // Los tokens compartidos, no los `st-*` oscuros del ABM: esta pantalla es clara.
         backgroundClass="bg-surface"
+        textClass="text-text"
       >
         <h2 className="mb-4 text-lg font-semibold">Nueva tarjeta</h2>
         {form}

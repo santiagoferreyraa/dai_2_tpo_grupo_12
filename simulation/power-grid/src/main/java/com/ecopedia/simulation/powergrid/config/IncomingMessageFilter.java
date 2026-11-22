@@ -12,6 +12,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -59,15 +60,15 @@ public class IncomingMessageFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        byte[] body = readUpTo(request.getInputStream(), maxBytes);
-        if (body == null) {
+        Optional<byte[]> body = readUpTo(request.getInputStream(), maxBytes);
+        if (body.isEmpty()) {
             log.warn("Pedido rechazado por tamaño: más de {} bytes", maxBytes);
             response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
             return;
         }
 
         try {
-            chain.doFilter(new BufferedRequest(request, body), response);
+            chain.doFilter(new BufferedRequest(request, body.get()), response);
         } catch (ServletException failure) {
             if (!isUnreadableMessage(failure) || response.isCommitted()) throw failure;
             log.warn("Pedido rechazado por mal formado: {}", rootMessage(failure));
@@ -77,16 +78,16 @@ public class IncomingMessageFilter extends OncePerRequestFilter {
         }
     }
 
-    /** El cuerpo entero, o {@code null} si pasa el tope. Nunca lee más que el tope y un byte. */
-    private static byte[] readUpTo(InputStream in, int limit) throws IOException {
+    /** El cuerpo entero, o vacío si pasa el tope. Nunca lee más que el tope y un byte. */
+    private static Optional<byte[]> readUpTo(InputStream in, int limit) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         byte[] buffer = new byte[4096];
         int n;
         while ((n = in.read(buffer)) != -1) {
-            if (out.size() + n > limit) return null;
+            if (out.size() + n > limit) return Optional.empty();
             out.write(buffer, 0, n);
         }
-        return out.toByteArray();
+        return Optional.of(out.toByteArray());
     }
 
     private static boolean isUnreadableMessage(Throwable failure) {

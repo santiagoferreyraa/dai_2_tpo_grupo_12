@@ -121,6 +121,8 @@ class IntegrationDepositGatewayTest {
         integration
                 .expect(requestTo(refund))
                 .andExpect(method(HttpMethod.POST))
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(content().json("{\"amount\":null}", true))
                 .andRespond(withSuccess("{\"chargeId\":9,\"status\":\"REFUNDED\"}", MediaType.APPLICATION_JSON));
         gateway.refund(9L);
         integration.verify();
@@ -141,6 +143,7 @@ class IntegrationDepositGatewayTest {
         integration
                 .expect(requestTo(refund))
                 .andExpect(method(HttpMethod.POST))
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(content().json("{\"amount\":4800}"))
                 .andRespond(withSuccess("{\"chargeId\":9,\"status\":\"REFUNDED\"}", MediaType.APPLICATION_JSON));
         gateway.refund(9L, new BigDecimal("4800"));

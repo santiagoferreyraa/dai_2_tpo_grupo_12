@@ -5,6 +5,7 @@ import { updateMyPassword, updateMyProfile } from '@/features/auth/data/userRepo
 import { applyProfile, useSession } from '@/features/auth/session'
 import { ChevronRightIcon, EyeIcon, EyeOffIcon } from '@/features/navigation/icons'
 import {
+  MINIMUM_PASSWORD_LENGTH,
   validateNewPassword,
   validatePasswordConfirmation,
   validateRequiredPassword,
@@ -300,7 +301,7 @@ export default function EditProfilePage() {
           <div className="grid gap-5 md:grid-cols-2">
             <UnderlineField
               label="Contraseña nueva"
-              hint="Al menos 6 caracteres."
+              hint={`Al menos ${String(MINIMUM_PASSWORD_LENGTH)} caracteres.`}
               error={errors.newPassword}
             >
               {(props) => (

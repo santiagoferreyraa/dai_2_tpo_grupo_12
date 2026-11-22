@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { refreshNotificationsSoon } from '@/features/notifications/data/notificationsStore'
+import { commitDeparture, discardDepartureDraft } from '@/features/terminals/departure'
 import { ApiError } from '@/lib/api'
 
 import { checkoutBooking, startHold } from './data/bookingsRepository'
@@ -39,6 +40,8 @@ export interface BookingFlowError {
   message: string
   /** Falta una tarjeta: además del mensaje, se ofrece el camino para cargarla. */
   addCard: boolean
+  /** Hay una deuda sin pagar (ECO-62): se ofrece el camino para pagarla. */
+  payDebt?: boolean
 }
 
 export interface BookingFlow {
@@ -149,6 +152,13 @@ export function useBookingFlow(connectorId: number): BookingFlow {
     mounted.current = true
     return () => {
       mounted.current = false
+      /*
+       * Salir del flujo sin haber confirmado tira lo que se eligió como punto de partida en el
+       * formulario (ECO-139): si no, el recorrido de esa estación seguía saliendo de una dirección
+       * que no era de ninguna reserva. Si la reserva se confirmó, el borrador ya pasó a ser el
+       * punto de partida y esto no hace nada.
+       */
+      discardDepartureDraft()
     }
   }, [])
 
@@ -197,6 +207,8 @@ export function useBookingFlow(connectorId: number): BookingFlow {
         (booking) => {
           uncertainAttempt = null
           forgetHold(connectorId)
+          /* Recién ahora la dirección elegida es el punto de partida de un viaje. Ver `departure`. */
+          commitDeparture()
           /* La franja y el perfil muestran las reservas: se enteran de la nueva sin recargar. */
           refreshMyBookings()
           /*
@@ -342,6 +354,12 @@ function confirmErrorMessage(reason: unknown): BookingFlowError {
       )
     case 'GRACE_PERIOD_NOT_ACCEPTED':
       return plain(`Para confirmar, aceptá la tolerancia de ${GRACE_MINUTES} minutos.`)
+    case 'DRIVER_HAS_DEBT':
+      return {
+        message: 'Tenés un pago pendiente. Pagalo desde Medios de pago para poder reservar.',
+        addCard: false,
+        payDebt: true,
+      }
   }
 
   if (reason.status === 410 || reason.status === 404) {

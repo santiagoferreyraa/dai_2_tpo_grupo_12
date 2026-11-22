@@ -89,4 +89,10 @@ public interface BookingRepository {
 
     /** Las reservas con la seña en ese estado: con {@code REFUND_PENDING}, las que esperan devolución. */
     List<Booking> findByDepositStatus(DepositStatus depositStatus);
+
+    /**
+     * Las reservas del conductor en ese estado cuya ventana todavía no terminó. Con {@code CONFIRMED},
+     * las que se anulan cuando la cuenta queda marcada por deuda (ECO-62).
+     */
+    List<Booking> findByDriverIdAndStatusAndWindowEndAfter(Long driverId, BookingStatus status, Instant now);
 }

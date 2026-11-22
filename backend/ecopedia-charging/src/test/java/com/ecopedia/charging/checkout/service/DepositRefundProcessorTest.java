@@ -1,5 +1,7 @@
 package com.ecopedia.charging.checkout.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -14,8 +16,12 @@ import com.ecopedia.charging.booking.domain.TimeWindow;
 import com.ecopedia.charging.checkout.domain.DepositGateway;
 import com.ecopedia.charging.checkout.domain.DepositPaymentUnavailableException;
 import com.ecopedia.charging.checkout.domain.DepositRefundRefusedException;
+import com.ecopedia.charging.checkout.domain.PendingDepositRefund;
+import com.ecopedia.charging.checkout.domain.PendingDepositRefundRepository;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,13 +35,19 @@ class DepositRefundProcessorTest {
     private BookingService bookingService;
     private DepositGateway depositGateway;
     private DepositRefundProcessor processor;
+    private PendingDepositRefundRepository pendingRefunds;
     private Booking pending;
 
     @BeforeEach
     void setUp() {
         bookingService = mock(BookingService.class);
         depositGateway = mock(DepositGateway.class);
-        processor = new DepositRefundProcessor(bookingService, depositGateway);
+        pendingRefunds = mock(PendingDepositRefundRepository.class);
+        processor = new DepositRefundProcessor(
+                bookingService,
+                depositGateway,
+                pendingRefunds,
+                Clock.fixed(Instant.parse("2026-11-20T12:00:00Z"), ZoneOffset.UTC));
 
         Instant start = Instant.parse("2026-11-02T18:00:00Z");
         pending = new Booking(
@@ -116,5 +128,40 @@ class DepositRefundProcessorTest {
 
         verify(depositGateway).refund(19L, new BigDecimal("4800"));
         verify(bookingService).markDepositRefunded(44L);
+    }
+
+    /** ECO-62: la seña cobrada que quedó sin reserva y no se pudo devolver en el acto. */
+    private PendingDepositRefund chargedWithoutBooking() {
+        return new PendingDepositRefund(
+                77L, 5L, new BigDecimal("8000"), "hold-1", Instant.parse("2026-11-20T11:00:00Z"));
+    }
+
+    @Test
+    @DisplayName("ECO-62: devuelve también la seña cobrada sin reserva y la marca devuelta")
+    void refundsADepositChargedWithoutBooking() {
+        PendingDepositRefund pendingRefund = chargedWithoutBooking();
+        when(pendingRefunds.findByRefundedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(pendingRefund));
+
+        processor.refundPending();
+
+        verify(depositGateway).refund(77L);
+        verify(pendingRefunds).save(pendingRefund);
+        assertThat(pendingRefund.isRefunded()).isTrue();
+        assertThat(pendingRefund.getRefundedAt()).isEqualTo(Instant.parse("2026-11-20T12:00:00Z"));
+    }
+
+    @Test
+    @DisplayName("ECO-62: con Pagos caído la seña sin reserva sigue pendiente para el próximo barrido")
+    void keepsTheDepositWithoutBookingPendingWhenPaymentsIsDown() {
+        PendingDepositRefund pendingRefund = chargedWithoutBooking();
+        when(pendingRefunds.findByRefundedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(pendingRefund));
+        doThrow(new DepositPaymentUnavailableException("caído", new RuntimeException()))
+                .when(depositGateway)
+                .refund(77L);
+
+        processor.refundPending();
+
+        verify(pendingRefunds, never()).save(any());
+        assertThat(pendingRefund.isRefunded()).isFalse();
     }
 }

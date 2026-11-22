@@ -46,7 +46,7 @@ export default function StationCard({
 
   return (
     <li
-      className={`relative rounded-2xl shadow-lg shadow-black/40 transition-transform ${
+      className={`relative rounded-2xl transition-transform ${
         /*
           El anillo va acá y no en el botón para que dé la vuelta entera, franja de edición
           incluida. El agrandado es apenas perceptible a propósito: lo suficiente para que
@@ -61,7 +61,8 @@ export default function StationCard({
         aria-label={`Ver ${station.name}`}
         aria-current={selected}
         className={`focus-visible:outline-st-accent block w-full rounded-2xl py-4 pr-12 pl-5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${
-          selected ? 'bg-st-surface-raised' : 'bg-st-surface hover:bg-st-surface-raised'
+          /* El vidrio de las tarjetas del resto de la aplicación; elegida, con el borde verde. */
+          selected ? 'glass-panel border-primary/60' : 'glass-panel hover:border-primary/60'
         }`}
       >
         <div className="flex items-center gap-4">
@@ -94,25 +95,27 @@ export default function StationCard({
               </span>
 
               <span className="text-st-muted shrink-0 text-[11px] font-medium tracking-wide">
-                {count} {count === 1 ? 'CONNECTOR' : 'CONNECTORS'}
+                {count} {count === 1 ? 'CONECTOR' : 'CONECTORES'}
               </span>
             </div>
 
             <dl className="mt-3 hidden gap-10 md:flex">
               <div>
-                <dt className="text-st-muted text-[10px] font-bold tracking-widest">TYPES</dt>
+                <dt className="text-st-muted text-[10px] font-bold tracking-widest">TIPOS</dt>
                 <dd className="text-st-text mt-0.5 text-sm font-semibold">
                   {types ?? <span className="text-st-muted font-normal italic">—</span>}
                 </dd>
               </div>
               <div>
-                <dt className="text-st-muted text-[10px] font-bold tracking-widest">MAX POWER</dt>
+                <dt className="text-st-muted text-[10px] font-bold tracking-widest">
+                  POTENCIA MÁX.
+                </dt>
                 <dd className="text-st-text mt-0.5 text-sm font-semibold">
                   {power !== null ? formatPower(power) : <span className="text-st-muted">—</span>}
                 </dd>
               </div>
               <div>
-                <dt className="text-st-muted text-[10px] font-bold tracking-widest">CONNECTORS</dt>
+                <dt className="text-st-muted text-[10px] font-bold tracking-widest">CONECTORES</dt>
                 <dd className="text-st-text mt-0.5 text-sm font-semibold">{count}</dd>
               </div>
             </dl>
@@ -132,13 +135,13 @@ export default function StationCard({
         /*
           La franja está apoyada ENCIMA de la tarjeta, no recortada de ella: por eso lleva
           fondo propio y una sombra que cae hacia la izquierda, que es lo que la despega.
-          Va en negativo —fondo gris, letra oscura— para que se lea como un borde macizo y
-          no como una porción más de la tarjeta.
+          Va con el verde de la marca, como el botón de agregar y el resto de las acciones de
+          la aplicación: se lee como un borde macizo y, además, como algo que se puede tocar.
         */
-        className="bg-st-muted text-st-surface hover:bg-st-text focus-visible:outline-st-accent absolute top-0 right-0 flex h-full w-10 items-center justify-center rounded-r-2xl shadow-[-8px_0_14px_-6px_rgba(0,0,0,0.65)] transition-colors focus-visible:outline-2"
+        className="brand-fill text-on-primary hover:brightness-110 focus-visible:outline-st-accent absolute top-0 right-0 flex h-full w-10 items-center justify-center rounded-r-2xl shadow-[-8px_0_14px_-6px_rgba(0,0,0,0.65)] transition-colors focus-visible:outline-2"
       >
         <span className="rotate-180 text-[11px] font-extrabold tracking-widest [writing-mode:vertical-rl]">
-          EDIT STATION
+          EDITAR
         </span>
       </button>
     </li>

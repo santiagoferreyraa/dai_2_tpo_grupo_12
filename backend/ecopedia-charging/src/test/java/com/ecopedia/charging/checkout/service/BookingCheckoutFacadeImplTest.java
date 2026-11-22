@@ -25,11 +25,15 @@ import com.ecopedia.charging.checkout.domain.CheckoutResult;
 import com.ecopedia.charging.checkout.domain.DepositCharge;
 import com.ecopedia.charging.checkout.domain.DepositGateway;
 import com.ecopedia.charging.checkout.domain.DepositPaymentUnavailableException;
+import com.ecopedia.charging.checkout.domain.DriverHasDebtException;
 import com.ecopedia.charging.checkout.domain.GracePeriodNotAcceptedException;
 import com.ecopedia.charging.checkout.domain.IdempotencyKeyRequiredException;
 import com.ecopedia.charging.checkout.domain.IdempotencyKeyReusedException;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
 import com.ecopedia.charging.checkout.domain.PaymentMethodRequiredException;
+import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
+import com.ecopedia.charging.checkout.domain.PendingDepositRefund;
+import com.ecopedia.charging.checkout.domain.PendingDepositRefundRepository;
 import com.ecopedia.charging.checkout.domain.PricingUnavailableException;
 import com.ecopedia.charging.checkout.domain.TariffDirectory;
 import java.math.BigDecimal;
@@ -45,6 +49,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 
 /**
  * Pruebas unitarias para el patrón Facade de Checkout (ECO-35, BookingCheckoutFacadeImpl).
@@ -65,6 +70,7 @@ class BookingCheckoutFacadeImplTest {
     private TariffDirectory tariffDirectory;
     private PaymentDirectory paymentDirectory;
     private DepositGateway depositGateway;
+    private PendingDepositRefundRepository pendingRefunds;
 
     private BookingCheckoutFacadeImpl facade;
 
@@ -79,12 +85,13 @@ class BookingCheckoutFacadeImplTest {
         tariffDirectory = mock(TariffDirectory.class);
         paymentDirectory = mock(PaymentDirectory.class);
         depositGateway = mock(DepositGateway.class);
+        pendingRefunds = mock(PendingDepositRefundRepository.class);
 
         now = Instant.parse("2026-09-28T15:00:00Z");
         Clock clock = Clock.fixed(now, ZoneOffset.UTC);
 
-        facade =
-                new BookingCheckoutFacadeImpl(bookingService, tariffDirectory, paymentDirectory, depositGateway, clock);
+        facade = new BookingCheckoutFacadeImpl(
+                bookingService, tariffDirectory, paymentDirectory, depositGateway, pendingRefunds, clock);
 
         holdId = UUID.randomUUID();
         TimeWindow window = new TimeWindow(now.plusSeconds(3600 * 8), now.plusSeconds(3600 * 9));
@@ -220,6 +227,72 @@ class BookingCheckoutFacadeImplTest {
 
             assertThatThrownBy(() -> facade.processBookingCheckout(DRIVER_ID, request, KEY, AUTH_TOKEN))
                     .isInstanceOf(HoldExpiredException.class);
+        }
+
+        @Test
+        @DisplayName("Si tampoco sale la devolución, queda anotada para el barrido de las señas (ECO-62)")
+        void refundFailureIsRecordedForTheSweep() {
+            readyToCharge(DEPOSIT);
+            when(bookingService.confirmBooking(any(), any(), any(), any())).thenThrow(new HoldExpiredException(holdId));
+            doThrow(new DepositPaymentUnavailableException("caído", new RuntimeException()))
+                    .when(depositGateway)
+                    .refund(9L);
+
+            assertThatThrownBy(() -> facade.processBookingCheckout(DRIVER_ID, request, KEY, AUTH_TOKEN))
+                    .isInstanceOf(HoldExpiredException.class);
+
+            ArgumentCaptor<PendingDepositRefund> recorded = ArgumentCaptor.forClass(PendingDepositRefund.class);
+            verify(pendingRefunds).save(recorded.capture());
+            assertThat(recorded.getValue().getChargeId()).isEqualTo(9L);
+            assertThat(recorded.getValue().getDriverId()).isEqualTo(DRIVER_ID);
+            assertThat(recorded.getValue().getAmount()).isEqualByComparingTo(DEPOSIT);
+            assertThat(recorded.getValue().getHoldId()).isEqualTo(holdId.toString());
+            assertThat(recorded.getValue().isRefunded()).isFalse();
+        }
+
+        @Test
+        @DisplayName("Si la devolución en el acto sale, no se anota nada")
+        void refundInTheActIsNotRecorded() {
+            readyToCharge(DEPOSIT);
+            when(bookingService.confirmBooking(any(), any(), any(), any())).thenThrow(new HoldExpiredException(holdId));
+
+            assertThatThrownBy(() -> facade.processBookingCheckout(DRIVER_ID, request, KEY, AUTH_TOKEN))
+                    .isInstanceOf(HoldExpiredException.class);
+
+            verifyNoInteractions(pendingRefunds);
+        }
+    }
+
+    /** ECO-62: con una carga anterior sin pagar no se reserva, y no se cobra nada. */
+    @Nested
+    class OutstandingDebt {
+
+        @Test
+        @DisplayName("Con deuda pendiente o vencida rechaza con DRIVER_HAS_DEBT antes de calcular o cobrar la seña")
+        void rejectsBeforeChargingWhenTheDriverOwesACharge() {
+            readyToCharge(DEPOSIT);
+            when(paymentDirectory.hasOutstandingDebt(DRIVER_ID)).thenReturn(true);
+
+            assertThatThrownBy(() -> facade.processBookingCheckout(DRIVER_ID, request, KEY, AUTH_TOKEN))
+                    .isInstanceOf(DriverHasDebtException.class);
+
+            verifyNoInteractions(depositGateway);
+            verify(tariffDirectory, never()).calculateDeposit(anyLong());
+            neverConfirmed();
+        }
+
+        @Test
+        @DisplayName("Con Pagos caído al consultar la deuda no se reserva: 503, como con las tarjetas")
+        void paymentsDownWhenAskingForDebtDoesNotLetItThrough() {
+            readyToCharge(DEPOSIT);
+            when(paymentDirectory.hasOutstandingDebt(DRIVER_ID))
+                    .thenThrow(new PaymentMethodsUnavailableException(new RuntimeException("caído")));
+
+            assertThatThrownBy(() -> facade.processBookingCheckout(DRIVER_ID, request, KEY, AUTH_TOKEN))
+                    .isInstanceOf(PaymentMethodsUnavailableException.class);
+
+            verifyNoInteractions(depositGateway);
+            neverConfirmed();
         }
     }
 

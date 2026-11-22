@@ -1,6 +1,7 @@
 package com.ecopedia.async.config;
 
 import com.ecopedia.async.notification.messaging.BookingEventMessage;
+import com.ecopedia.async.notification.messaging.DebtEventMessage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.jms.ConnectionFactory;
 import java.util.Map;
@@ -28,6 +29,9 @@ public class JmsConfig {
 
     /** Tiene que coincidir con {@code JmsConfig.BOOKING_EVENT_TYPE} de {@code ecopedia-charging}. */
     public static final String BOOKING_EVENT_TYPE = "booking-event";
+
+    /** Tiene que coincidir con {@code JmsConfig.DEBT_EVENT_TYPE} de {@code ecopedia-integration} (ECO-62). */
+    public static final String DEBT_EVENT_TYPE = "debt-event";
 
     private static final Logger log = LoggerFactory.getLogger(JmsConfig.class);
 
@@ -57,7 +61,8 @@ public class JmsConfig {
         converter.setTargetType(MessageType.TEXT);
         converter.setObjectMapper(objectMapper);
         converter.setTypeIdPropertyName("_type");
-        converter.setTypeIdMappings(Map.of(BOOKING_EVENT_TYPE, BookingEventMessage.class));
+        converter.setTypeIdMappings(
+                Map.of(BOOKING_EVENT_TYPE, BookingEventMessage.class, DEBT_EVENT_TYPE, DebtEventMessage.class));
         return converter;
     }
 }

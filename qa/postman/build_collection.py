@@ -215,6 +215,17 @@ FOLDERS = [
         case("Listado de mis tarjetas", "GET", f"{INTEGRATION}/api/payment-methods", 200, token="driver",
              check=["pm.expect(json.map(c => c.id)).to.include(Number(pm.collectionVariables.get('cardId')))"]),
         case("Listado de tarjetas sin token", "GET", f"{INTEGRATION}/api/payment-methods", 401),
+        # La deuda del conductor (ECO-62): un conductor nuevo está al día. Provocar una deuda de verdad
+        # pide cerrar una carga con una tarjeta que rechaza; eso lo cubren los tests de integration.
+        case("Mis deudas: al día", "GET", f"{INTEGRATION}/api/payment-debts", 200, token="driver",
+             check=["pm.expect(json).to.be.an('array').that.is.empty"]),
+        case("Mis deudas sin token", "GET", f"{INTEGRATION}/api/payment-debts", 401),
+        case("Pagar una deuda sin Idempotency-Key", "POST", f"{INTEGRATION}/api/payment-debts/999999/payment", 400,
+             token="driver", check=["pm.expect(json.code).to.eql('IDEMPOTENCY_KEY_REQUIRED')"]),
+        case("Pagar una deuda inexistente", "POST", f"{INTEGRATION}/api/payment-debts/999999/payment", 404,
+             token="driver", headers={"Idempotency-Key": "{{$guid}}"}),
+        case("Pagar una deuda con token de CPO", "POST", f"{INTEGRATION}/api/payment-debts/999999/payment", 404,
+             token="cpo", headers={"Idempotency-Key": "{{$guid}}"}),
     ]),
     ("08 · Reservas y checkout", [
         case("Disponibilidad de un conector", "GET",

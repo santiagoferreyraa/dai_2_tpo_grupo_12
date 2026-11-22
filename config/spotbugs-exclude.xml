@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Lo que SpotBugs no mira o no cuenta, cada cosa con su motivo. Todo lo demás de prioridad media o
+    alta hace fallar "mvn verify" (ver el pom padre).
+-->
+<FindBugsFilter
+        xmlns="https://github.com/spotbugs/filter/3.0.0"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="https://github.com/spotbugs/filter/3.0.0 https://raw.githubusercontent.com/spotbugs/spotbugs/3.1.0/spotbugs/etc/findbugsfilter.xsd">
+
+    <!-- Código generado por JAXB desde el XSD de la distribuidora: no lo escribimos ni lo editamos. -->
+    <Match>
+        <Package name="~.*\.contract(\..*)?"/>
+    </Match>
+
+    <!--
+        EI_EXPOSE_REP y EI_EXPOSE_REP2: "guarda o devuelve un objeto mutable sin copiarlo". En este
+        código son los beans que Spring inyecta por constructor (repositorios, clientes HTTP,
+        ObjectMapper) y las entidades JPA, que se comparten a propósito: copiarlos rompería la
+        inyección. Los datos que cruzan capas son records inmutables.
+    -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!--
+        CT_CONSTRUCTOR_THROW: "un constructor que tira deja la clase expuesta a un finalizer attack".
+        Son las validaciones de los constructores de dominio y de configuración, que tiran a
+        propósito para no crear objetos inválidos. El ataque pide subclasear con finalize(), que
+        está deprecado para borrar desde Java 18, y estas clases no se cargan desde código ajeno.
+    -->
+    <Match>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+</FindBugsFilter>

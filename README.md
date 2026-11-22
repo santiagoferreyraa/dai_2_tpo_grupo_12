@@ -135,7 +135,7 @@ docker compose up -d --build
 
 | Variable | Qué poner |
 |---|---|
-| `ECOPEDIA_ADMIN_PASSWORD` | La contraseña de la cuenta `ADMIN` inicial, de 6 caracteres o más |
+| `ECOPEDIA_ADMIN_PASSWORD` | La contraseña de la cuenta `ADMIN` inicial, de 8 caracteres o más |
 | `ECOPEDIA_CPO_PASSWORD` | La de la cuenta `CPO` inicial, igual |
 | `ECOPEDIA_JWT_SECRET` | Cualquier texto al azar de **64 caracteres o más** (firma los tokens) |
 | Las otras seis (`ECOPEDIA_DB_PASSWORD`, `ECOPEDIA_BROKER_PASSWORD`, `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN`, `ECOPEDIA_POWER_GRID_PASSWORD`, `ECOPEDIA_CHARGER_ACCESS_TOKEN`, `ECOPEDIA_INTERNAL_TOKEN`) | Cualquier texto al azar, solo letras y números. Nadie los escribe después: los usan los procesos entre sí |
@@ -359,7 +359,7 @@ las dos cuentas iniciales y dos ajustes:
 | `ECOPEDIA_BROKER_PASSWORD` | La contraseña de Artemis |
 | `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN` | La clave con la que Pagos se presenta ante la pasarela simulada. La leen los dos |
 | `ECOPEDIA_POWER_GRID_PASSWORD` | La contraseña del UsernameToken con que RedEléctrica se presenta ante la distribuidora simulada. La leen los dos |
-| `ECOPEDIA_CHARGER_ACCESS_TOKEN` | La clave con la que Terminales (en core) se presenta ante los cargadores simulados. La leen los dos |
+| `ECOPEDIA_CHARGER_ACCESS_TOKEN` | La clave con la que SesionesDeCarga (en charging) se presenta ante los cargadores simulados. La leen los dos |
 | `ECOPEDIA_INTERNAL_TOKEN` | La clave de servicio entre artefactos de Ecopedia, para las rutas `/internal/**` (hoy, `charging` llamando a RedEléctrica y al cobro de la seña en `integration`). La leen los dos |
 | `ECOPEDIA_ADMIN_EMAIL`, `ECOPEDIA_ADMIN_PASSWORD`, `ECOPEDIA_CPO_EMAIL`, `ECOPEDIA_CPO_PASSWORD` | Las cuentas con las que se entra la primera vez (ver "Todo con Docker"). `docker compose up` las exige; `pnpm dev` y `pnpm demo` las crean solo si están |
 | `ECOPEDIA_LOGIN_MAX_FAILURES` | Cuántos logins fallidos seguidos bloquean una cuenta. Sin valor, 5 |
@@ -376,8 +376,8 @@ completas. Las cuentas se crean en el arranque siguiente, sin tocar los datos qu
 en cambio, son secretos:** un `.env` anterior no las tiene, y sin ellas `pnpm demo` no levanta los procesos que
 las usan (`Could not resolve placeholder 'ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN'` en la pasarela y en
 Pagos, `... 'ECOPEDIA_POWER_GRID_PASSWORD'` en la distribuidora y también en Pagos, que es el mismo
-artefacto que RedEléctrica, y `... 'ECOPEDIA_CHARGER_ACCESS_TOKEN'` en los cargadores y **en core**,
-que es el que les da las órdenes, y `... 'ECOPEDIA_INTERNAL_TOKEN'` en Pagos y en Reservas). Se agrega a
+artefacto que RedEléctrica, y `... 'ECOPEDIA_CHARGER_ACCESS_TOKEN'` en los cargadores y **en Reservas**
+(`charging`), que es el artefacto que les da las órdenes, y `... 'ECOPEDIA_INTERNAL_TOKEN'` en Pagos y en Reservas). Se agrega a
 mano la línea que falte, `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN=`, `ECOPEDIA_POWER_GRID_PASSWORD=`,
 `ECOPEDIA_CHARGER_ACCESS_TOKEN=` o `ECOPEDIA_INTERNAL_TOKEN=`, con cualquier valor largo al azar, o se borra el `.env` y se corre
 `pnpm env:init` de nuevo (eso cambia también los demás secretos). `pnpm dev` y `pnpm dev:mem` no
@@ -453,7 +453,8 @@ no directo a la base.
 
 Al confirmar o cancelar una reserva, Reservas deja un mensaje en la cola
 `notifications.dispatch` de Artemis, y `ecopedia-async` (8084) lo consume, arma el aviso, lo
-guarda y manda el mail. **El mail es simulado:** se escribe en el log.
+guarda y manda el mail. **El mail es simulado:** se escribe en el log. Por la misma cola, Pagos
+(`ecopedia-integration`) avisa lo que le pasa a una deuda: ver "La deuda del conductor".
 
 `pnpm dev` ya levanta `async` y también el broker, que es el de `docker-compose.yml`: lo arranca el
 proceso `docker` de la lista, sin tocar PostgreSQL. Lo único que hace falta es Docker abierto y el
@@ -489,8 +490,10 @@ Dos cosas que conviene reconocer:
 
 - **Sin el broker, `async` arranca igual** pero deja cada 5 segundos una línea de ERROR con
   `Could not refresh JMS Connection`. No es un error del módulo: falta `docker compose up -d`.
-- **Sin el broker, Reservas reserva igual**, y en su panel aparece en WARN
-  `No se pudo publicar el aviso`, con el aviso entero. Ese aviso no se reenvía solo.
+- **Sin el broker, Reservas reserva igual, y el aviso no se pierde.** Queda en la tabla
+  `charging.pending_notifications` y en su panel aparece en WARN `queda pendiente y se reenvía cuando
+  vuelva el broker`. Cada 15 segundos (`ECOPEDIA_NOTIFICATIONS_RETRY_INTERVAL`) un barrido los publica
+  en orden; al levantar el broker, el aviso llega a la campanita sin tocar nada.
 
 #### Mensajes que no se pudieron procesar
 
@@ -583,6 +586,123 @@ Los plazos son configurables en `charging`, y para una demo conviene achicarlos:
 
 Si se cambia la tolerancia, hay que cambiar también los textos que dicen "15 minutos" (el aviso de
 `async` y la pantalla de reservar).
+
+### La deuda del conductor
+
+Si al cerrar una carga el cobro del consumo no sale —la tarjeta rechaza, el conductor no tiene ninguna
+que sirva o la pasarela no contesta—, la sesión se cierra igual y queda una **deuda** en Pagos. Mientras
+haya deuda, el conductor **no puede reservar** (el checkout da 409 `DRIVER_HAS_DEBT`) **ni habilitar** una
+carga.
+
+| Momento | Qué pasa |
+|---------|----------|
+| Cierre de la carga | Falla el cobro: queda la deuda, con el primer reintento a los 20 minutos |
+| 20, 40 y 60 minutos después | Pagos la vuelve a cobrar con la tarjeta más reciente que sirva. Si sale, la deuda se salda |
+| Falla el tercer reintento | La deuda queda **vencida**: se anulan las reservas confirmadas del conductor **con la seña devuelta** (llega un aviso por cada una) y ya no se reintenta sola |
+| El conductor la paga | Desde el perfil, con la tarjeta que elija: se salda, esté pendiente o vencida |
+
+Cada paso le llega al conductor como aviso en la campanita (y en el mail simulado): "No pudimos cobrar tu
+carga" al nacer la deuda, uno por cada reintento que falla ("reintento 1 de 3", "2 de 3"), "Tu cuenta tiene
+un pago vencido" con el tercero, y "Pago recibido" cuando se cobra, sea por un reintento o desde el perfil.
+Pagos los publica en `notifications.dispatch` (`_type` `debt-event`); **sin el broker, el cobro sigue
+igual** y el aviso espera en `integration.pending_notifications` hasta que vuelva, como los de Reservas.
+
+Una pasarela caída **no cuenta** como reintento: se vuelve a probar a los 20 minutos. La carga en curso
+no se corta.
+
+Las rutas del conductor son **`GET /api/payment-debts`** (lo que debe) y
+**`POST /api/payment-debts/{id}/payment`** (pagar; cuerpo opcional `{"paymentMethodId": 3}` y la
+cabecera `Idempotency-Key`, como el checkout). Las respuestas de error llevan su `code`: 402
+`CARD_DECLINED`, 422 `PAYMENT_METHOD_INVALID`, 409 `DEBT_PAYMENT_IN_PROGRESS` (el reintento la está
+cobrando en ese momento) y 503 `PAYMENT_GATEWAY_UNAVAILABLE`.
+
+Para anular las reservas, Pagos llama a **`POST /internal/bookings/debt-cancellations`** en `charging`
+(8082), con la clave de servicio; en Docker la dirección sale de `ECOPEDIA_CHARGING_URL`. El checkout
+pregunta la deuda por **`GET /internal/payments/drivers/{id}/debt`** en `integration`.
+
+Para una demo conviene achicar los plazos, en `integration`:
+
+| Variable | Qué es | Por defecto |
+|---|---|---|
+| `ECOPEDIA_DEBT_RETRY_INTERVAL` | Cuánto se espera entre reintentos | `PT20M` |
+| `ECOPEDIA_DEBT_MAX_RETRIES` | Cuántos reintentos antes de marcar la cuenta | `3` |
+| `ECOPEDIA_DEBT_SWEEP_INTERVAL` | Cada cuánto se fija qué reintentos tocan | `PT1M` |
+
+Para provocar una deuda: que la tarjeta más reciente del conductor sea la `…9995` de la pasarela, que
+rechaza siempre, y cerrar una carga. Para pagarla, elegir otra tarjeta en el perfil.
+
+### La sesión de carga
+
+Habilitar, seguir y detener una carga son rutas de `charging` (8082), todas del conductor. **En la
+app es la pantalla `/charge`** ("Cargar" en el menú, o "Iniciar carga" desde el aviso de la reserva):
+el conductor tipea el PIN de la terminal o escanea su QR, elige el porcentaje objetivo, ve la carga en
+curso y la detiene. También se prueban con `curl` o Postman, con el token de un `CONDUCTOR` que tenga
+una tarjeta cargada.
+
+| Ruta | Qué hace |
+|------|----------|
+| `POST /api/sessions/activation` | Habilita la carga: valida la reserva, consulta a la distribuidora si es carga rápida, valida la tarjeta (sin cobrar), guarda la sesión y enciende el cargador. Responde 201 con la sesión |
+| `GET /api/sessions/active` | La sesión en curso del conductor, o 204 si no está cargando |
+| `GET /api/sessions/{sessionId}` | Una sesión del conductor: kWh, potencia y batería de la última lectura, o la liquidación si ya terminó |
+| `POST /api/sessions/{sessionId}/stop` | Detiene la carga: apaga el cargador, libera el conector, calcula el costo real y cobra el consumo menos la seña |
+
+El cuerpo de la habilitación:
+
+```json
+{ "pinOrQr": "483920", "bookingId": 7, "targetBatteryPercent": 80 }
+```
+
+- **`pinOrQr`** es el código de la terminal (el PIN o el contenido del QR) y dice qué conector es. El
+  operador lo ve en `/stations`, en el panel de cada conector. `connectorId` es opcional.
+
+- **Con `bookingId`**, es la carga de una reserva confirmada. Se puede habilitar **desde 15 minutos
+  antes del turno y hasta que termina**, si la terminal no está tomada por el turno de otro.
+- **Sin `bookingId`**, es una carga sin reserva: no paga seña y su ventana va desde ahora hasta 15
+  minutos antes de la próxima reserva del conector (4 horas como máximo).
+- `targetBatteryPercent` es opcional (80 si no viene).
+
+Lo que puede contestar, además del 201:
+
+| Caso | Respuesta |
+|------|-----------|
+| Faltan más de 15 minutos para el turno | 409 `ACTIVATION_TOO_EARLY`, con `availableFrom` |
+| La reserva no está confirmada (ya se usó, se canceló, venció) | 409 `BOOKING_STATE_CONFLICT` |
+| La terminal está tomada por otra reserva o por otra carga | 409 `SLOT_UNAVAILABLE` |
+| La reserva, el conector o la sesión no existen, o son de otro | 404, el mismo para todos |
+| Sin tarjeta que sirva, o con un cobro pendiente de una carga anterior | 422 `PAYMENT_METHOD_INVALID` |
+| La distribuidora no autoriza ninguna potencia (nodo en mantenimiento) | 422 `CONNECTOR_NOT_BOOKABLE`; la reserva se libera y la seña se devuelve |
+| El cargador rechaza la orden o no responde | 409 `CHARGER_REJECTED` o 503 `CHARGER_UNAVAILABLE`; la reserva se libera y la seña se devuelve |
+| Pagos no responde | 503 `PAYMENT_CHECK_UNAVAILABLE` |
+
+**La carga se corta sola con la primera de dos condiciones** (RF12, ECO-45): que la batería llegue al
+porcentaje que eligió el conductor, o que se termine su ventana —la reservada o la de la carga sin
+reserva—. Se evalúa con cada lectura de telemetría, contra el instante en que midió el cargador; además,
+un barrido revisa las ventanas vencidas cada 30 segundos (`ecopedia.session.cutoff-sweep-ms`) por si
+las lecturas dejaron de llegar. El corte cierra la sesión por el mismo camino que el botón de detener
+—apaga el cargador, libera el conector, recorta la reserva y liquida—, así que el resto de la ventana
+queda libre para una carga sin reserva (con el mismo margen de 15 minutos antes de la reserva
+siguiente). Si dos cierres se cruzan, liquida uno solo. La sesión guarda quién la cerró en
+`stop_reason`: `DRIVER_STOPPED`, `TARGET_REACHED` o `WINDOW_ENDED`.
+
+Al detener, la respuesta trae los kWh entregados, el costo real (`realCost`), lo facturado
+(`finalBilled`, que en una reserva nunca baja de la seña), lo que se cobró además de la seña
+(`additionalCharge`) y cómo terminó el cobro (`paymentStatus`):
+
+| `paymentStatus` | Qué significa |
+|---|---|
+| `CHARGED` | Se cobró la diferencia a la tarjeta |
+| `NOT_REQUIRED` | El consumo no superó la seña: no hay segundo cobro |
+| `DEBT_RECORDED` | La tarjeta rechazó o la pasarela no contestó: queda una deuda, y el conductor no puede habilitar otra carga |
+| `PENDING_SETTLEMENT` | Tarificación o Pagos no respondieron al cerrar. El conector se liberó igual |
+
+**El conector se libera antes de cobrar**, a propósito: una pasarela caída no puede dejar un cargador
+bloqueado. Para la demo, el rechazo de la red se ve con una estación del nodo `CABA-SUR` (hay que
+poner en servicio uno de sus conectores rápidos) y la deuda, con la tarjeta `…9995`.
+
+| Variable | Qué es | Por defecto |
+|---|---|---|
+| `ECOPEDIA_BOOKING_EARLY_ACTIVATION` | Desde cuánto antes del turno se puede habilitar | `PT15M` |
+| `ECOPEDIA_BOOKING_WALK_IN_BUFFER` | El resguardo antes de la próxima reserva para una carga sin reserva | `PT15M` |
 
 ### Los precios de la carga
 
@@ -711,11 +831,17 @@ curl -H "Content-Type: text/xml" --data-binary @pedido.xml http://localhost:8087
 ### Los cargadores simulados
 
 El hardware de las estaciones —o la central del fabricante que lo controla— es un proceso aparte en
-`simulation/charger` (8088). Terminales le da dos órdenes por REST, **encender** y **apagar** un
-conector, y mientras el conector carga, el simulador publica una lectura cada 2 segundos en el
-**tópico** `telemetry.charging` de Artemis: kWh acumulados, potencia y porcentaje de batería. `pnpm dev`
-ya lo levanta. **Todavía no lo llama ninguna pantalla:** la habilitación de la carga llega con ECO-44,
-y quien lee el tópico, con ECO-45.
+`simulation/charger` (8088). SesionesDeCarga (en `charging`) le da dos órdenes por REST, **encender**
+y **apagar** un conector, al habilitar y al detener una carga, y mientras el conector carga, el
+simulador publica una lectura cada 2 segundos en el **tópico** `telemetry.charging` de Artemis: kWh
+acumulados, potencia y porcentaje de batería. `pnpm dev` ya lo levanta.
+
+**SesionesDeCarga está suscripta al tópico** (`charging`, con una suscripción durable,
+`ecopedia-charging.sessions`) y guarda cada lectura en su sesión: kWh, potencia, batería y el instante
+(`charging_sessions`). Si el cargador avisa que cortó solo, queda anotado el motivo en
+`charger_end_reason`: con batería llena la sesión se cierra como si hubiera llegado al objetivo
+(ECO-45); con una falla sigue abierta, porque se liquida distinto (RF13). Una lectura repetida, atrasada o de una sesión ya
+cerrada se descarta; una ilegible, tras cinco intentos, va a la cola de mensajes muertos.
 
 | Orden | Qué hace |
 |-------|----------|
@@ -750,16 +876,6 @@ curl -X POST http://localhost:8088/v1/connectors/1/session \
   -d '{"sessionId":"prueba-1","powerLimitKw":50}'
 curl http://localhost:8088/v1/connectors/1 -H "Authorization: Bearer $TOKEN"
 ```
-
-**Para probarlo contra el proceso real**, con el simulador y el broker arriba:
-
-```bash
-mvn -pl backend/ecopedia-core test -Dtest=ChargerLiveTest -Dcharger.live=true -Dcharger.broker-password=<la del .env>
-```
-
-Enciende un conector con el cliente de core, escucha el tópico, lo apaga, y prueba un conector roto y
-la clave equivocada. CI no lo corre. Si el `.env` tiene `ECOPEDIA_CHARGER_ACCESS_TOKEN`, el simulador
-usa esa clave, y se agrega `-Dcharger.token=` con la misma.
 
 ### El asistente
 
@@ -861,7 +977,10 @@ Sin perfil apuntan a PostgreSQL. Para el ambiente propio y persistente va
 `-Dspring-boot.run.profiles=dev`.
 
 `mvn verify` además **chequea el formato** con Spotless y falla si algo quedó sin formatear.
-Para arreglarlo: `mvn spotless:apply`.
+Para arreglarlo: `mvn spotless:apply`. También corre el **análisis estático**: SpotBugs (prioridad
+media o alta) y PMD (prioridad 1 o 2) hacen fallar el build. Lo que cada uno no cuenta, y por qué,
+está en `config/spotbugs-exclude.xml` y `config/pmd-ruleset.xml`; los hallazgos quedan en
+`target/spotbugsXml.xml` y `target/pmd.xml` de cada módulo.
 
 ### El frontend por separado
 
@@ -967,13 +1086,13 @@ git commit -am "Aplicar formato"
 ```
 dai_2_tpo/
 ├── pom.xml                    # POM padre (multi-módulo) + config de Spotless
-├── docker-compose.yml         # PostgreSQL + ActiveMQ
+├── docker-compose.yml         # Todo el sistema: base, broker, módulos, simuladores y Caddy
 ├── .gitattributes             # LF en todo; el lock sin merge textual
 ├── .editorconfig              # Indentación y encoding para los tres IDEs
 ├── .nvmrc                     # Versión de Node del equipo
 ├── .github/workflows/ci.yml   # Build + formato en cada PR
 ├── backend/
-│   ├── ecopedia-core/        # Usuarios · Terminales · Tarificación
+│   ├── ecopedia-core/        # Usuarios · Terminales · Tarificación · Vehículos
 │   ├── ecopedia-charging/    # Reservas · Sesiones de carga (stateful)
 │   ├── ecopedia-integration/ # Pagos (REST) · Red Eléctrica (SOAP)
 │   └── ecopedia-async/       # Notificaciones (consumidor JMS + historial por REST)
@@ -988,17 +1107,17 @@ dai_2_tpo/
 └── docs/                      # Diagramas y material de entregas
 ```
 
-### Módulos previstos
+### Módulos
 
 Un módulo Maven por artefacto desplegable. Los componentes de negocio viven dentro de
-estos módulos, cada uno con su interfaz explícita.
+estos módulos.
 
 | Módulo | Componentes | Estado |
 |--------|-------------|--------|
-| `ecopedia-core` | TerminalService · UserService · PricingService · VehicleService | 🚧 scaffold |
-| `ecopedia-charging` | BookingService · ChargingSessionService *(stateful)* | 🚧 scaffold |
-| `ecopedia-integration` | PaymentService (REST) · PowerGridService (SOAP) | 🚧 scaffold |
-| `ecopedia-async` | NotificationService | 🚧 scaffold |
+| `ecopedia-core` (8081) | Usuarios · Terminales · Tarificación · Vehículos, y el backoffice del administrador | ✅ |
+| `ecopedia-charging` (8082) | Reservas *(stateful)*, con el checkout · Sesiones de carga | ✅ Reservas · 🚧 Sesiones: habilitar y detener andan; la telemetría se guarda en la sesión; faltan el corte por porcentaje y la pantalla |
+| `ecopedia-integration` (8083) | Pagos (REST) · Red Eléctrica (SOAP) | ✅ |
+| `ecopedia-async` (8084) | Notificaciones | ✅ · Estadísticas, prevista |
 | `simulation/payment-gateway` | La pasarela de pagos — expone la API REST | ✅ |
 | `simulation/power-grid` | La distribuidora, el sistema legado — publica el WSDL | ✅ |
 | `simulation/charger` | Los cargadores — reciben órdenes por REST y publican la telemetría al tópico | ✅ |

@@ -1051,4 +1051,251 @@ class BookingServiceImplTest {
                     .doesNotThrowAnyException();
         }
     }
+
+    /** ECO-62: la cuenta marcada por una deuda vencida pierde sus reservas confirmadas, con la seña devuelta. */
+    @Nested
+    class CancellingForDebt {
+
+        private Booking paidBooking(Long driver, Long connector, long hoursFromNow, String key) {
+            Hold hold = service.startHold(connector, windowIn(hoursFromNow), driver);
+            return service.confirmBooking(hold.id(), driver, PAID, key);
+        }
+
+        @Test
+        @DisplayName("Anula todas las confirmadas del conductor, con la seña por devolver y un aviso por cada una")
+        void cancelsEveryConfirmedBookingOfTheDriver() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking soon = paidBooking(DRIVER, CONNECTOR, 1, "debt-key-0001");
+            Booking later = paidBooking(DRIVER, CONNECTOR, 30, "debt-key-0002");
+            int before = events.published().size();
+
+            int cancelled = service.cancelConfirmedBookingsForDebt(DRIVER);
+
+            assertThat(cancelled).isEqualTo(2);
+            for (Booking booking : List.of(soon, later)) {
+                Booking saved = repository.findById(booking.getId()).orElseThrow();
+                assertThat(saved.getStatus()).isEqualTo(BookingStatus.CANCELLED);
+                // A una hora del inicio, cancelar la perdería: anulada por deuda, se devuelve igual.
+                assertThat(saved.getDepositStatus()).isEqualTo(DepositStatus.REFUND_PENDING);
+            }
+            List<BookingEvent> newEvents =
+                    events.published().subList(before, events.published().size());
+            assertThat(newEvents).hasSize(2).allSatisfy(event -> {
+                assertThat(event.type()).isEqualTo(BookingEventType.BOOKING_CANCELLED_FOR_DEBT);
+                assertThat(event.depositRefunded()).isTrue();
+            });
+        }
+
+        @Test
+        @DisplayName("No toca las reservas de otro conductor, y pedirlo de nuevo no anula nada más")
+        void leavesOtherDriversAloneAndIsIdempotent() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            paidBooking(DRIVER, CONNECTOR, 3, "debt-key-0003");
+            Booking others = paidBooking(OTHER_DRIVER, CONNECTOR, 8, "debt-key-0004");
+
+            assertThat(service.cancelConfirmedBookingsForDebt(DRIVER)).isEqualTo(1);
+            int afterFirst = events.published().size();
+            assertThat(service.cancelConfirmedBookingsForDebt(DRIVER)).isZero();
+
+            assertThat(events.published()).hasSize(afterFirst);
+            Booking untouched = repository.findById(others.getId()).orElseThrow();
+            assertThat(untouched.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+            assertThat(untouched.getDepositStatus()).isEqualTo(DepositStatus.CHARGED);
+        }
+    }
+
+    @Nested
+    @DisplayName("Carga sin reserva / walk-in con buffer de 15 minutos (RF10, ECO-58)")
+    class WalkInCharging {
+
+        @Test
+        @DisplayName("Sin reservas próximas: crea una reserva instantánea con ventana máxima de 4 horas y sin seña")
+        void walkIn_whenNoUpcomingBookings_createsInstantBookingWithMaxWindowAndNoDeposit() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Instant now = clock.instant();
+
+            Booking booking = service.registerWalkIn(CONNECTOR, DRIVER);
+
+            assertThat(booking.getConnectorId()).isEqualTo(CONNECTOR);
+            assertThat(booking.getDriverId()).isEqualTo(DRIVER);
+            assertThat(booking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+            assertThat(booking.getDepositStatus()).isEqualTo(DepositStatus.NONE);
+            assertThat(booking.getDepositAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(booking.getWindow()).isEqualTo(new TimeWindow(now, now.plus(MAX_WINDOW)));
+
+            BookingEvent event = events.published().get(events.published().size() - 1);
+            assertThat(event.type()).isEqualTo(BookingEventType.BOOKING_CONFIRMED);
+            assertThat(event.bookingId()).isEqualTo(booking.getId());
+        }
+
+        @Test
+        @DisplayName("Con reserva posterior al buffer: acota la ventana dejando libres los 15 minutos previos")
+        void walkIn_whenUpcomingBookingAfterBuffer_trimsWindowLeaving15MinBuffer() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Instant now = clock.instant();
+            Instant nextBookingStart = now.plus(Duration.ofMinutes(45));
+            TimeWindow futureWindow = new TimeWindow(nextBookingStart, nextBookingStart.plus(Duration.ofHours(1)));
+            repository.save(new Booking(CONNECTOR, OTHER_DRIVER, futureWindow, now));
+
+            Booking booking = service.registerWalkIn(CONNECTOR, DRIVER);
+
+            assertThat(booking.getWindow())
+                    .isEqualTo(new TimeWindow(now, nextBookingStart.minus(Duration.ofMinutes(15))));
+            assertThat(booking.getDepositStatus()).isEqualTo(DepositStatus.NONE);
+        }
+
+        @Test
+        @DisplayName("Con reserva confirmada dentro de los 15 minutos previos: rechaza con SlotUnavailableException")
+        void walkIn_whenUpcomingBookingWithin15Minutes_throwsSlotUnavailable() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Instant now = clock.instant();
+            Instant nextBookingStart = now.plus(Duration.ofMinutes(10));
+            TimeWindow futureWindow = new TimeWindow(nextBookingStart, nextBookingStart.plus(Duration.ofHours(1)));
+            repository.save(new Booking(CONNECTOR, OTHER_DRIVER, futureWindow, now));
+
+            assertThatThrownBy(() -> service.calculateWalkInWindow(CONNECTOR, now))
+                    .isInstanceOf(SlotUnavailableException.class);
+
+            assertThatThrownBy(() -> service.registerWalkIn(CONNECTOR, DRIVER))
+                    .isInstanceOf(SlotUnavailableException.class);
+        }
+
+        @Test
+        @DisplayName(
+                "Con retención (Hold) de otro conductor dentro de los 15 minutos previos: rechaza con SlotUnavailableException")
+        void walkIn_whenUpcomingHoldWithin15Minutes_throwsSlotUnavailable() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Instant now = clock.instant();
+            Instant holdStart = now.plus(Duration.ofMinutes(12));
+            TimeWindow holdWindow = new TimeWindow(holdStart, holdStart.plus(Duration.ofHours(1)));
+            service.startHold(CONNECTOR, holdWindow, OTHER_DRIVER);
+
+            assertThatThrownBy(() -> service.calculateWalkInWindow(CONNECTOR, now))
+                    .isInstanceOf(SlotUnavailableException.class);
+
+            assertThatThrownBy(() -> service.registerWalkIn(CONNECTOR, DRIVER))
+                    .isInstanceOf(SlotUnavailableException.class);
+        }
+
+        @Test
+        @DisplayName("Con reserva próxima exactamente a los 15 minutos: rechaza con SlotUnavailableException")
+        void walkIn_whenUpcomingBookingStartsAtExact15Minutes_throwsSlotUnavailable() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Instant now = clock.instant();
+            Instant nextBookingStart = now.plus(Duration.ofMinutes(15));
+            TimeWindow futureWindow = new TimeWindow(nextBookingStart, nextBookingStart.plus(Duration.ofHours(1)));
+            repository.save(new Booking(CONNECTOR, OTHER_DRIVER, futureWindow, now));
+
+            assertThatThrownBy(() -> service.calculateWalkInWindow(CONNECTOR, now))
+                    .isInstanceOf(SlotUnavailableException.class);
+
+            assertThatThrownBy(() -> service.registerWalkIn(CONNECTOR, DRIVER))
+                    .isInstanceOf(SlotUnavailableException.class);
+        }
+
+        @Test
+        @DisplayName("Con retención (Hold) de otro conductor a 45 minutos: acota la ventana dejando 15 minutos libres")
+        void walkIn_whenUpcomingHoldAfterBuffer_trimsWindowLeaving15MinBuffer() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Instant now = clock.instant();
+            Instant holdStart = now.plus(Duration.ofMinutes(45));
+            TimeWindow holdWindow = new TimeWindow(holdStart, holdStart.plus(Duration.ofHours(1)));
+            service.startHold(CONNECTOR, holdWindow, OTHER_DRIVER);
+
+            Booking booking = service.registerWalkIn(CONNECTOR, DRIVER);
+
+            assertThat(booking.getWindow()).isEqualTo(new TimeWindow(now, holdStart.minus(Duration.ofMinutes(15))));
+        }
+
+        @Test
+        @DisplayName("Una vez registrado el walk-in: bloquea retenciones y disponibilidad en esa ventana")
+        void walkIn_blocksSubsequentHoldAndAvailabilityOnSameWindow() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Instant now = clock.instant();
+            Booking walkIn = service.registerWalkIn(CONNECTOR, DRIVER);
+
+            // Disponibilidad pública ya no incluye la ventana del walk-in
+            List<TimeWindow> free =
+                    service.getAvailability(CONNECTOR, now, now.plus(MAX_WINDOW).plus(Duration.ofHours(1)));
+            assertThat(free).noneMatch(window -> window.overlaps(walkIn.getWindow()));
+
+            // Otro conductor no puede retener dentro de la ventana del walk-in
+            TimeWindow clashWindow = new TimeWindow(now.plus(Duration.ofHours(1)), now.plus(Duration.ofHours(2)));
+            assertThatThrownBy(() -> service.startHold(CONNECTOR, clashWindow, OTHER_DRIVER))
+                    .isInstanceOf(SlotUnavailableException.class);
+        }
+
+        @Test
+        @DisplayName("Si el conductor ya tiene una carga en curso: rechaza con DriverAlreadyBookedException")
+        void walkIn_whenDriverAlreadyCharging_throwsDriverAlreadyBooked() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Instant now = clock.instant();
+            Booking inProgress = new Booking(
+                    CONNECTOR + 1,
+                    DRIVER,
+                    new TimeWindow(now.minus(Duration.ofMinutes(10)), now.plus(Duration.ofMinutes(50))),
+                    now.minus(Duration.ofMinutes(10)));
+            inProgress.startCharging(now.minus(Duration.ofMinutes(5)), Duration.ofMinutes(15));
+            repository.save(inProgress);
+
+            assertThatThrownBy(() -> service.registerWalkIn(CONNECTOR, DRIVER))
+                    .isInstanceOf(DriverAlreadyBookedException.class);
+        }
+
+        @Test
+        @DisplayName(
+                "Si el conductor ya está cargando en este mismo conector: prioriza el rechazo del conductor (DRIVER_CHARGING) sobre el del conector")
+        void walkIn_whenDriverAlreadyChargingOnSameConnector_prioritizesDriverAlreadyBooked() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Instant now = clock.instant();
+            Booking inProgress = new Booking(
+                    CONNECTOR,
+                    DRIVER,
+                    new TimeWindow(now.minus(Duration.ofMinutes(10)), now.plus(Duration.ofMinutes(50))),
+                    now.minus(Duration.ofMinutes(10)));
+            inProgress.startCharging(now.minus(Duration.ofMinutes(5)), Duration.ofMinutes(15));
+            repository.save(inProgress);
+
+            assertThatThrownBy(() -> service.registerWalkIn(CONNECTOR, DRIVER))
+                    .isInstanceOf(DriverAlreadyBookedException.class)
+                    .extracting(ex -> ((DriverAlreadyBookedException) ex).code())
+                    .isEqualTo("DRIVER_CHARGING");
+        }
+
+        @Test
+        @DisplayName(
+                "Si el conector ya tiene una carga en curso en el instante actual: rechaza con SlotUnavailableException")
+        void walkIn_whenConnectorCurrentlyOccupied_throwsSlotUnavailable() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Instant now = clock.instant();
+            Booking ongoing = new Booking(
+                    CONNECTOR,
+                    OTHER_DRIVER,
+                    new TimeWindow(now.minus(Duration.ofMinutes(20)), now.plus(Duration.ofMinutes(40))),
+                    now.minus(Duration.ofMinutes(20)));
+            ongoing.startCharging(now.minus(Duration.ofMinutes(15)), Duration.ofMinutes(15));
+            repository.save(ongoing);
+
+            assertThatThrownBy(() -> service.calculateWalkInWindow(CONNECTOR, now))
+                    .isInstanceOf(SlotUnavailableException.class);
+
+            assertThatThrownBy(() -> service.registerWalkIn(CONNECTOR, DRIVER))
+                    .isInstanceOf(SlotUnavailableException.class);
+        }
+
+        @Test
+        @DisplayName("getAvailability descuenta reservas con estado IN_PROGRESS")
+        void getAvailability_whenBookingInProgress_deductsFromFreeWindows() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Instant now = clock.instant();
+            Instant start = now.plus(Duration.ofHours(1));
+            Instant end = now.plus(Duration.ofHours(2));
+            Booking active = new Booking(CONNECTOR, OTHER_DRIVER, new TimeWindow(start, end), now);
+            active.startCharging(start, Duration.ofMinutes(15));
+            repository.save(active);
+
+            List<TimeWindow> free = service.getAvailability(CONNECTOR, now, now.plus(Duration.ofHours(3)));
+            assertThat(free).noneMatch(w -> w.overlaps(new TimeWindow(start, end)));
+        }
+    }
 }

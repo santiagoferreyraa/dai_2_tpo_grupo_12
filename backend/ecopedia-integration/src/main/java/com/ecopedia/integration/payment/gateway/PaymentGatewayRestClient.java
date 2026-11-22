@@ -73,6 +73,10 @@ public class PaymentGatewayRestClient implements PaymentGatewayPort {
                     .body(body)
                     .retrieve()
                     .body(CardTokenBody.class);
+            if (token == null) {
+                // Un 2xx sin cuerpo no es una respuesta válida: se trata igual que si no hubiera contestado.
+                throw new ResourceAccessException("La pasarela contestó sin cuerpo");
+            }
             return new TokenizedCard(brandOf(token.paymentMethodId()), token.lastFourDigits(), token.id());
         } catch (RestClientResponseException rejected) {
             if (rejected.getStatusCode().value() == 400) {
@@ -98,6 +102,10 @@ public class PaymentGatewayRestClient implements PaymentGatewayPort {
                     .body(new ChargeBody(amount, gatewayToken, description, reference))
                     .retrieve()
                     .body(PaymentBody.class);
+            if (payment == null) {
+                // Un 2xx sin cuerpo no es una respuesta válida: se trata igual que si no hubiera contestado.
+                throw new ResourceAccessException("La pasarela contestó sin cuerpo");
+            }
             return new GatewayCharge(payment.id(), "approved".equals(payment.status()), payment.statusDetail());
         } catch (RestClientResponseException rejected) {
             if (rejected.getStatusCode().is4xxClientError() && !isAuthProblem(rejected.getStatusCode())) {
@@ -123,6 +131,10 @@ public class PaymentGatewayRestClient implements PaymentGatewayPort {
                     .body(new RefundRequestBody(amount))
                     .retrieve()
                     .body(RefundBody.class);
+            if (refund == null) {
+                // Un 2xx sin cuerpo no es una respuesta válida: se trata igual que si no hubiera contestado.
+                throw new ResourceAccessException("La pasarela contestó sin cuerpo");
+            }
             return new GatewayRefund(refund.id(), refund.paymentId(), refund.amount());
         } catch (RestClientResponseException rejected) {
             if (rejected.getStatusCode().is4xxClientError() && !isAuthProblem(rejected.getStatusCode())) {
@@ -144,6 +156,10 @@ public class PaymentGatewayRestClient implements PaymentGatewayPort {
                     .uri("/v1/card_tokens/{id}/validations", gatewayToken)
                     .retrieve()
                     .body(ValidationBody.class);
+            if (validation == null) {
+                // Un 2xx sin cuerpo no es una respuesta válida: se trata igual que si no hubiera contestado.
+                throw new ResourceAccessException("La pasarela contestó sin cuerpo");
+            }
             return new CardValidation("approved".equals(validation.status()), validation.statusDetail());
         } catch (RestClientResponseException rejected) {
             if (rejected.getStatusCode().is4xxClientError() && !isAuthProblem(rejected.getStatusCode())) {

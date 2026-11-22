@@ -40,16 +40,20 @@ public class Notification {
     @Column(name = "body", nullable = false, length = 500)
     private String body;
 
-    @Column(name = "booking_id", nullable = false)
+    /*
+     * Reserva, conector y ventana son nulos en los avisos de una deuda (ECO-62), que no son de ninguna
+     * reserva. Ver la migración allow_notifications_without_booking.
+     */
+    @Column(name = "booking_id")
     private Long bookingId;
 
-    @Column(name = "connector_id", nullable = false)
+    @Column(name = "connector_id")
     private Long connectorId;
 
-    @Column(name = "window_start", nullable = false)
+    @Column(name = "window_start")
     private Instant windowStart;
 
-    @Column(name = "window_end", nullable = false)
+    @Column(name = "window_end")
     private Instant windowEnd;
 
     @Column(name = "station_id")

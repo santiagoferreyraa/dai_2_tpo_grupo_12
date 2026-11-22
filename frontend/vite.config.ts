@@ -25,8 +25,9 @@ export default defineConfig({
       artefacto desplegable distinto. Ver ARQUITECTURA §6.4.
 
       El orden de estas claves importa: Vite se queda con la PRIMERA que coincida con la ruta, y
-      '/api' coincide con todo. Las dos reglas específicas tienen que ir arriba o las llamadas a
-      reservas y a medios de pago terminan en core, que no las conoce y contesta 404.
+      '/api' coincide con todo. Las reglas específicas tienen que ir arriba o las llamadas a
+      reservas, checkout, sesiones, medios de pago, deudas y notificaciones terminan en core, que no las
+      conoce y contesta 404.
     */
     proxy: {
       '/api/bookings': {
@@ -37,7 +38,15 @@ export default defineConfig({
         target: 'http://localhost:8082',
         changeOrigin: true,
       },
+      '/api/sessions': {
+        target: 'http://localhost:8082',
+        changeOrigin: true,
+      },
       '/api/payment-methods': {
+        target: 'http://localhost:8083',
+        changeOrigin: true,
+      },
+      '/api/payment-debts': {
         target: 'http://localhost:8083',
         changeOrigin: true,
       },

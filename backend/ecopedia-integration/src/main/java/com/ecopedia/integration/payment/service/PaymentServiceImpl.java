@@ -1,6 +1,11 @@
 package com.ecopedia.integration.payment.service;
 
 import com.ecopedia.integration.payment.domain.CardData;
+import com.ecopedia.integration.payment.domain.CardValidation;
+import com.ecopedia.integration.payment.domain.ConsumptionChargeRequest;
+import com.ecopedia.integration.payment.domain.ConsumptionChargeResult;
+import com.ecopedia.integration.payment.domain.DebtEvent;
+import com.ecopedia.integration.payment.domain.DebtEventPublisher;
 import com.ecopedia.integration.payment.domain.DepositCharge;
 import com.ecopedia.integration.payment.domain.DepositChargeNotFoundException;
 import com.ecopedia.integration.payment.domain.DepositChargeRepository;
@@ -11,19 +16,28 @@ import com.ecopedia.integration.payment.domain.GatewayRefund;
 import com.ecopedia.integration.payment.domain.IdempotencyKeyReusedException;
 import com.ecopedia.integration.payment.domain.NoUsablePaymentMethodException;
 import com.ecopedia.integration.payment.domain.PaymentGatewayPort;
+import com.ecopedia.integration.payment.domain.PaymentGatewayUnavailableException;
 import com.ecopedia.integration.payment.domain.PaymentMethod;
 import com.ecopedia.integration.payment.domain.PaymentMethodNotFoundException;
 import com.ecopedia.integration.payment.domain.PaymentMethodRepository;
 import com.ecopedia.integration.payment.domain.PaymentService;
+import com.ecopedia.integration.payment.domain.PaymentValidationResult;
+import com.ecopedia.integration.payment.domain.PaymentValidationResult.ValidationErrorCode;
+import com.ecopedia.integration.payment.domain.PendingPayment;
+import com.ecopedia.integration.payment.domain.PendingPaymentRepository;
+import com.ecopedia.integration.payment.domain.PendingPaymentStatus;
 import com.ecopedia.integration.payment.domain.TokenizedCard;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -48,18 +62,48 @@ public class PaymentServiceImpl implements PaymentService {
 
     private final PaymentMethodRepository paymentMethodRepository;
     private final DepositChargeRepository depositChargeRepository;
+    private final PendingPaymentRepository pendingPaymentRepository;
     private final PaymentGatewayPort paymentGateway;
     private final Clock clock;
+    private final Duration debtRetryInterval;
+    private final DebtEventPublisher debtEvents;
 
+    @Autowired
     public PaymentServiceImpl(
             PaymentMethodRepository paymentMethodRepository,
             DepositChargeRepository depositChargeRepository,
+            PendingPaymentRepository pendingPaymentRepository,
             PaymentGatewayPort paymentGateway,
-            Clock clock) {
+            Clock clock,
+            @Value("${ecopedia.payments.debt.retry-interval}") Duration debtRetryInterval,
+            DebtEventPublisher debtEvents) {
         this.paymentMethodRepository = paymentMethodRepository;
         this.depositChargeRepository = depositChargeRepository;
+        this.pendingPaymentRepository = pendingPaymentRepository;
         this.paymentGateway = paymentGateway;
         this.clock = clock;
+        this.debtRetryInterval = debtRetryInterval;
+        this.debtEvents = debtEvents;
+    }
+
+    /**
+     * Para los tests: el intervalo de reintento de la deuda que decidió Manuel (20 minutos), y los
+     * avisos de la deuda descartados.
+     */
+    public PaymentServiceImpl(
+            PaymentMethodRepository paymentMethodRepository,
+            DepositChargeRepository depositChargeRepository,
+            PendingPaymentRepository pendingPaymentRepository,
+            PaymentGatewayPort paymentGateway,
+            Clock clock) {
+        this(
+                paymentMethodRepository,
+                depositChargeRepository,
+                pendingPaymentRepository,
+                paymentGateway,
+                clock,
+                Duration.ofMinutes(20),
+                event -> {});
     }
 
     @Override
@@ -238,6 +282,158 @@ public class PaymentServiceImpl implements PaymentService {
                 charge.getAmount(),
                 charge.getDriverId());
         return depositChargeRepository.save(charge);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public PaymentValidationResult validatePaymentMethod(Long driverId, Long paymentMethodId) {
+        YearMonth today = YearMonth.now(clock);
+        PaymentMethod card;
+        if (paymentMethodId != null) {
+            Optional<PaymentMethod> found = paymentMethodRepository
+                    .findById(paymentMethodId)
+                    .filter(c -> {
+                        boolean mine = c.getDriverId().equals(driverId);
+                        if (!mine) {
+                            log.warn(
+                                    "Acceso denegado: se intentó validar la tarjeta {} con el conductor {}, que es de otro",
+                                    paymentMethodId,
+                                    driverId);
+                        }
+                        return mine;
+                    });
+            if (found.isEmpty() || !found.get().isActive()) {
+                return PaymentValidationResult.rejected(
+                        "El conductor no posee tarjetas de pago registradas", ValidationErrorCode.NO_PAYMENT_METHOD);
+            }
+            if (found.get().isExpired(today)) {
+                return PaymentValidationResult.rejected(
+                        "La tarjeta registrada se encuentra vencida", ValidationErrorCode.CARD_EXPIRED);
+            }
+            card = found.get();
+        } else {
+            List<PaymentMethod> activeCards =
+                    paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(driverId);
+            if (activeCards.isEmpty()) {
+                return PaymentValidationResult.rejected(
+                        "El conductor no posee tarjetas de pago registradas", ValidationErrorCode.NO_PAYMENT_METHOD);
+            }
+            Optional<PaymentMethod> usable =
+                    activeCards.stream().filter(c -> c.isUsable(today)).findFirst();
+            if (usable.isEmpty()) {
+                return PaymentValidationResult.rejected(
+                        "La tarjeta registrada se encuentra vencida", ValidationErrorCode.CARD_EXPIRED);
+            }
+            card = usable.get();
+        }
+
+        if (hasOutstandingDebt(driverId)) {
+            return PaymentValidationResult.rejected(
+                    "El conductor posee cobros pendientes de pago", ValidationErrorCode.DRIVER_HAS_DEBT);
+        }
+
+        CardValidation validation = paymentGateway.validate(card.getGatewayToken());
+        if (!validation.chargeable()) {
+            return PaymentValidationResult.rejected(
+                    "La pasarela de pagos rechazó la tarjeta del conductor", ValidationErrorCode.CARD_DECLINED);
+        }
+
+        return PaymentValidationResult.ok();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean hasOutstandingDebt(Long driverId) {
+        // Pendiente o vencida: las dos bloquean (ECO-62).
+        return pendingPaymentRepository.existsByDriverIdAndStatusIn(driverId, PendingPaymentStatus.OPEN);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public ConsumptionChargeResult chargeConsumption(ConsumptionChargeRequest request) {
+        Optional<PendingPayment> existingDebt = pendingPaymentRepository.findByReference(request.sessionId());
+        if (existingDebt.isPresent()) {
+            PendingPayment debt = existingDebt.get();
+            return ConsumptionChargeResult.debtRecorded(
+                    debt.getAmount(), request.sessionId(), debt.getId(), debt.getReason());
+        }
+
+        PaymentMethod card;
+        try {
+            card = cardToCharge(request.driverId(), request.paymentMethodId());
+        } catch (NoUsablePaymentMethodException noCard) {
+            log.warn(
+                    "Conductor {} sin tarjeta vigente al liquidar sesión {}: se registra deuda pendiente",
+                    request.driverId(),
+                    request.sessionId());
+            return recordDebt(
+                    request.driverId(),
+                    null,
+                    request.amount(),
+                    "El conductor no posee tarjeta vigente al cerrar la sesión",
+                    request.sessionId());
+        }
+
+        try {
+            GatewayCharge answer = paymentGateway.charge(
+                    card.getGatewayToken(),
+                    request.amount(),
+                    "Consumo de sesión de carga",
+                    request.sessionId(),
+                    request.idempotencyKey());
+            if (answer.approved()) {
+                log.info(
+                        "Consumo de sesión {} cobrado (${}) al conductor {}: pago {}",
+                        request.sessionId(),
+                        request.amount(),
+                        request.driverId(),
+                        answer.paymentId());
+                return ConsumptionChargeResult.charged(
+                        request.amount(), request.sessionId(), answer.paymentId(), answer.statusDetail());
+            }
+            log.warn(
+                    "Pasarela rechazó cobro de sesión {} al conductor {}: {}",
+                    request.sessionId(),
+                    request.driverId(),
+                    answer.statusDetail());
+            return recordDebt(
+                    request.driverId(),
+                    card.getId(),
+                    request.amount(),
+                    truncatedReason(answer.statusDetail(), "Cobro rechazado por la pasarela"),
+                    request.sessionId());
+        } catch (PaymentGatewayUnavailableException unavailable) {
+            log.warn(
+                    "Pasarela no disponible al liquidar sesión {} del conductor {}: se registra deuda pendiente",
+                    request.sessionId(),
+                    request.driverId(),
+                    unavailable);
+            return recordDebt(
+                    request.driverId(),
+                    card.getId(),
+                    request.amount(),
+                    "Pasarela de pagos no disponible al liquidar sesión",
+                    request.sessionId());
+        }
+    }
+
+    private ConsumptionChargeResult recordDebt(
+            Long driverId, Long paymentMethodId, BigDecimal amount, String reason, String sessionId) {
+        PendingPayment debt = new PendingPayment(driverId, paymentMethodId, amount, reason, sessionId, clock.instant());
+        // El primer reintento, a 20 minutos del cobro que falló (ECO-62). Lo hace DebtCollectionService.
+        debt.scheduleFirstRetry(debtRetryInterval);
+        PendingPayment saved = pendingPaymentRepository.save(debt);
+        // Recién guardada: el aviso no puede llegar antes que la deuda que nombra (ECO-62).
+        debtEvents.publish(DebtEvent.recorded(saved, clock.instant()));
+        return ConsumptionChargeResult.debtRecorded(amount, sessionId, saved.getId(), reason);
+    }
+
+    private static String truncatedReason(String detail, String fallback) {
+        if (detail == null || detail.isBlank()) {
+            return fallback;
+        }
+        String trimmed = detail.trim();
+        return trimmed.length() <= 120 ? trimmed : trimmed.substring(0, 120);
     }
 
     private static DepositCharge repeated(DepositCharge previous, DepositChargeRequest request) {

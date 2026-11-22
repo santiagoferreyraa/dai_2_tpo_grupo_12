@@ -1,6 +1,7 @@
 package com.ecopedia.charging.booking.domain;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -127,6 +128,29 @@ public interface BookingService {
     void markDepositRefunded(Long bookingId);
 
     /**
+     * Consume la reserva al iniciar la carga física en el conector (RF11, ECO-60).
+     * Transiciona su estado a {@link BookingStatus#IN_PROGRESS} bajo la transacción declarativa.
+     *
+     * @throws BookingNotFoundException si la reserva no existe
+     * @throws BookingStateConflictException si la reserva no está en estado CONFIRMED (409)
+     */
+    Booking startBookingCharging(Long bookingId);
+
+    /** Obtiene una reserva por su identificador o lanza BookingNotFoundException. */
+    Booking getBooking(Long bookingId);
+
+    /**
+     * La reserva confirmada del conductor sobre ese conector que ya se puede usar para cargar en
+     * {@code at}: la que está corriendo o empieza dentro de {@code earlyActivation} (RF11, ECO-44).
+     *
+     * <p>Es lo que deja al conductor escanear la terminal sin decir con qué reserva viene: si tiene
+     * una para ese conector y es la hora, la habilitación la usa; si no, la carga es sin reserva. Las
+     * demás condiciones de la habilitación anticipada —que la terminal esté libre— las sigue
+     * controlando la habilitación, igual que con una reserva elegida.
+     */
+    Optional<Booking> findChargeableBooking(Long driverId, Long connectorId, Instant at, Duration earlyActivation);
+
+    /**
      * Libera una reserva sin penalización y encola el reintegro total de la seña cuando la carga no
      * pudo iniciarse por causas ajenas al conductor —conector fuera de servicio, cargador que no
      * responde o rechazo de la distribuidora (RF13, ECO-59)—.
@@ -169,6 +193,16 @@ public interface BookingService {
     void cancelBooking(Long bookingId, Long driverId);
 
     /**
+     * Anula las reservas confirmadas del conductor porque su cuenta quedó marcada por una deuda vencida
+     * (ECO-62): la seña se devuelve entera (la pide el barrido de devoluciones) y sale un aviso por
+     * cada una. La carga en curso no se toca, y una reserva cuya ventana ya terminó tampoco.
+     * Idempotente: la segunda vez no encuentra nada que anular. Lo pide Pagos, no el conductor.
+     *
+     * @return cuántas se anularon
+     */
+    int cancelConfirmedBookingsForDebt(Long driverId);
+
+    /**
      * Las reservas de un conductor, de la más próxima a la más lejana (ECO-32).
      *
      * <p>No estaba en el contrato de ECO-31 y se suma acá porque sin esto la cancelación no se
@@ -205,4 +239,41 @@ public interface BookingService {
      * @throws ConnectorNotBookableException si el conector está fuera de servicio
      */
     List<TimeWindow> getAvailability(Long connectorId, Instant from, Instant to);
+
+    /**
+     * Calcula la ventana disponible para iniciar una carga sin reserva sobre el conector en el
+     * instante dado (RF10, ECO-58).
+     *
+     * <p>La ventana comienza en {@code from} y se extiende hasta el inicio de la próxima reserva
+     * ({@code CONFIRMED} o {@code IN_PROGRESS}) o retención ({@link Hold}) vigente del conector,
+     * con tope máximo en {@code from.plus(maxWindow)}.
+     *
+     * <p>Si el conector ya está ocupado en {@code from} o si la próxima reserva/retención comienza
+     * dentro del margen de resguardo ({@code walk-in-buffer}, 15 minutos), se rechaza con
+     * {@link SlotUnavailableException}.
+     *
+     * @param connectorId Identificador del conector
+     * @param from Instante de inicio de la evaluación
+     * @return La ventana disponible calculada {@code [from, windowEnd)}
+     * @throws SlotUnavailableException si el conector está ocupado o dentro de los 15 min previos a otra reserva
+     */
+    TimeWindow calculateWalkInWindow(Long connectorId, Instant from);
+
+    /**
+     * Registra una reserva instantánea sin seña para una carga sin reserva previa (RF10, ECO-58).
+     *
+     * <p>Verifica que el conector exista y esté operativo, toma el candado {@code holdLock},
+     * comprueba que el conductor esté libre ({@code requireDriverFree}), calcula la ventana
+     * disponible respetando el buffer de 15 minutos, libera cualquier retención previa del propio
+     * conductor y persiste la reserva con {@link DepositStatus#NONE}.
+     *
+     * @param connectorId Identificador del conector
+     * @param driverId Identificador del conductor
+     * @return La reserva instantánea guardada en estado {@link BookingStatus#CONFIRMED}
+     * @throws ConnectorNotFoundException si el conector no existe
+     * @throws ConnectorNotBookableException si el conector está fuera de servicio
+     * @throws DriverAlreadyBookedException si el conductor ya tiene una carga en curso o reserva superpuesta
+     * @throws SlotUnavailableException si el conector está ocupado o dentro de los 15 min previos a otra reserva
+     */
+    Booking registerWalkIn(Long connectorId, Long driverId);
 }

@@ -155,10 +155,8 @@ services:
     container_name: ecopedia-core
     command: ["java", "-jar", "/app/ecopedia-core.jar"]
     environment:
-      <<: [*java-env, *db, *jwt]
+      <<: [*java-env, *db, *jwt, *internal-token]
       SERVER_PORT: 8081
-      ECOPEDIA_CHARGER_URL: http://charger:8088
-      ECOPEDIA_CHARGER_ACCESS_TOKEN: ${ECOPEDIA_CHARGER_ACCESS_TOKEN:?Falta ECOPEDIA_CHARGER_ACCESS_TOKEN en el .env. Correr pnpm env:init}
       ECOPEDIA_LOGIN_MAX_FAILURES: ${ECOPEDIA_LOGIN_MAX_FAILURES:-5}
       ECOPEDIA_LOGIN_LOCK_MINUTES: ${ECOPEDIA_LOGIN_LOCK_MINUTES:-15}
       # Las cuentas con las que se entra la primera vez (ver InitialSetup). Obligatorias acá: sin
@@ -178,6 +176,8 @@ services:
       SERVER_PORT: 8082
       ECOPEDIA_CORE_URL: http://core:8081
       ECOPEDIA_INTEGRATION_URL: http://integration:8083
+      ECOPEDIA_CHARGER_URL: http://charger:8088
+      ECOPEDIA_CHARGER_ACCESS_TOKEN: ${ECOPEDIA_CHARGER_ACCESS_TOKEN:?Falta ECOPEDIA_CHARGER_ACCESS_TOKEN en el .env. Correr pnpm env:init}
     depends_on: *infra
 
   integration:
@@ -185,12 +185,14 @@ services:
     container_name: ecopedia-integration
     command: ["java", "-jar", "/app/ecopedia-integration.jar"]
     environment:
-      <<: [*java-env, *db, *jwt, *internal-token]
+      <<: [*java-env, *db, *jwt, *broker, *internal-token]
       SERVER_PORT: 8083
       ECOPEDIA_PAYMENT_GATEWAY_URL: http://payment-gateway:8086
       ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN: ${ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN:?Falta ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN en el .env. Correr pnpm env:init}
       ECOPEDIA_POWER_GRID_URL: http://power-grid:8087/ws
       ECOPEDIA_POWER_GRID_PASSWORD: ${ECOPEDIA_POWER_GRID_PASSWORD:?Falta ECOPEDIA_POWER_GRID_PASSWORD en el .env. Correr pnpm env:init}
+      # Reservas, para anular las reservas de una cuenta marcada por deuda (ECO-62).
+      ECOPEDIA_CHARGING_URL: http://charging:8082
     depends_on: *infra
 
   async:

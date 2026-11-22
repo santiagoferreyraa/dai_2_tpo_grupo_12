@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
@@ -51,6 +52,10 @@ public class IntegrationDepositGateway implements DepositGateway {
                     .body(new ChargeBody(driverId, paymentMethodId, amount, reference, idempotencyKey))
                     .retrieve()
                     .body(ChargeAnswer.class);
+            if (answer == null) {
+                // Un 2xx sin cuerpo no es una respuesta válida: se trata igual que si no hubiera contestado.
+                throw new ResourceAccessException("ecopedia-integration contestó sin cuerpo");
+            }
             return new DepositCharge(answer.chargeId(), answer.cardLastFour());
         } catch (RestClientResponseException response) {
             if (response.getStatusCode().value() == 422) {
@@ -79,11 +84,17 @@ public class IntegrationDepositGateway implements DepositGateway {
     @Override
     public void refund(Long chargeId, BigDecimal amount) {
         try {
-            var request = restClient.post().uri("/internal/payments/deposits/{id}/refund", chargeId);
-            if (amount != null) {
-                request.contentType(MediaType.APPLICATION_JSON).body(new RefundBody(amount));
-            }
-            request.retrieve().toBodilessEntity();
+            // Siempre con cuerpo JSON, también la devolución total (importe nulo). Un POST sin cuerpo
+            // sale por HttpURLConnection con Content-Type application/x-www-form-urlencoded, y la ruta
+            // de integration, que acepta un cuerpo opcional, lo rechazaba con 415: ninguna devolución
+            // total salía y el barrido reintentaba para siempre.
+            restClient
+                    .post()
+                    .uri("/internal/payments/deposits/{id}/refund", chargeId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(new RefundBody(amount))
+                    .retrieve()
+                    .toBodilessEntity();
         } catch (RestClientResponseException response) {
             int status = response.getStatusCode().value();
             if (status == 404 || status == 409) {

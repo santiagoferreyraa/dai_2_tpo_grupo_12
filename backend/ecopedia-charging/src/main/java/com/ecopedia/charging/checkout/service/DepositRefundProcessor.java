@@ -5,6 +5,9 @@ import com.ecopedia.charging.booking.domain.BookingService;
 import com.ecopedia.charging.checkout.domain.DepositGateway;
 import com.ecopedia.charging.checkout.domain.DepositPaymentUnavailableException;
 import com.ecopedia.charging.checkout.domain.DepositRefundRefusedException;
+import com.ecopedia.charging.checkout.domain.PendingDepositRefund;
+import com.ecopedia.charging.checkout.domain.PendingDepositRefundRepository;
+import java.time.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -30,10 +33,18 @@ public class DepositRefundProcessor {
 
     private final BookingService bookingService;
     private final DepositGateway depositGateway;
+    private final PendingDepositRefundRepository pendingRefunds;
+    private final Clock clock;
 
-    public DepositRefundProcessor(BookingService bookingService, DepositGateway depositGateway) {
+    public DepositRefundProcessor(
+            BookingService bookingService,
+            DepositGateway depositGateway,
+            PendingDepositRefundRepository pendingRefunds,
+            Clock clock) {
         this.bookingService = bookingService;
         this.depositGateway = depositGateway;
+        this.pendingRefunds = pendingRefunds;
+        this.clock = clock;
     }
 
     @Scheduled(
@@ -42,9 +53,38 @@ public class DepositRefundProcessor {
     void refundPending() {
         try {
             bookingService.findPendingDepositRefunds().forEach(this::refund);
+            pendingRefunds.findByRefundedAtIsNullOrderByCreatedAtAsc().forEach(this::refundWithoutBooking);
         } catch (RuntimeException failure) {
             // La base caída no tiene que matar el reloj: el próximo barrido lo vuelve a intentar.
             log.warn("No se pudo buscar las señas por devolver: {}", failure.getMessage());
+        }
+    }
+
+    /**
+     * Devuelve una seña cobrada que quedó sin reserva: la compensación del checkout que no salió en el
+     * acto (ECO-62). Visible para los tests.
+     */
+    void refundWithoutBooking(PendingDepositRefund pending) {
+        try {
+            depositGateway.refund(pending.getChargeId());
+            pending.markRefunded(clock.instant());
+            pendingRefunds.save(pending);
+            log.info(
+                    "Seña cobrada sin reserva devuelta: cobro {} de ${} al conductor {}",
+                    pending.getChargeId(),
+                    pending.getAmount(),
+                    pending.getDriverId());
+        } catch (DepositPaymentUnavailableException later) {
+            log.warn(
+                    "No se pudo devolver todavía el cobro {} sin reserva: {}. Se reintenta",
+                    pending.getChargeId(),
+                    later.getMessage());
+        } catch (DepositRefundRefusedException refused) {
+            log.error(
+                    "Pagos no acepta devolver el cobro {} sin reserva del conductor {}: {}. Revisar a mano",
+                    pending.getChargeId(),
+                    pending.getDriverId(),
+                    refused.getMessage());
         }
     }
 

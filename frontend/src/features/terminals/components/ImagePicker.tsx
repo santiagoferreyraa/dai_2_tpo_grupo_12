@@ -68,7 +68,7 @@ export default function ImagePicker({ value, onChange }: ImagePickerProps) {
 
   return (
     <section className="mt-6">
-      <h3 className="text-st-muted text-lg font-bold">IMAGES</h3>
+      <h3 className="text-st-muted text-lg font-bold">FOTOS</h3>
 
       <div className="mt-3 flex items-center gap-2">
         <input

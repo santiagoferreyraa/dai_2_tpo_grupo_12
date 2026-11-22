@@ -8,6 +8,7 @@ import java.util.Optional;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
@@ -32,11 +33,19 @@ public class CoreChargingPointCatalog implements ChargingPointCatalog {
                     .uri("/api/connectors/{id}", connectorId)
                     .retrieve()
                     .body(ConnectorBody.class);
+            if (connector == null) {
+                // Un 2xx sin cuerpo no es una respuesta válida: se trata igual que si no hubiera contestado.
+                throw new ResourceAccessException("ecopedia-core contestó sin cuerpo");
+            }
             StationBody station = restClient
                     .get()
                     .uri("/api/stations/{id}", connector.stationId())
                     .retrieve()
                     .body(StationBody.class);
+            if (station == null) {
+                // Un 2xx sin cuerpo no es una respuesta válida: se trata igual que si no hubiera contestado.
+                throw new ResourceAccessException("ecopedia-core contestó sin cuerpo");
+            }
             String nodeId = station.nodeId() == null || station.nodeId().isBlank() ? null : station.nodeId();
             return Optional.of(new ChargingPoint(connector.id(), station.id(), connector.maxPowerKw(), nodeId));
         } catch (HttpClientErrorException.NotFound missing) {

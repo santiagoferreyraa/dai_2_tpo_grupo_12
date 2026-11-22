@@ -1,6 +1,12 @@
 import { useEffect, useId, useRef, useState } from 'react'
 
-import { departFrom, departFromDevice, DEVICE_DEPARTURE_LABEL, useDeparture } from '../departure'
+import {
+  departFrom,
+  departFromDevice,
+  DEVICE_DEPARTURE,
+  DEVICE_DEPARTURE_LABEL,
+  useDeparture,
+} from '../departure'
 import type { AddressSuggestion } from '../geocoding'
 import { useAddressSearch } from '../useAddressSearch'
 import { useDepartureOrigin } from '../useDepartureOrigin'
@@ -80,8 +86,16 @@ interface DepartureFieldProps {
 }
 
 export default function DepartureField({ stationId, disabled = false }: DepartureFieldProps) {
-  const departure = useDeparture()
+  const current = useDeparture()
   const { device } = useDepartureOrigin()
+
+  /*
+   * Una dirección elegida para OTRA estación no es el punto de partida de esta: el mapa ya rutea
+   * esta estación desde el dispositivo en ese caso (ver `routeOrigin` en `StationsMapPage`), y el
+   * campo tiene que decir lo mismo en vez de mostrar la dirección de la otra reserva.
+   */
+  const departure =
+    current.kind === 'address' && current.stationId !== stationId ? DEVICE_DEPARTURE : current
 
   const [editing, setEditing] = useState(false)
   const [query, setQuery] = useState('')

@@ -9,4 +9,8 @@ public class PaymentMethodInvalidException extends RuntimeException {
     public PaymentMethodInvalidException() {
         super("La tarjeta elegida no se puede usar para cobrar la seña");
     }
+
+    public PaymentMethodInvalidException(String message) {
+        super(message);
+    }
 }

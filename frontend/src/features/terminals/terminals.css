@@ -11,14 +11,20 @@
 
   Cuando el proyecto unifique el tema oscuro (RNF08), este archivo se borra y los
   componentes pasan a usar los tokens compartidos.
+
+  Mientras tanto, los neutros ya NO son propios: apuntan a los compartidos de index.css. Tenían
+  sus propios hex, oscuros y fijos, y la pantalla del operador era la única que no cambiaba con el
+  tema ni se parecía al resto. Referenciados, siguen al tema claro y al oscuro como todas las
+  demás. Funciona porque el tema se escribe en `<html>`, el mismo elemento donde viven estos.
 */
 @theme {
-  --color-st-bg: #0e1116;
-  --color-st-surface: #1a2130;
-  --color-st-surface-raised: #232c3d;
-  --color-st-border: #2c3446;
-  --color-st-text: #e6ebf2;
-  --color-st-muted: #7b8798;
+  --color-st-bg: var(--color-background);
+  --color-st-surface: var(--color-surface);
+  /* Un escalón sobre la superficie, para el hover y lo elegido, en los dos temas. */
+  --color-st-surface-raised: color-mix(in srgb, var(--color-surface) 90%, var(--color-text));
+  --color-st-border: var(--color-border);
+  --color-st-text: var(--color-text);
+  --color-st-muted: var(--color-text-muted);
 
   /*
     El verde de estas pantallas NO es propio: sale del par de la marca, que define index.css. Era
@@ -74,8 +80,10 @@
   scrollbar-width: thin;
   scrollbar-color: var(--color-st-muted) transparent;
 
+  /* `width` para cuando scrollea vertical: el listado de estaciones. */
   &::-webkit-scrollbar {
     height: 8px;
+    width: 6px;
   }
 
   &::-webkit-scrollbar-track {

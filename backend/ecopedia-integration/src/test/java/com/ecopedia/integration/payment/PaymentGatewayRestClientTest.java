@@ -198,6 +198,17 @@ class PaymentGatewayRestClientTest {
     }
 
     @Test
+    @DisplayName("Un 200 sin cuerpo no es una respuesta: se trata como pasarela no disponible, no como un 500")
+    void successWithoutBodyIsUnavailable() {
+        gateway.expect(requestTo("http://gateway.test/v1/payments")).andRespond(withSuccess());
+        gateway.expect(requestTo("http://gateway.test/v1/card_tokens")).andRespond(withSuccess());
+
+        assertThatThrownBy(() -> client.charge("tok_abc", BigDecimal.TEN, "Seña", "booking-12", "k"))
+                .isInstanceOf(PaymentGatewayUnavailableException.class);
+        assertThatThrownBy(() -> client.tokenize(CARD)).isInstanceOf(PaymentGatewayUnavailableException.class);
+    }
+
+    @Test
     @DisplayName("Reintegra todo cuando no se pide un importe")
     void refunds() {
         gateway.expect(requestTo("http://gateway.test/v1/payments/pay_1/refunds"))
@@ -230,5 +241,88 @@ class PaymentGatewayRestClientTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .body(error("card_token_not_found")));
         assertThat(client.validate("tok_old")).isEqualTo(new CardValidation(false, "card_token_not_found"));
+    }
+
+    @Test
+    @DisplayName("Valida sin cobrar con rechazo explícito y sin código legible")
+    void validateRejections() {
+        gateway.expect(requestTo("http://gateway.test/v1/card_tokens/tok_declined/validations"))
+                .andRespond(withSuccess(
+                        "{\"status\":\"rejected\",\"status_detail\":\"card_declined\"}", MediaType.APPLICATION_JSON));
+        assertThat(client.validate("tok_declined")).isEqualTo(new CardValidation(false, "card_declined"));
+
+        gateway.reset();
+        gateway.expect(requestTo("http://gateway.test/v1/card_tokens/tok_unreadable/validations"))
+                .andRespond(withBadRequest().contentType(MediaType.TEXT_PLAIN).body("no-json"));
+        assertThat(client.validate("tok_unreadable")).isEqualTo(new CardValidation(false, "unknown"));
+    }
+
+    @Test
+    @DisplayName("Sin respuesta al validar, no está disponible")
+    void validateWithoutAnswer() {
+        gateway.expect(requestTo("http://gateway.test/v1/card_tokens/tok_timeout/validations"))
+                .andRespond(withException(new java.net.http.HttpTimeoutException("request timed out")));
+
+        assertThatThrownBy(() -> client.validate("tok_timeout")).isInstanceOf(PaymentGatewayUnavailableException.class);
+    }
+
+    @Test
+    @DisplayName("Validar con error de servidor o problema de autenticación lanza pasarela no disponible")
+    void validateServerErrorAndAuth() {
+        gateway.expect(requestTo("http://gateway.test/v1/card_tokens/tok_server_err/validations"))
+                .andRespond(withServerError());
+        assertThatThrownBy(() -> client.validate("tok_server_err"))
+                .isInstanceOf(PaymentGatewayUnavailableException.class);
+
+        gateway.reset();
+        gateway.expect(requestTo("http://gateway.test/v1/card_tokens/tok_auth/validations"))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
+        assertThatThrownBy(() -> client.validate("tok_auth")).isInstanceOf(PaymentGatewayUnavailableException.class);
+    }
+
+    @Test
+    @DisplayName("Cubre ramas faltantes de cobro 4xx, reintegros con error/vacío y validación sin cuerpo")
+    void extraGatewayBranches() {
+        gateway.expect(requestTo("http://gateway.test/v1/payments"))
+                .andRespond(
+                        withBadRequest().contentType(MediaType.APPLICATION_JSON).body(error("invalid_token")));
+        GatewayCharge rejected4xx = client.charge("tok_bad", BigDecimal.TEN, "Consumo", "sess-1", "k1");
+        assertThat(rejected4xx.approved()).isFalse();
+        assertThat(rejected4xx.statusDetail()).isEqualTo("invalid_token");
+
+        gateway.reset();
+        gateway.expect(requestTo("http://gateway.test/v1/payments")).andRespond(withStatus(HttpStatus.UNAUTHORIZED));
+        assertThatThrownBy(() -> client.charge("tok", BigDecimal.TEN, "Consumo", "sess-2", "k2"))
+                .isInstanceOf(PaymentGatewayUnavailableException.class);
+
+        gateway.reset();
+        gateway.expect(requestTo("http://gateway.test/v1/payments/pay_1/refunds"))
+                .andRespond(withSuccess());
+        assertThatThrownBy(() -> client.refund("pay_1", BigDecimal.TEN, "rk-empty"))
+                .isInstanceOf(PaymentGatewayUnavailableException.class);
+
+        gateway.reset();
+        gateway.expect(requestTo("http://gateway.test/v1/payments/pay_1/refunds"))
+                .andRespond(
+                        withBadRequest().contentType(MediaType.APPLICATION_JSON).body(error("already_refunded")));
+        assertThatThrownBy(() -> client.refund("pay_1", BigDecimal.TEN, "rk-400"))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        gateway.reset();
+        gateway.expect(requestTo("http://gateway.test/v1/payments/pay_1/refunds"))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
+        assertThatThrownBy(() -> client.refund("pay_1", BigDecimal.TEN, "rk-401"))
+                .isInstanceOf(PaymentGatewayUnavailableException.class);
+
+        gateway.reset();
+        gateway.expect(requestTo("http://gateway.test/v1/payments/pay_1/refunds"))
+                .andRespond(withException(new java.net.http.HttpTimeoutException("timeout")));
+        assertThatThrownBy(() -> client.refund("pay_1", BigDecimal.TEN, "rk-io"))
+                .isInstanceOf(PaymentGatewayUnavailableException.class);
+
+        gateway.reset();
+        gateway.expect(requestTo("http://gateway.test/v1/card_tokens/tok_empty/validations"))
+                .andRespond(withSuccess());
+        assertThatThrownBy(() -> client.validate("tok_empty")).isInstanceOf(PaymentGatewayUnavailableException.class);
     }
 }

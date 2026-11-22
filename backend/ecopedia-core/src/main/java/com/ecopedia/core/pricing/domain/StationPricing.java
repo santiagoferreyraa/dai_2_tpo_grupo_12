@@ -36,7 +36,10 @@ public class StationPricing {
 
     public StationPricing(Long stationId, BigDecimal depositAmount, boolean peakPricingEnabled, Instant at) {
         this.stationId = stationId;
-        update(depositAmount, peakPricingEnabled, at);
+        // Asignados acá y no con update(): ver el constructor de NetworkRates.
+        this.depositAmount = depositAmount;
+        this.peakPricingEnabled = peakPricingEnabled;
+        this.updatedAt = at;
     }
 
     /** La configuración de una estación que nadie configuró todavía. No se guarda. */

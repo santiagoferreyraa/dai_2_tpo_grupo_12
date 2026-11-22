@@ -39,7 +39,7 @@ public class InitialSetup {
             LongStream.rangeClosed(1, 15).boxed().toList();
 
     /** El mismo mínimo que el registro (RegisterRequest). */
-    private static final int MIN_PASSWORD_LENGTH = 6;
+    private static final int MIN_PASSWORD_LENGTH = 8;
 
     private final UserRepository userRepository;
     private final StationRepository stationRepository;

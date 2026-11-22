@@ -30,6 +30,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -38,6 +39,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
@@ -107,6 +109,8 @@ public class BookingServiceImpl implements BookingService {
     private final Duration maxHorizon;
     private final Duration depositRefundNotice;
     private final Duration noShowGrace;
+    private final Duration walkInBuffer;
+    private final Duration earlyActivation;
 
     /** El estado conversacional del componente: las retenciones vigentes, por id. */
     private final Map<UUID, Hold> holds = new ConcurrentHashMap<>();
@@ -134,6 +138,7 @@ public class BookingServiceImpl implements BookingService {
     /** El reloj que vence las retenciones. Lo crea {@link #start()} y lo apaga {@link #stop()}. */
     private ScheduledExecutorService expirations;
 
+    @Autowired
     public BookingServiceImpl(
             ConnectorCatalog connectorCatalog,
             BookingRepository bookingRepository,
@@ -143,7 +148,9 @@ public class BookingServiceImpl implements BookingService {
             @Value("${ecopedia.booking.max-window}") Duration maxWindow,
             @Value("${ecopedia.booking.max-horizon}") Duration maxHorizon,
             @Value("${ecopedia.booking.deposit-refund-notice}") Duration depositRefundNotice,
-            @Value("${ecopedia.booking.no-show-grace}") Duration noShowGrace) {
+            @Value("${ecopedia.booking.no-show-grace}") Duration noShowGrace,
+            @Value("${ecopedia.booking.walk-in-buffer:PT15M}") Duration walkInBuffer,
+            @Value("${ecopedia.booking.early-activation:PT15M}") Duration earlyActivation) {
         this.connectorCatalog = connectorCatalog;
         this.bookingRepository = bookingRepository;
         this.eventPublisher = eventPublisher;
@@ -153,6 +160,32 @@ public class BookingServiceImpl implements BookingService {
         this.maxHorizon = maxHorizon;
         this.depositRefundNotice = depositRefundNotice;
         this.noShowGrace = noShowGrace;
+        this.walkInBuffer = walkInBuffer;
+        this.earlyActivation = earlyActivation;
+    }
+
+    public BookingServiceImpl(
+            ConnectorCatalog connectorCatalog,
+            BookingRepository bookingRepository,
+            BookingEventPublisher eventPublisher,
+            Clock clock,
+            Duration holdTtl,
+            Duration maxWindow,
+            Duration maxHorizon,
+            Duration depositRefundNotice,
+            Duration noShowGrace) {
+        this(
+                connectorCatalog,
+                bookingRepository,
+                eventPublisher,
+                clock,
+                holdTtl,
+                maxWindow,
+                maxHorizon,
+                depositRefundNotice,
+                noShowGrace,
+                Duration.ofMinutes(15),
+                Duration.ofMinutes(15));
     }
 
     /**
@@ -312,9 +345,11 @@ public class BookingServiceImpl implements BookingService {
             throw new SlotUnavailableException(connectorId);
         }
 
-        // Y lo que hace cumplir RF08: una reserva confirmada bloquea el conector por su ventana.
+        // Y lo que hace cumplir RF08: una reserva confirmada o en curso bloquea el conector por su ventana.
         boolean booked =
-                bookingRepository.existsOverlapping(connectorId, BookingStatus.CONFIRMED, window.start(), window.end());
+                bookingRepository.existsOverlapping(connectorId, BookingStatus.CONFIRMED, window.start(), window.end())
+                        || bookingRepository.existsOverlapping(
+                                connectorId, BookingStatus.IN_PROGRESS, window.start(), window.end());
         if (booked) {
             throw new SlotUnavailableException(connectorId);
         }
@@ -325,22 +360,43 @@ public class BookingServiceImpl implements BookingService {
      * <b>Se invoca con {@link #holdLock} tomado</b>, igual que {@link #requireFreeSlot}, para que
      * dos pedidos del mismo conductor no puedan pasar los dos por acá a la vez.
      *
-     * <p>Mira solo las reservas CONFIRMADAS y no las retenciones: la retención del conductor no
+     * <p>Mira solo las reservas CONFIRMADAS o IN_PROGRESS y no las retenciones: la retención del conductor no
      * necesita chequeo porque tiene a lo sumo una y el pedido nuevo la reemplaza (ver
      * {@link #releaseHoldsOf}). Una reserva cancelada no cuenta, por lo mismo que no cuenta para el
      * conector: al cancelar queda libre el conector y queda libre él.
      *
      * @throws DriverAlreadyBookedException si tiene una reserva en curso o una que se cruza
      */
-    private void requireDriverFree(Long driverId, TimeWindow window, Instant now) {
+    /**
+     * Que el CONDUCTOR no tenga una sesión de carga en curso en este instante.
+     */
+    private void requireDriverNotCharging(Long driverId, Instant now) {
         bookingRepository.findInProgressForDriver(driverId, BookingStatus.CONFIRMED, now).stream()
                 .findFirst()
                 .ifPresent(inProgress -> {
                     throw DriverAlreadyBookedException.charging(inProgress.getId(), driverId);
                 });
 
+        bookingRepository.findInProgressForDriver(driverId, BookingStatus.IN_PROGRESS, now).stream()
+                .findFirst()
+                .ifPresent(inProgress -> {
+                    throw DriverAlreadyBookedException.charging(inProgress.getId(), driverId);
+                });
+    }
+
+    private void requireDriverFree(Long driverId, TimeWindow window, Instant now) {
+        requireDriverNotCharging(driverId, now);
+
         bookingRepository
                 .findOverlappingForDriver(driverId, BookingStatus.CONFIRMED, window.start(), window.end())
+                .stream()
+                .findFirst()
+                .ifPresent(clashing -> {
+                    throw DriverAlreadyBookedException.overlapping(clashing.getId(), driverId);
+                });
+
+        bookingRepository
+                .findOverlappingForDriver(driverId, BookingStatus.IN_PROGRESS, window.start(), window.end())
                 .stream()
                 .findFirst()
                 .ifPresent(clashing -> {
@@ -517,6 +573,42 @@ public class BookingServiceImpl implements BookingService {
         eventPublisher.publish(BookingEvent.cancelled(booking, now));
     }
 
+    /**
+     * Cada reserva se guarda por su cuenta, como en el barrido de la incomparecencia: si una cambió en
+     * el mismo instante —el conductor la canceló, o el barrido la marcó—, se saltea y gana lo otro, que
+     * es lo que pasó de verdad. Pagos lo vuelve a pedir si no contestamos, y la segunda vez no encuentra
+     * lo que ya se anuló.
+     */
+    @Override
+    public int cancelConfirmedBookingsForDebt(Long driverId) {
+        Instant now = clock.instant();
+        List<Booking> confirmed =
+                bookingRepository.findByDriverIdAndStatusAndWindowEndAfter(driverId, BookingStatus.CONFIRMED, now);
+        int cancelled = 0;
+        for (Booking booking : confirmed) {
+            booking.cancelForDebt(now);
+            Booking saved;
+            try {
+                saved = bookingRepository.save(booking);
+            } catch (OptimisticLockingFailureException changedMeanwhile) {
+                log.info("La reserva {} cambió mientras se la anulaba por deuda: se saltea", booking.getId());
+                continue;
+            }
+            cancelled++;
+            log.info(
+                    "Reserva {} del conductor {} anulada por deuda vencida: el conector {} queda libre entre {} y {}."
+                            + " Seña: {}",
+                    saved.getId(),
+                    driverId,
+                    saved.getConnectorId(),
+                    saved.getWindow().start(),
+                    saved.getWindow().end(),
+                    saved.getDepositStatus());
+            eventPublisher.publish(BookingEvent.cancelledForDebt(saved, now));
+        }
+        return cancelled;
+    }
+
     @Override
     public Optional<Booking> findByCheckoutKey(Long driverId, String checkoutKey) {
         return bookingRepository.findByDriverIdAndCheckoutKey(driverId, checkoutKey);
@@ -583,6 +675,36 @@ public class BookingServiceImpl implements BookingService {
     }
 
     @Override
+    public Booking getBooking(Long bookingId) {
+        return bookingRepository.findById(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
+    }
+
+    @Override
+    public Optional<Booking> findChargeableBooking(
+            Long driverId, Long connectorId, Instant at, Duration earlyActivation) {
+        // Se cruza con [at, at + margen): o ya está corriendo, o empieza dentro del margen.
+        return bookingRepository
+                .findOverlappingForDriver(driverId, BookingStatus.CONFIRMED, at, at.plus(earlyActivation))
+                .stream()
+                .filter(booking -> booking.getConnectorId().equals(connectorId))
+                .findFirst();
+    }
+
+    @Override
+    public Booking startBookingCharging(Long bookingId) {
+        Booking booking = getBooking(bookingId);
+        Instant now = clock.instant();
+        booking.startCharging(now, earlyActivation);
+        Booking saved = bookingRepository.save(booking);
+        log.info(
+                "Reserva {} del conductor {} sobre conector {} pasa a IN_PROGRESS",
+                saved.getId(),
+                saved.getDriverId(),
+                saved.getConnectorId());
+        return saved;
+    }
+
+    @Override
     public Booking releaseForActivationFailure(Long bookingId) {
         Booking booking =
                 bookingRepository.findById(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
@@ -591,7 +713,7 @@ public class BookingServiceImpl implements BookingService {
             return booking;
         }
         Instant now = clock.instant();
-        // Cualquier otro estado que no sea CONFIRMED lo rechaza la reserva (409, QA-26).
+        // Cualquier otro estado que no sea CONFIRMED ni IN_PROGRESS lo rechaza la reserva (409, QA-26).
         booking.failActivation();
         Booking saved = bookingRepository.save(booking);
         log.info(
@@ -610,7 +732,7 @@ public class BookingServiceImpl implements BookingService {
         Booking booking =
                 bookingRepository.findById(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
         Instant now = clock.instant();
-        // Una reserva que no está CONFIRMED la rechaza la reserva misma (409, QA-26).
+        // Una reserva que no está CONFIRMED ni IN_PROGRESS la rechaza la reserva misma (409, QA-26).
         booking.settleFaultedCharge(realCost, now);
         Booking saved = bookingRepository.save(booking);
         log.info(
@@ -647,12 +769,111 @@ public class BookingServiceImpl implements BookingService {
         bookingRepository
                 .findOverlapping(connectorId, BookingStatus.CONFIRMED, range.start(), range.end())
                 .forEach(booking -> occupied.add(booking.getWindow()));
+        bookingRepository
+                .findOverlapping(connectorId, BookingStatus.IN_PROGRESS, range.start(), range.end())
+                .forEach(booking -> occupied.add(booking.getWindow()));
         // La misma regla que requireFreeSlot: una retención vencida no ocupa aunque siga en el mapa.
         holds.values().stream()
                 .filter(hold -> hold.connectorId().equals(connectorId) && !hold.isExpiredAt(now))
                 .forEach(hold -> occupied.add(hold.window()));
 
         return FreeWindows.within(range, occupied);
+    }
+
+    @Override
+    public TimeWindow calculateWalkInWindow(Long connectorId, Instant from) {
+        Objects.requireNonNull(from, "from no puede ser null");
+        requireBookableConnector(connectorId);
+        synchronized (holdLock) {
+            return calculateWalkInWindow(connectorId, from, null);
+        }
+    }
+
+    private TimeWindow calculateWalkInWindow(Long connectorId, Instant from, Long driverId) {
+        Instant maxEnd = from.plus(maxWindow);
+
+        // 1. Buscar reservas CONFIRMED o IN_PROGRESS en [from, maxEnd)
+        List<Booking> overlappingBookings = new ArrayList<>();
+        overlappingBookings.addAll(
+                bookingRepository.findOverlapping(connectorId, BookingStatus.CONFIRMED, from, maxEnd));
+        overlappingBookings.addAll(
+                bookingRepository.findOverlapping(connectorId, BookingStatus.IN_PROGRESS, from, maxEnd));
+
+        // 2. Buscar retenciones (Holds) vigentes en memoria de OTROS conductores que se solapen con [from, maxEnd)
+        TimeWindow evalWindow = new TimeWindow(from, maxEnd);
+        List<Hold> activeHolds = holds.values().stream()
+                .filter(hold -> hold.connectorId().equals(connectorId))
+                .filter(hold -> driverId == null || !hold.driverId().equals(driverId))
+                .filter(hold -> !hold.isExpiredAt(from))
+                .filter(hold -> hold.window().overlaps(evalWindow))
+                .toList();
+
+        // 3. Determinar el límite superior dejando libre el resguardo previo a la próxima ocupación (RF10, ECO-58)
+        Instant effectiveEnd = maxEnd;
+        for (Booking booking : overlappingBookings) {
+            Instant bookingStart = booking.getWindow().start();
+            if (!bookingStart.isAfter(from)) {
+                // Ya hay una reserva corriendo en este instante
+                throw new SlotUnavailableException(connectorId);
+            }
+            Instant cutoffBeforeBooking = bookingStart.minus(walkInBuffer);
+            if (cutoffBeforeBooking.isBefore(effectiveEnd)) {
+                effectiveEnd = cutoffBeforeBooking;
+            }
+        }
+
+        for (Hold hold : activeHolds) {
+            Instant holdStart = hold.window().start();
+            if (!holdStart.isAfter(from)) {
+                // Ya hay una retención corriendo en este instante
+                throw new SlotUnavailableException(connectorId);
+            }
+            Instant cutoffBeforeHold = holdStart.minus(walkInBuffer);
+            if (cutoffBeforeHold.isBefore(effectiveEnd)) {
+                effectiveEnd = cutoffBeforeHold;
+            }
+        }
+
+        // 4. Si no queda tiempo disponible tras descontar los 15 minutos de resguardo, rechazar
+        if (!effectiveEnd.isAfter(from)) {
+            throw new SlotUnavailableException(connectorId);
+        }
+
+        return new TimeWindow(from, effectiveEnd);
+    }
+
+    @Override
+    public Booking registerWalkIn(Long connectorId, Long driverId) {
+        Objects.requireNonNull(connectorId, "connectorId no puede ser null");
+        Objects.requireNonNull(driverId, "driverId no puede ser null");
+        requireBookableConnector(connectorId);
+
+        Instant now = clock.instant();
+        Booking booking;
+        synchronized (holdLock) {
+            /*
+             * El conductor antes que el conector: si el conductor ya tiene una sesión de carga en
+             * curso (incluso sobre este mismo conector), el rechazo que le sirve es el suyo.
+             */
+            requireDriverNotCharging(driverId, now);
+            TimeWindow window = calculateWalkInWindow(connectorId, now, driverId);
+            requireDriverFree(driverId, window, now);
+            releaseHoldsOf(driverId);
+
+            booking = new Booking(connectorId, driverId, window, now);
+            booking = bookingRepository.save(booking);
+        }
+
+        log.info(
+                "Reserva walk-in {} registrada para el conductor {} en el conector {}: ventana [{} - {})",
+                booking.getId(),
+                driverId,
+                connectorId,
+                booking.getWindow().start(),
+                booking.getWindow().end());
+
+        eventPublisher.publish(BookingEvent.confirmed(booking, now));
+        return booking;
     }
 
     /**

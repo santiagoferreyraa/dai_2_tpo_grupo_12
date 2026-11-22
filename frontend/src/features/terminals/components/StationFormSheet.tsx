@@ -165,19 +165,19 @@ export default function StationFormSheet({
     /* `noValidate`: los mensajes los pone el formulario, no las burbujas del navegador. */
     <form onSubmit={handleSubmit} noValidate>
       <label className="block">
-        <span className="text-st-muted text-lg font-bold">NAME</span>
+        <span className="text-st-muted text-lg font-bold">NOMBRE</span>
         <input
           type="text"
           value={name}
           onChange={(event) => setName(event.target.value)}
-          placeholder="YPF Station"
+          placeholder="Estación YPF"
           className={FIELD_CLASS}
         />
       </label>
       {errorText(errors.name)}
 
       <label className="mt-5 block">
-        <span className="text-st-muted text-lg font-bold">ADDRESS</span>
+        <span className="text-st-muted text-lg font-bold">DIRECCIÓN</span>
         <input
           type="text"
           value={address}
@@ -190,7 +190,7 @@ export default function StationFormSheet({
 
       <div className="mt-5 grid grid-cols-2 gap-x-4">
         <label className="block">
-          <span className="text-st-muted text-lg font-bold">LAT.</span>
+          <span className="text-st-muted text-lg font-bold">LATITUD</span>
           <input
             type="text"
             inputMode="decimal"
@@ -203,7 +203,7 @@ export default function StationFormSheet({
         </label>
 
         <label className="block">
-          <span className="text-st-muted text-lg font-bold">LON.</span>
+          <span className="text-st-muted text-lg font-bold">LONGITUD</span>
           <input
             type="text"
             inputMode="decimal"
@@ -218,7 +218,7 @@ export default function StationFormSheet({
 
       {/* Opcional: sin nodo la estación existe igual, pero no puede ofrecer carga rápida (RF15). */}
       <label className="mt-5 block">
-        <span className="text-st-muted text-lg font-bold">GRID NODE</span>
+        <span className="text-st-muted text-lg font-bold">NODO DE LA DISTRIBUIDORA</span>
         <input
           type="text"
           value={nodeId}
@@ -241,7 +241,7 @@ export default function StationFormSheet({
 
       {/* El cobro de la estación: la seña para reservar y la hora pico. Los precios del kWh son del ADMIN. */}
       <label className="mt-5 block">
-        <span className="text-st-muted text-lg font-bold">DEPOSIT</span>
+        <span className="text-st-muted text-lg font-bold">SEÑA</span>
         <input
           type="text"
           inputMode="decimal"
@@ -267,7 +267,7 @@ export default function StationFormSheet({
           className="accent-st-accent mt-1 h-4 w-4 shrink-0 cursor-pointer"
         />
         <span>
-          <span className="text-st-muted block text-lg font-bold">PEAK PRICING</span>
+          <span className="text-st-muted block text-lg font-bold">TARIFA DE HORA PICO</span>
           <span className="text-st-muted block text-xs">
             Cobrar tarifa de hora pico
             {rates.status === 'ready' ? ` (${describePeak(rates.value)})` : ''} a las cargas que
@@ -288,7 +288,7 @@ export default function StationFormSheet({
         disabled={saving}
         className="brand-fill text-on-primary focus-visible:outline-st-accent mt-7 w-full rounded-full py-4 text-base font-extrabold tracking-wide disabled:opacity-60"
       >
-        {saving ? 'SAVING…' : station ? 'SAVE CHANGES' : 'ADD'}
+        {saving ? 'GUARDANDO…' : station ? 'GUARDAR CAMBIOS' : 'AGREGAR'}
       </button>
 
       {/* La baja es lógica: la estación deja de listarse, no se borra. */}
@@ -298,7 +298,7 @@ export default function StationFormSheet({
           onClick={onDelete}
           className="text-st-offline hover:text-st-offline/80 focus-visible:outline-st-accent mt-4 w-full text-xs font-bold tracking-wide underline underline-offset-4 focus-visible:outline-2"
         >
-          DEACTIVATE STATION
+          DAR DE BAJA LA ESTACIÓN
         </button>
       )}
     </form>

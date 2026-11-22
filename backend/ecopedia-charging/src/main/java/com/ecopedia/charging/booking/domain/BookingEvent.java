@@ -46,6 +46,12 @@ public record BookingEvent(
         return of(BookingEventType.BOOKING_CANCELLED, booking, occurredAt, refunded);
     }
 
+    /** La seña de una reserva anulada por deuda siempre se devuelve (ECO-62). */
+    public static BookingEvent cancelledForDebt(Booking booking, Instant occurredAt) {
+        Boolean refunded = booking.getDepositStatus() == DepositStatus.NONE ? null : Boolean.TRUE;
+        return of(BookingEventType.BOOKING_CANCELLED_FOR_DEBT, booking, occurredAt, refunded);
+    }
+
     public static BookingEvent noShow(Booking booking, Instant occurredAt) {
         return of(BookingEventType.BOOKING_NO_SHOW, booking, occurredAt, null);
     }

@@ -11,5 +11,18 @@ public enum NotificationType {
     BOOKING_CONFIRMED,
     BOOKING_CANCELLED,
     /** El conductor no se presentó y la reserva se cerró sola (ECO-57). */
-    BOOKING_NO_SHOW
+    BOOKING_NO_SHOW,
+    /** La cuenta quedó marcada por una deuda vencida y la reserva se anuló, con la seña devuelta (ECO-62). */
+    BOOKING_CANCELLED_FOR_DEBT,
+    /**
+     * El cobro al cerrar una carga falló y quedó una deuda (ECO-62). Estos cuatro coinciden con
+     * {@code DebtEventType} en {@code ecopedia-integration}, que es quien los publica.
+     */
+    DEBT_RECORDED,
+    /** Falló un reintento del cobro y quedan otros. */
+    DEBT_RETRY_FAILED,
+    /** Falló el último reintento: la cuenta quedó marcada. Un solo aviso para las dos cosas (Manuel, 22/11). */
+    DEBT_DEFAULTED,
+    /** La deuda se cobró. */
+    DEBT_SETTLED
 }

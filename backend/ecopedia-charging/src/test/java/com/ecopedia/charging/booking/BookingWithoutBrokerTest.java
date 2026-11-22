@@ -1,17 +1,23 @@
 package com.ecopedia.charging.booking;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ecopedia.charging.booking.domain.BookingEvent;
 import com.ecopedia.charging.booking.domain.ConnectorCatalog;
 import com.ecopedia.charging.booking.domain.ConnectorSnapshot;
+import com.ecopedia.charging.booking.messaging.PendingNotificationRelay;
+import com.ecopedia.charging.booking.messaging.PendingNotificationRepository;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
 import com.ecopedia.charging.checkout.domain.TariffDirectory;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -19,6 +25,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,6 +48,9 @@ import org.springframework.test.web.servlet.MockMvc;
  * adaptador deje escapar la excepción para que el conductor reciba un 500 por una reserva que
  * quedó guardada. El broker se "cae" reemplazando el {@code JmsTemplate} por uno que falla como
  * falla el de verdad cuando no hay a quién conectarse.
+ *
+ * <p>Y el aviso no se pierde (ECO-177, QA-27): queda en {@code pending_notifications} y sale cuando
+ * el broker vuelve. El ida y vuelta con un Artemis de verdad se probó en vivo (ver CLAUDE.md).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -71,8 +81,20 @@ class BookingWithoutBrokerTest {
     @MockitoBean
     private JmsTemplate jmsTemplate;
 
+    @Autowired
+    private PendingNotificationRepository pendingNotifications;
+
+    @Autowired
+    private PendingNotificationRelay relay;
+
     @Value("${ecopedia.jwt.secret}")
     private String secret;
+
+    /** La base en memoria la comparten los contextos de los tests: no dejar pendientes para los demás. */
+    @AfterEach
+    void cleanUp() {
+        pendingNotifications.deleteAll();
+    }
 
     @Test
     @DisplayName("Si el aviso no se puede publicar, la reserva se confirma igual")
@@ -101,7 +123,7 @@ class BookingWithoutBrokerTest {
                 .getResponse()
                 .getContentAsString();
 
-        mockMvc.perform(post("/api/checkout/booking")
+        String booking = mockMvc.perform(post("/api/checkout/booking")
                         .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
                         .header(HttpHeaders.AUTHORIZATION, driver)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -111,9 +133,29 @@ class BookingWithoutBrokerTest {
                                 """
                                         .formatted(json.readTree(hold).get("id").asText())))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.status").value("CONFIRMED"));
+                .andExpect(jsonPath("$.status").value("CONFIRMED"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
 
         // Y el aviso sí se intentó: lo que se prueba es que su falla no llega al conductor.
         verify(jmsTemplate).convertAndSend(anyString(), any(Object.class), any(MessagePostProcessor.class));
+
+        // El aviso no se perdió: quedó pendiente.
+        long bookingId = json.readTree(booking).get("bookingId").asLong();
+        String eventId = "booking-" + bookingId + "-BOOKING_CONFIRMED";
+        assertThat(pendingNotifications.existsByEventId(eventId)).isTrue();
+
+        // Vuelve el broker: el barrido lo publica y lo saca de la tabla.
+        reset(jmsTemplate);
+        assertThat(relay.relay()).isEqualTo(1);
+
+        verify(jmsTemplate)
+                .convertAndSend(
+                        anyString(),
+                        argThat((Object sent) -> sent instanceof BookingEvent event
+                                && event.eventId().equals(eventId)),
+                        any(MessagePostProcessor.class));
+        assertThat(pendingNotifications.existsByEventId(eventId)).isFalse();
     }
 }

@@ -57,6 +57,28 @@ class NotificationTemplatesTest {
     }
 
     @Test
+    @DisplayName("ECO-62: anulada por deuda, dice por qué, que la seña se reintegra y qué hacer para volver a reservar")
+    void cancelledForDebtWithDeposit() {
+        NotificationToDispatch debt = event(NotificationType.BOOKING_CANCELLED_FOR_DEBT, "8000.00", true, "4242");
+
+        assertThat(TEMPLATES.title(debt)).isEqualTo("Anulamos tu reserva");
+        assertThat(TEMPLATES.body(debt, PALERMO))
+                .isEqualTo("Anulamos tu reserva en Estación Palermo del domingo 1/11 de 18:00 a 19:00 porque no "
+                        + "pudimos cobrar tu última carga. Te reintegramos la seña. Pagá el saldo desde Medios de "
+                        + "pago para volver a reservar.");
+    }
+
+    @Test
+    @DisplayName("ECO-62: anulada por deuda sin seña, no habla de una seña que no hubo")
+    void cancelledForDebtWithoutDeposit() {
+        NotificationToDispatch debt = event(NotificationType.BOOKING_CANCELLED_FOR_DEBT, null, null, null);
+
+        assertThat(TEMPLATES.body(debt, PALERMO))
+                .isEqualTo("Anulamos tu reserva en Estación Palermo del domingo 1/11 de 18:00 a 19:00 porque no "
+                        + "pudimos cobrar tu última carga. Pagá el saldo desde Medios de pago para volver a reservar.");
+    }
+
+    @Test
     @DisplayName("No-show sin seña: no habla de una seña que no hubo")
     void noShowWithoutDeposit() {
         NotificationToDispatch noShow = event(NotificationType.BOOKING_NO_SHOW, null, null, null);
@@ -115,5 +137,51 @@ class NotificationTemplatesTest {
 
         assertThat(body).hasSizeLessThanOrEqualTo(NotificationTemplates.MAX_BODY);
         assertThat(body).doesNotContain("DDDD");
+    }
+
+    @Test
+    @DisplayName(
+            "Cubre ramas de cancelación con seña sin flags, plazo 1 hora, sin plazo, dirección en blanco y estación nula")
+    void extraTemplateBranches() {
+        NotificationToDispatch cancelledNullRefunded =
+                event(NotificationType.BOOKING_CANCELLED, "8000.00", null, "4242");
+        assertThat(TEMPLATES.body(cancelledNullRefunded, null))
+                .contains("del conector 12")
+                .contains("El horario quedó libre.");
+
+        NotificationToDispatch cancelledOneHour = new NotificationToDispatch(
+                "b-1h",
+                NotificationType.BOOKING_CANCELLED,
+                5L,
+                1L,
+                12L,
+                START,
+                END,
+                new BigDecimal("8000.00"),
+                false,
+                "4242",
+                START.minusSeconds(3600));
+        StationInfo blankAddress = new StationInfo(3L, "Estación Sur", "   ", "TYPE_2");
+        assertThat(TEMPLATES.body(cancelledOneHour, blankAddress))
+                .contains("Estación Sur, conector TYPE_2")
+                .contains("menos de 1 hora");
+
+        NotificationToDispatch cancelledNullDeadline = new NotificationToDispatch(
+                "b-nd",
+                NotificationType.BOOKING_CANCELLED,
+                5L,
+                1L,
+                12L,
+                START,
+                END,
+                new BigDecimal("8000.00"),
+                false,
+                "4242",
+                null);
+        assertThat(TEMPLATES.body(cancelledNullDeadline, PALERMO)).contains("el plazo de devolución");
+
+        StationInfo hugeNameOnly = new StationInfo(3L, "X".repeat(600), null, null);
+        String truncated = TEMPLATES.body(cancelledNullRefunded, hugeNameOnly);
+        assertThat(truncated).hasSize(NotificationTemplates.MAX_BODY).endsWith("…");
     }
 }
