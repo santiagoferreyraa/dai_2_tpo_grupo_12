@@ -448,7 +448,8 @@ no directo a la base.
 
 Al confirmar o cancelar una reserva, Reservas deja un mensaje en la cola
 `notifications.dispatch` de Artemis, y `ecopedia-async` (8084) lo consume, arma el aviso, lo
-guarda y manda el mail. **El mail es simulado:** se escribe en el log.
+guarda y manda el mail. **El mail es simulado:** se escribe en el log. Por la misma cola, Pagos
+(`ecopedia-integration`) avisa lo que le pasa a una deuda: ver "La deuda del conductor".
 
 `pnpm dev` ya levanta `async` y también el broker, que es el de `docker-compose.yml`: lo arranca el
 proceso `docker` de la lista, sin tocar PostgreSQL. Lo único que hace falta es Docker abierto y el
@@ -594,6 +595,12 @@ carga.
 | 20, 40 y 60 minutos después | Pagos la vuelve a cobrar con la tarjeta más reciente que sirva. Si sale, la deuda se salda |
 | Falla el tercer reintento | La deuda queda **vencida**: se anulan las reservas confirmadas del conductor **con la seña devuelta** (llega un aviso por cada una) y ya no se reintenta sola |
 | El conductor la paga | Desde el perfil, con la tarjeta que elija: se salda, esté pendiente o vencida |
+
+Cada paso le llega al conductor como aviso en la campanita (y en el mail simulado): "No pudimos cobrar tu
+carga" al nacer la deuda, uno por cada reintento que falla ("reintento 1 de 3", "2 de 3"), "Tu cuenta tiene
+un pago vencido" con el tercero, y "Pago recibido" cuando se cobra, sea por un reintento o desde el perfil.
+Pagos los publica en `notifications.dispatch` (`_type` `debt-event`); **sin el broker, el cobro sigue
+igual** y el aviso espera en `integration.pending_notifications` hasta que vuelva, como los de Reservas.
 
 Una pasarela caída **no cuenta** como reintento: se vuelve a probar a los 20 minutos. La carga en curso
 no se corta.

@@ -57,8 +57,10 @@ public class NotificationServiceImpl implements NotificationService {
             return;
         }
 
-        StationInfo station =
-                stationDirectory.findByConnector(request.connectorId()).orElse(null);
+        // Un aviso de deuda no es de ningún conector: no hay estación que pedirle a core (ECO-62).
+        StationInfo station = request.connectorId() == null
+                ? null
+                : stationDirectory.findByConnector(request.connectorId()).orElse(null);
         String title = templates.title(request);
         String body = templates.body(request, station);
 

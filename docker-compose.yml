@@ -185,7 +185,7 @@ services:
     container_name: ecopedia-integration
     command: ["java", "-jar", "/app/ecopedia-integration.jar"]
     environment:
-      <<: [*java-env, *db, *jwt, *internal-token]
+      <<: [*java-env, *db, *jwt, *broker, *internal-token]
       SERVER_PORT: 8083
       ECOPEDIA_PAYMENT_GATEWAY_URL: http://payment-gateway:8086
       ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN: ${ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN:?Falta ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN en el .env. Correr pnpm env:init}

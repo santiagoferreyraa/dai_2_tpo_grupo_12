@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -14,6 +15,8 @@ import com.ecopedia.integration.payment.domain.CardData;
 import com.ecopedia.integration.payment.domain.CardValidation;
 import com.ecopedia.integration.payment.domain.ConsumptionChargeRequest;
 import com.ecopedia.integration.payment.domain.ConsumptionChargeResult;
+import com.ecopedia.integration.payment.domain.DebtEvent;
+import com.ecopedia.integration.payment.domain.DebtEventType;
 import com.ecopedia.integration.payment.domain.DepositChargeRepository;
 import com.ecopedia.integration.payment.domain.GatewayCharge;
 import com.ecopedia.integration.payment.domain.PaymentGatewayPort;
@@ -30,6 +33,7 @@ import com.ecopedia.integration.payment.domain.TokenizedCard;
 import com.ecopedia.integration.payment.service.PaymentServiceImpl;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
@@ -457,6 +461,42 @@ class PaymentServiceTest {
         assertEquals(PendingPaymentStatus.PENDING, captor.getValue().getStatus());
         assertEquals("sess-declined", captor.getValue().getReference());
         assertEquals(new BigDecimal("900.00"), captor.getValue().getAmount());
+    }
+
+    @Test
+    @DisplayName("chargeConsumption: la deuda recién guardada se avisa una vez, con el próximo reintento (ECO-62)")
+    void chargeConsumption_publishesTheDebtOnceSaved() {
+        List<DebtEvent> events = new ArrayList<>();
+        PaymentServiceImpl service = new PaymentServiceImpl(
+                paymentMethodRepository,
+                depositChargeRepository,
+                pendingPaymentRepository,
+                paymentGateway,
+                fixedClock,
+                Duration.ofMinutes(20),
+                events::add);
+        PaymentMethod card = existing(DRIVER, CardBrand.VISA, "1111", 12, 2029);
+        when(pendingPaymentRepository.findByReference("sess-declined")).thenReturn(Optional.empty());
+        when(paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(DRIVER))
+                .thenReturn(List.of(card));
+        when(paymentGateway.charge(anyString(), any(), anyString(), anyString(), anyString()))
+                .thenReturn(new GatewayCharge("pay-err", false, "cc_rejected_insufficient_amount"));
+        when(pendingPaymentRepository.save(any())).thenAnswer(inv -> {
+            PendingPayment p = inv.getArgument(0);
+            p.setId(50L);
+            return p;
+        });
+
+        service.chargeConsumption(new ConsumptionChargeRequest(
+                DRIVER, null, new BigDecimal("900.00"), "sess-declined", "session-consumption-sess-declined"));
+
+        assertEquals(1, events.size());
+        DebtEvent event = events.get(0);
+        assertEquals("debt-50-recorded", event.eventId());
+        assertEquals(DebtEventType.DEBT_RECORDED, event.type());
+        assertEquals(DRIVER, event.driverId());
+        assertEquals(fixedClock.instant(), event.incurredAt());
+        assertEquals(fixedClock.instant().plus(Duration.ofMinutes(20)), event.nextAttemptAt());
     }
 
     @Test

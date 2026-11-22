@@ -2,6 +2,8 @@ package com.ecopedia.integration.payment.service;
 
 import com.ecopedia.integration.payment.domain.BookingsUnavailableException;
 import com.ecopedia.integration.payment.domain.DebtCollectionService;
+import com.ecopedia.integration.payment.domain.DebtEvent;
+import com.ecopedia.integration.payment.domain.DebtEventPublisher;
 import com.ecopedia.integration.payment.domain.DebtNotFoundException;
 import com.ecopedia.integration.payment.domain.DebtPaymentDeclinedException;
 import com.ecopedia.integration.payment.domain.DebtPaymentInProgressException;
@@ -49,6 +51,7 @@ public class DebtCollectionServiceImpl implements DebtCollectionService {
     private final PaymentMethodRepository cards;
     private final PaymentGatewayPort paymentGateway;
     private final DriverBookingsPort driverBookings;
+    private final DebtEventPublisher debtEvents;
     private final Clock clock;
     private final Duration retryInterval;
     private final int maxRetries;
@@ -58,6 +61,7 @@ public class DebtCollectionServiceImpl implements DebtCollectionService {
             PaymentMethodRepository cards,
             PaymentGatewayPort paymentGateway,
             DriverBookingsPort driverBookings,
+            DebtEventPublisher debtEvents,
             Clock clock,
             @Value("${ecopedia.payments.debt.retry-interval}") Duration retryInterval,
             @Value("${ecopedia.payments.debt.max-retries}") int maxRetries) {
@@ -68,6 +72,7 @@ public class DebtCollectionServiceImpl implements DebtCollectionService {
         this.cards = cards;
         this.paymentGateway = paymentGateway;
         this.driverBookings = driverBookings;
+        this.debtEvents = debtEvents;
         this.clock = clock;
         this.retryInterval = retryInterval;
         this.maxRetries = maxRetries;
@@ -126,6 +131,7 @@ public class DebtCollectionServiceImpl implements DebtCollectionService {
             boolean wasDefaulted = claimed.isDefaulted();
             claimed.markSettled(clock.instant(), card.getId(), answer.paymentId());
             PendingPayment saved = debts.save(claimed);
+            debtEvents.publish(DebtEvent.settled(saved, clock.instant()));
             log.info(
                     "Deuda {} (${}) saldada por el conductor {} desde el perfil{}: pago {}",
                     debtId,
@@ -179,10 +185,16 @@ public class DebtCollectionServiceImpl implements DebtCollectionService {
             if (debt == null || !debt.isPending()) {
                 return false;
             }
+            int retriesBefore = debt.getRetryCount();
             boolean settled = chargeRetry(debt, now);
             debt = debts.save(debt);
             if (settled) {
+                debtEvents.publish(DebtEvent.settled(debt, clock.instant()));
                 return true;
+            }
+            // Con la pasarela caída el reintento no cuenta, y tampoco se avisa: no pasó nada nuevo.
+            if (debt.getRetryCount() > retriesBefore) {
+                debtEvents.publish(DebtEvent.retryFailed(debt, maxRetries, clock.instant()));
             }
         } finally {
             debts.releaseClaim(debtId);
