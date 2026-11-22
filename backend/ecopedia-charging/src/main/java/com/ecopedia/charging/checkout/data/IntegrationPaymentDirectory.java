@@ -108,6 +108,25 @@ public class IntegrationPaymentDirectory implements PaymentDirectory {
     }
 
     @Override
+    public boolean hasOutstandingDebt(Long driverId) {
+        try {
+            DebtStatus answer = internalRestClient
+                    .get()
+                    .uri("/internal/payments/drivers/{driverId}/debt", driverId)
+                    .retrieve()
+                    .body(DebtStatus.class);
+            if (answer == null) {
+                throw new PaymentMethodsUnavailableException(
+                        new IllegalStateException("Respuesta vacía al consultar la deuda"));
+            }
+            return answer.hasDebt();
+        } catch (RestClientException ex) {
+            log.warn("No se pudo consultar la deuda del conductor {} a integration: {}", driverId, ex.getMessage());
+            throw new PaymentMethodsUnavailableException(ex);
+        }
+    }
+
+    @Override
     public void validatePaymentMethodForCharging(Long driverId, Long paymentMethodId) {
         try {
             internalRestClient
@@ -190,6 +209,8 @@ public class IntegrationPaymentDirectory implements PaymentDirectory {
     private record PaymentMethodSummary(Long id, String brand, String lastFourDigits, boolean isDefault) {}
 
     private record InternalValidationRequest(Long driverId, Long paymentMethodId) {}
+
+    private record DebtStatus(boolean hasDebt) {}
 
     private record ConsumptionChargeBody(
             Long driverId, Long paymentMethodId, BigDecimal amount, String sessionId, String idempotencyKey) {}

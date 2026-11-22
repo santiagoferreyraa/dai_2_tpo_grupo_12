@@ -20,7 +20,7 @@ import java.time.Instant;
  * sigue guardando en la misma columna de texto: no hizo falta migrar.
  *
  * <pre>
- *                  ┌──── cancelar · falla al habilitar ────► CANCELLED
+ *                  ┌──── cancelar · falla al habilitar · deuda ─► CANCELLED
  *                  ├──── no se presentó ───────────────────► NO_SHOW
  *   CONFIRMED ─────┼──── cerrar la carga ──────────────────► COMPLETED
  *                  └──── habilitar ──► IN_PROGRESS ─┬─ falla al habilitar ─► CANCELLED
@@ -36,6 +36,11 @@ interface BookingState {
     /** El conductor cancela (ECO-32). */
     default void cancel(Booking booking, Instant now) {
         throw conflict(booking, "la cancelación");
+    }
+
+    /** La cuenta del conductor quedó marcada por una deuda vencida (ECO-62). */
+    default void cancelForDebt(Booking booking, Instant now) {
+        throw conflict(booking, "la anulación por deuda");
     }
 
     /** El conductor no se presentó (RF09, ECO-57). */

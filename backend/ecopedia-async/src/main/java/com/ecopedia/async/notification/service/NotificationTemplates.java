@@ -42,6 +42,7 @@ class NotificationTemplates {
             case BOOKING_CONFIRMED -> "Reserva confirmada";
             case BOOKING_CANCELLED -> "Reserva cancelada";
             case BOOKING_NO_SHOW -> "No te presentaste a tu reserva";
+            case BOOKING_CANCELLED_FOR_DEBT -> "Anulamos tu reserva";
         };
     }
 
@@ -70,6 +71,10 @@ class NotificationTemplates {
                         + ". Pasaron los 15 minutos de tolerancia, así que la cancelamos"
                         + (request.hasDeposit() ? " y la seña no se devuelve" : "")
                         + ". Ya podés hacer otra reserva.";
+            case BOOKING_CANCELLED_FOR_DEBT ->
+                "Anulamos tu reserva " + where + " del " + when + " porque no pudimos cobrar tu última carga."
+                        + (request.hasDeposit() ? " Te reintegramos la seña." : "")
+                        + " Pagá el saldo desde Medios de pago para volver a reservar.";
         };
     }
 

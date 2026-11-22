@@ -57,6 +57,28 @@ class NotificationTemplatesTest {
     }
 
     @Test
+    @DisplayName("ECO-62: anulada por deuda, dice por qué, que la seña se reintegra y qué hacer para volver a reservar")
+    void cancelledForDebtWithDeposit() {
+        NotificationToDispatch debt = event(NotificationType.BOOKING_CANCELLED_FOR_DEBT, "8000.00", true, "4242");
+
+        assertThat(TEMPLATES.title(debt)).isEqualTo("Anulamos tu reserva");
+        assertThat(TEMPLATES.body(debt, PALERMO))
+                .isEqualTo("Anulamos tu reserva en Estación Palermo del domingo 1/11 de 18:00 a 19:00 porque no "
+                        + "pudimos cobrar tu última carga. Te reintegramos la seña. Pagá el saldo desde Medios de "
+                        + "pago para volver a reservar.");
+    }
+
+    @Test
+    @DisplayName("ECO-62: anulada por deuda sin seña, no habla de una seña que no hubo")
+    void cancelledForDebtWithoutDeposit() {
+        NotificationToDispatch debt = event(NotificationType.BOOKING_CANCELLED_FOR_DEBT, null, null, null);
+
+        assertThat(TEMPLATES.body(debt, PALERMO))
+                .isEqualTo("Anulamos tu reserva en Estación Palermo del domingo 1/11 de 18:00 a 19:00 porque no "
+                        + "pudimos cobrar tu última carga. Pagá el saldo desde Medios de pago para volver a reservar.");
+    }
+
+    @Test
     @DisplayName("No-show sin seña: no habla de una seña que no hubo")
     void noShowWithoutDeposit() {
         NotificationToDispatch noShow = event(NotificationType.BOOKING_NO_SHOW, null, null, null);

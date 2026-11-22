@@ -11,5 +11,7 @@ public enum NotificationType {
     BOOKING_CONFIRMED,
     BOOKING_CANCELLED,
     /** El conductor no se presentó y la reserva se cerró sola (ECO-57). */
-    BOOKING_NO_SHOW
+    BOOKING_NO_SHOW,
+    /** La cuenta quedó marcada por una deuda vencida y la reserva se anuló, con la seña devuelta (ECO-62). */
+    BOOKING_CANCELLED_FOR_DEBT
 }

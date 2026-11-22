@@ -581,6 +581,44 @@ Los plazos son configurables en `charging`, y para una demo conviene achicarlos:
 Si se cambia la tolerancia, hay que cambiar también los textos que dicen "15 minutos" (el aviso de
 `async` y la pantalla de reservar).
 
+### La deuda del conductor
+
+Si al cerrar una carga el cobro del consumo no sale —la tarjeta rechaza, el conductor no tiene ninguna
+que sirva o la pasarela no contesta—, la sesión se cierra igual y queda una **deuda** en Pagos. Mientras
+haya deuda, el conductor **no puede reservar** (el checkout da 409 `DRIVER_HAS_DEBT`) **ni habilitar** una
+carga.
+
+| Momento | Qué pasa |
+|---------|----------|
+| Cierre de la carga | Falla el cobro: queda la deuda, con el primer reintento a los 20 minutos |
+| 20, 40 y 60 minutos después | Pagos la vuelve a cobrar con la tarjeta más reciente que sirva. Si sale, la deuda se salda |
+| Falla el tercer reintento | La deuda queda **vencida**: se anulan las reservas confirmadas del conductor **con la seña devuelta** (llega un aviso por cada una) y ya no se reintenta sola |
+| El conductor la paga | Desde el perfil, con la tarjeta que elija: se salda, esté pendiente o vencida |
+
+Una pasarela caída **no cuenta** como reintento: se vuelve a probar a los 20 minutos. La carga en curso
+no se corta.
+
+Las rutas del conductor son **`GET /api/payment-debts`** (lo que debe) y
+**`POST /api/payment-debts/{id}/payment`** (pagar; cuerpo opcional `{"paymentMethodId": 3}` y la
+cabecera `Idempotency-Key`, como el checkout). Las respuestas de error llevan su `code`: 402
+`CARD_DECLINED`, 422 `PAYMENT_METHOD_INVALID`, 409 `DEBT_PAYMENT_IN_PROGRESS` (el reintento la está
+cobrando en ese momento) y 503 `PAYMENT_GATEWAY_UNAVAILABLE`.
+
+Para anular las reservas, Pagos llama a **`POST /internal/bookings/debt-cancellations`** en `charging`
+(8082), con la clave de servicio; en Docker la dirección sale de `ECOPEDIA_CHARGING_URL`. El checkout
+pregunta la deuda por **`GET /internal/payments/drivers/{id}/debt`** en `integration`.
+
+Para una demo conviene achicar los plazos, en `integration`:
+
+| Variable | Qué es | Por defecto |
+|---|---|---|
+| `ECOPEDIA_DEBT_RETRY_INTERVAL` | Cuánto se espera entre reintentos | `PT20M` |
+| `ECOPEDIA_DEBT_MAX_RETRIES` | Cuántos reintentos antes de marcar la cuenta | `3` |
+| `ECOPEDIA_DEBT_SWEEP_INTERVAL` | Cada cuánto se fija qué reintentos tocan | `PT1M` |
+
+Para provocar una deuda: que la tarjeta más reciente del conductor sea la `…9995` de la pasarela, que
+rechaza siempre, y cerrar una carga. Para pagarla, elegir otra tarjeta en el perfil.
+
 ### La sesión de carga
 
 Habilitar, seguir y detener una carga son rutas de `charging` (8082), todas del conductor. **En la

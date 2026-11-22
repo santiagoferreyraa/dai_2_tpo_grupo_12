@@ -47,6 +47,44 @@ class IntegrationPaymentDirectoryTest {
     }
 
     @Test
+    @DisplayName("ECO-62: pregunta la deuda por la ruta interna y lee la respuesta")
+    void asksForTheDebt() {
+        RestClient.Builder builder = RestClient.builder().baseUrl("http://integration");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        RestClient client = builder.build();
+
+        server.expect(requestTo("http://integration/internal/payments/drivers/10/debt"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"hasDebt\":true}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://integration/internal/payments/drivers/11/debt"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"hasDebt\":false}", MediaType.APPLICATION_JSON));
+
+        IntegrationPaymentDirectory directory = new IntegrationPaymentDirectory(client, client);
+
+        assertThat(directory.hasOutstandingDebt(10L)).isTrue();
+        assertThat(directory.hasOutstandingDebt(11L)).isFalse();
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("ECO-62: con Pagos sin contestar la deuda no se asume que no hay: avisa que no pudo verificar")
+    void debtCheckWithPaymentsDownIsNotAPass() {
+        RestClient.Builder builder = RestClient.builder().baseUrl("http://integration");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        RestClient client = builder.build();
+
+        server.expect(requestTo("http://integration/internal/payments/drivers/10/debt"))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+
+        IntegrationPaymentDirectory directory = new IntegrationPaymentDirectory(client, client);
+
+        assertThatThrownBy(() -> directory.hasOutstandingDebt(10L))
+                .isInstanceOf(PaymentMethodsUnavailableException.class);
+        server.verify();
+    }
+
+    @Test
     @DisplayName("Validación para carga exitosa: no lanza excepción ante 200 OK")
     void validateForCharging_success() {
         RestClient.Builder builder = RestClient.builder().baseUrl("http://integration");

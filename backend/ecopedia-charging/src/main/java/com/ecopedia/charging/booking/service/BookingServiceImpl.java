@@ -573,6 +573,42 @@ public class BookingServiceImpl implements BookingService {
         eventPublisher.publish(BookingEvent.cancelled(booking, now));
     }
 
+    /**
+     * Cada reserva se guarda por su cuenta, como en el barrido de la incomparecencia: si una cambió en
+     * el mismo instante —el conductor la canceló, o el barrido la marcó—, se saltea y gana lo otro, que
+     * es lo que pasó de verdad. Pagos lo vuelve a pedir si no contestamos, y la segunda vez no encuentra
+     * lo que ya se anuló.
+     */
+    @Override
+    public int cancelConfirmedBookingsForDebt(Long driverId) {
+        Instant now = clock.instant();
+        List<Booking> confirmed =
+                bookingRepository.findByDriverIdAndStatusAndWindowEndAfter(driverId, BookingStatus.CONFIRMED, now);
+        int cancelled = 0;
+        for (Booking booking : confirmed) {
+            booking.cancelForDebt(now);
+            Booking saved;
+            try {
+                saved = bookingRepository.save(booking);
+            } catch (OptimisticLockingFailureException changedMeanwhile) {
+                log.info("La reserva {} cambió mientras se la anulaba por deuda: se saltea", booking.getId());
+                continue;
+            }
+            cancelled++;
+            log.info(
+                    "Reserva {} del conductor {} anulada por deuda vencida: el conector {} queda libre entre {} y {}."
+                            + " Seña: {}",
+                    saved.getId(),
+                    driverId,
+                    saved.getConnectorId(),
+                    saved.getWindow().start(),
+                    saved.getWindow().end(),
+                    saved.getDepositStatus());
+            eventPublisher.publish(BookingEvent.cancelledForDebt(saved, now));
+        }
+        return cancelled;
+    }
+
     @Override
     public Optional<Booking> findByCheckoutKey(Long driverId, String checkoutKey) {
         return bookingRepository.findByDriverIdAndCheckoutKey(driverId, checkoutKey);

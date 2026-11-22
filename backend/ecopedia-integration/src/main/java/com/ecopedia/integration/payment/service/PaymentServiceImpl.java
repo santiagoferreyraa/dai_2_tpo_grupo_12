@@ -28,11 +28,14 @@ import com.ecopedia.integration.payment.domain.TokenizedCard;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -60,18 +63,38 @@ public class PaymentServiceImpl implements PaymentService {
     private final PendingPaymentRepository pendingPaymentRepository;
     private final PaymentGatewayPort paymentGateway;
     private final Clock clock;
+    private final Duration debtRetryInterval;
 
+    @Autowired
+    public PaymentServiceImpl(
+            PaymentMethodRepository paymentMethodRepository,
+            DepositChargeRepository depositChargeRepository,
+            PendingPaymentRepository pendingPaymentRepository,
+            PaymentGatewayPort paymentGateway,
+            Clock clock,
+            @Value("${ecopedia.payments.debt.retry-interval}") Duration debtRetryInterval) {
+        this.paymentMethodRepository = paymentMethodRepository;
+        this.depositChargeRepository = depositChargeRepository;
+        this.pendingPaymentRepository = pendingPaymentRepository;
+        this.paymentGateway = paymentGateway;
+        this.clock = clock;
+        this.debtRetryInterval = debtRetryInterval;
+    }
+
+    /** Para los tests: el intervalo de reintento de la deuda que decidió Manuel (20 minutos). */
     public PaymentServiceImpl(
             PaymentMethodRepository paymentMethodRepository,
             DepositChargeRepository depositChargeRepository,
             PendingPaymentRepository pendingPaymentRepository,
             PaymentGatewayPort paymentGateway,
             Clock clock) {
-        this.paymentMethodRepository = paymentMethodRepository;
-        this.depositChargeRepository = depositChargeRepository;
-        this.pendingPaymentRepository = pendingPaymentRepository;
-        this.paymentGateway = paymentGateway;
-        this.clock = clock;
+        this(
+                paymentMethodRepository,
+                depositChargeRepository,
+                pendingPaymentRepository,
+                paymentGateway,
+                clock,
+                Duration.ofMinutes(20));
     }
 
     @Override
@@ -312,7 +335,8 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional(readOnly = true)
     public boolean hasOutstandingDebt(Long driverId) {
-        return pendingPaymentRepository.existsByDriverIdAndStatus(driverId, PendingPaymentStatus.PENDING);
+        // Pendiente o vencida: las dos bloquean (ECO-62).
+        return pendingPaymentRepository.existsByDriverIdAndStatusIn(driverId, PendingPaymentStatus.OPEN);
     }
 
     @Override
@@ -386,8 +410,10 @@ public class PaymentServiceImpl implements PaymentService {
 
     private ConsumptionChargeResult recordDebt(
             Long driverId, Long paymentMethodId, BigDecimal amount, String reason, String sessionId) {
-        PendingPayment saved = pendingPaymentRepository.save(
-                new PendingPayment(driverId, paymentMethodId, amount, reason, sessionId, clock.instant()));
+        PendingPayment debt = new PendingPayment(driverId, paymentMethodId, amount, reason, sessionId, clock.instant());
+        // El primer reintento, a 20 minutos del cobro que falló (ECO-62). Lo hace DebtCollectionService.
+        debt.scheduleFirstRetry(debtRetryInterval);
+        PendingPayment saved = pendingPaymentRepository.save(debt);
         return ConsumptionChargeResult.debtRecorded(amount, sessionId, saved.getId(), reason);
     }
 

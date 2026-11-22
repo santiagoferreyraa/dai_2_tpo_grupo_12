@@ -25,6 +25,21 @@ final class ConfirmedBookingState extends ActiveBookingState {
         booking.settleDepositOnCancellation(now);
     }
 
+    /**
+     * La cuenta del conductor quedó marcada por deuda (ECO-62): la reserva se anula y la seña se
+     * devuelve entera, sin mirar el plazo de preaviso —decidido por Manuel el 20/11—, porque el
+     * conductor no faltó a esta reserva: se la anula el sistema por otra cosa. Una cuya ventana ya
+     * terminó no tiene nada que liberar.
+     */
+    @Override
+    public void cancelForDebt(Booking booking, Instant now) {
+        if (!booking.getWindow().end().isAfter(now)) {
+            throw new BookingStateConflictException(booking.getId(), "terminada", "la anulación por deuda");
+        }
+        booking.moveTo(BookingStatus.CANCELLED);
+        booking.refundWholeDeposit();
+    }
+
     /** La seña queda para el operador: es para lo que existe. */
     @Override
     public void markNoShow(Booking booking) {

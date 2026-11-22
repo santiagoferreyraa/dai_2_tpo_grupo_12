@@ -113,6 +113,15 @@ class InMemoryBookingRepository implements BookingRepository {
     }
 
     @Override
+    public List<Booking> findByDriverIdAndStatusAndWindowEndAfter(Long driverId, BookingStatus status, Instant now) {
+        return saved.values().stream()
+                .filter(booking -> booking.getDriverId().equals(driverId))
+                .filter(booking -> booking.getStatus() == status)
+                .filter(booking -> booking.getWindow().end().isAfter(now))
+                .toList();
+    }
+
+    @Override
     public List<Booking> findByDriverIdOrderByWindowStartAsc(Long driverId) {
         List<Booking> ofDriver = new ArrayList<>(saved.values().stream()
                 .filter(booking -> booking.getDriverId().equals(driverId))

@@ -11,11 +11,14 @@ import com.ecopedia.charging.checkout.domain.CheckoutFacade;
 import com.ecopedia.charging.checkout.domain.CheckoutResult;
 import com.ecopedia.charging.checkout.domain.DepositCharge;
 import com.ecopedia.charging.checkout.domain.DepositGateway;
+import com.ecopedia.charging.checkout.domain.DriverHasDebtException;
 import com.ecopedia.charging.checkout.domain.GracePeriodNotAcceptedException;
 import com.ecopedia.charging.checkout.domain.IdempotencyKeyRequiredException;
 import com.ecopedia.charging.checkout.domain.IdempotencyKeyReusedException;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
 import com.ecopedia.charging.checkout.domain.PaymentMethodRequiredException;
+import com.ecopedia.charging.checkout.domain.PendingDepositRefund;
+import com.ecopedia.charging.checkout.domain.PendingDepositRefundRepository;
 import com.ecopedia.charging.checkout.domain.TariffDirectory;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -90,6 +93,7 @@ public class BookingCheckoutFacadeImpl implements CheckoutFacade {
     private final TariffDirectory tariffDirectory;
     private final PaymentDirectory paymentDirectory;
     private final DepositGateway depositGateway;
+    private final PendingDepositRefundRepository pendingRefunds;
     private final Clock clock;
 
     public BookingCheckoutFacadeImpl(
@@ -97,11 +101,13 @@ public class BookingCheckoutFacadeImpl implements CheckoutFacade {
             TariffDirectory tariffDirectory,
             PaymentDirectory paymentDirectory,
             DepositGateway depositGateway,
+            PendingDepositRefundRepository pendingRefunds,
             Clock clock) {
         this.bookingService = bookingService;
         this.tariffDirectory = tariffDirectory;
         this.paymentDirectory = paymentDirectory;
         this.depositGateway = depositGateway;
+        this.pendingRefunds = pendingRefunds;
         this.clock = clock;
     }
 
@@ -147,6 +153,12 @@ public class BookingCheckoutFacadeImpl implements CheckoutFacade {
         if (!hasCard) {
             throw new PaymentMethodRequiredException(
                     "Se requiere al menos un medio de pago registrado para confirmar la reserva (RF02)");
+        }
+
+        // Paso 3b: Sin deuda de una carga anterior, pendiente o vencida (RF02, ECO-62). Antes de cobrar
+        // nada: con deuda no se reserva, y la seña no se le cobra para después devolvérsela.
+        if (paymentDirectory.hasOutstandingDebt(driverId)) {
+            throw new DriverHasDebtException(driverId);
         }
 
         // Paso 4: Calcular la seña requerida según política tarifaria vigente (RF06, RF14)
@@ -204,9 +216,9 @@ public class BookingCheckoutFacadeImpl implements CheckoutFacade {
      * Devuelve la seña de un cobro que quedó sin reserva.
      *
      * <p>Si la devolución tampoco sale —Pagos acaba de contestar el cobro, así que es improbable—, la
-     * plata del conductor quedó cobrada sin reserva y nada la va a devolver sola: ERROR con todo lo
-     * necesario para hacerlo a mano. Una tabla de compensaciones pendientes es la versión robusta, y
-     * está anotada como deuda.
+     * deja anotada en {@code pending_deposit_refunds} y la devuelve el barrido de las señas (ECO-62).
+     * Solo si tampoco se puede anotar —la base caída en ese mismo instante— queda el ERROR con todo lo
+     * necesario para devolverla a mano.
      */
     private void compensate(BookingDeposit deposit, Long driverId, Hold hold, RuntimeException failure) {
         if (!deposit.isCharged()) {
@@ -220,13 +232,31 @@ public class BookingCheckoutFacadeImpl implements CheckoutFacade {
         try {
             depositGateway.refund(deposit.chargeId());
         } catch (RuntimeException refundFailed) {
-            log.error(
-                    "SEÑA COBRADA SIN RESERVA: no se pudo devolver el cobro {} de ${} del conductor {} (retención {}). Hay que devolverlo a mano.",
-                    deposit.chargeId(),
-                    deposit.amount(),
-                    driverId,
-                    hold.id(),
-                    refundFailed);
+            try {
+                pendingRefunds.save(new PendingDepositRefund(
+                        deposit.chargeId(),
+                        driverId,
+                        deposit.amount(),
+                        hold.id().toString(),
+                        clock.instant()));
+                log.warn(
+                        "No se pudo devolver en el acto el cobro {} de ${} del conductor {} (retención {}): {}. Queda"
+                                + " anotado y lo devuelve el barrido de las señas",
+                        deposit.chargeId(),
+                        deposit.amount(),
+                        driverId,
+                        hold.id(),
+                        refundFailed.getMessage());
+            } catch (RuntimeException notRecorded) {
+                log.error(
+                        "SEÑA COBRADA SIN RESERVA: no se pudo devolver ni anotar el cobro {} de ${} del conductor {}"
+                                + " (retención {}). Hay que devolverlo a mano.",
+                        deposit.chargeId(),
+                        deposit.amount(),
+                        driverId,
+                        hold.id(),
+                        notRecorded);
+            }
         }
     }
 }

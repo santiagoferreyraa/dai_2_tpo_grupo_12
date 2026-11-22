@@ -47,6 +47,9 @@
 	handle /api/payment-methods* {
 		reverse_proxy integration:8083
 	}
+	handle /api/payment-debts* {
+		reverse_proxy integration:8083
+	}
 	handle /api/notifications* {
 		reverse_proxy async:8084
 	}

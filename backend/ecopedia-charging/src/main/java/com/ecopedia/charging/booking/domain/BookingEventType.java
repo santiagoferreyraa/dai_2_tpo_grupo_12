@@ -9,5 +9,7 @@ package com.ecopedia.charging.booking.domain;
 public enum BookingEventType {
     BOOKING_CONFIRMED,
     BOOKING_CANCELLED,
-    BOOKING_NO_SHOW
+    BOOKING_NO_SHOW,
+    /** La cuenta quedó marcada por una deuda vencida y la reserva se anuló, con la seña devuelta (ECO-62). */
+    BOOKING_CANCELLED_FOR_DEBT
 }

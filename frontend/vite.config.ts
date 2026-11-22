@@ -26,7 +26,7 @@ export default defineConfig({
 
       El orden de estas claves importa: Vite se queda con la PRIMERA que coincida con la ruta, y
       '/api' coincide con todo. Las reglas específicas tienen que ir arriba o las llamadas a
-      reservas, checkout, sesiones, medios de pago y notificaciones terminan en core, que no las
+      reservas, checkout, sesiones, medios de pago, deudas y notificaciones terminan en core, que no las
       conoce y contesta 404.
     */
     proxy: {
@@ -43,6 +43,10 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/api/payment-methods': {
+        target: 'http://localhost:8083',
+        changeOrigin: true,
+      },
+      '/api/payment-debts': {
         target: 'http://localhost:8083',
         changeOrigin: true,
       },

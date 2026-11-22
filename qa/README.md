@@ -9,7 +9,7 @@ Todo lo que el QA necesita para correr las pruebas de los criterios de la Clase 
 | `backend/*/src/test/.../security/ApiAttackTest.java` | QA-07 | JWT hostil, mass assignment e inyección, en los 4 módulos |
 | `backend/*/src/test/.../security/HostileTokens.java` | QA-07 | Tokens vencidos, alterados, `alg=none` y de otro emisor |
 | `backend/ecopedia-core/.../admin/AdminErrorResponseTest.java` | QA-04 | Regresión de DEF-05 (corregido el 02/11) |
-| `qa/postman/` | QA-05 | Colección (99 casos) y su generador |
+| `qa/postman/` | QA-05 | Colección (104 casos) y su generador |
 | `qa/k6/load-critical.js` | QA-06 | 50 usuarios, 5 minutos, 3 endpoints críticos |
 | `qa/zap/zap-plan.yaml` | QA-08 | Escaneo pasivo + activo autenticado |
 | `qa/ci/start-stack.sh`, `stop-stack.sh` | QA-05/06/08 | Levanta los 4 backends y los 3 simuladores, con usuarios ADMIN y CPO de prueba |
