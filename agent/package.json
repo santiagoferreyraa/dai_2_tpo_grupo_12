@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/main.ts",
     "test": "node --test \"test/**/*.test.ts\"",
+    "eval": "node eval/run.ts",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
