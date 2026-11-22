@@ -1,4 +1,4 @@
-import { BoltIcon, CalendarIcon, ClockIcon, CrossIcon } from '@/features/navigation/icons'
+import { BoltIcon, CalendarIcon, CardIcon, ClockIcon, CrossIcon } from '@/features/navigation/icons'
 
 import type { NotificationType } from './types'
 
@@ -37,6 +37,14 @@ const NOTIFICATION_LOOK: Record<NotificationType, NotificationLook> = {
   BOOKING_NO_SHOW: { Icon: ClockIcon, tint: 'text-danger' },
   /* Una reserva anulada por una deuda: es una cancelada, aunque no la haya pedido el conductor. */
   BOOKING_CANCELLED_FOR_DEBT: { Icon: CrossIcon, tint: 'text-danger' },
+  /*
+    La deuda (ECO-62), con la tarjeta: es un tema de pagos, no de una reserva. En rojo mientras no se
+    pudo cobrar; en el verde de la marca cuando se pagó.
+  */
+  DEBT_RECORDED: { Icon: CardIcon, tint: 'text-danger' },
+  DEBT_RETRY_FAILED: { Icon: CardIcon, tint: 'text-danger' },
+  DEBT_DEFAULTED: { Icon: CardIcon, tint: 'text-danger' },
+  DEBT_SETTLED: { Icon: CardIcon, tint: 'text-primary' },
 }
 
 /**

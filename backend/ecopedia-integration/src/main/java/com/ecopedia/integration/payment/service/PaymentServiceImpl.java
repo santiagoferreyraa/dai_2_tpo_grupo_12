@@ -4,6 +4,8 @@ import com.ecopedia.integration.payment.domain.CardData;
 import com.ecopedia.integration.payment.domain.CardValidation;
 import com.ecopedia.integration.payment.domain.ConsumptionChargeRequest;
 import com.ecopedia.integration.payment.domain.ConsumptionChargeResult;
+import com.ecopedia.integration.payment.domain.DebtEvent;
+import com.ecopedia.integration.payment.domain.DebtEventPublisher;
 import com.ecopedia.integration.payment.domain.DepositCharge;
 import com.ecopedia.integration.payment.domain.DepositChargeNotFoundException;
 import com.ecopedia.integration.payment.domain.DepositChargeRepository;
@@ -64,6 +66,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentGatewayPort paymentGateway;
     private final Clock clock;
     private final Duration debtRetryInterval;
+    private final DebtEventPublisher debtEvents;
 
     @Autowired
     public PaymentServiceImpl(
@@ -72,16 +75,21 @@ public class PaymentServiceImpl implements PaymentService {
             PendingPaymentRepository pendingPaymentRepository,
             PaymentGatewayPort paymentGateway,
             Clock clock,
-            @Value("${ecopedia.payments.debt.retry-interval}") Duration debtRetryInterval) {
+            @Value("${ecopedia.payments.debt.retry-interval}") Duration debtRetryInterval,
+            DebtEventPublisher debtEvents) {
         this.paymentMethodRepository = paymentMethodRepository;
         this.depositChargeRepository = depositChargeRepository;
         this.pendingPaymentRepository = pendingPaymentRepository;
         this.paymentGateway = paymentGateway;
         this.clock = clock;
         this.debtRetryInterval = debtRetryInterval;
+        this.debtEvents = debtEvents;
     }
 
-    /** Para los tests: el intervalo de reintento de la deuda que decidió Manuel (20 minutos). */
+    /**
+     * Para los tests: el intervalo de reintento de la deuda que decidió Manuel (20 minutos), y los
+     * avisos de la deuda descartados.
+     */
     public PaymentServiceImpl(
             PaymentMethodRepository paymentMethodRepository,
             DepositChargeRepository depositChargeRepository,
@@ -94,7 +102,8 @@ public class PaymentServiceImpl implements PaymentService {
                 pendingPaymentRepository,
                 paymentGateway,
                 clock,
-                Duration.ofMinutes(20));
+                Duration.ofMinutes(20),
+                event -> {});
     }
 
     @Override
@@ -414,6 +423,8 @@ public class PaymentServiceImpl implements PaymentService {
         // El primer reintento, a 20 minutos del cobro que falló (ECO-62). Lo hace DebtCollectionService.
         debt.scheduleFirstRetry(debtRetryInterval);
         PendingPayment saved = pendingPaymentRepository.save(debt);
+        // Recién guardada: el aviso no puede llegar antes que la deuda que nombra (ECO-62).
+        debtEvents.publish(DebtEvent.recorded(saved, clock.instant()));
         return ConsumptionChargeResult.debtRecorded(amount, sessionId, saved.getId(), reason);
     }
 

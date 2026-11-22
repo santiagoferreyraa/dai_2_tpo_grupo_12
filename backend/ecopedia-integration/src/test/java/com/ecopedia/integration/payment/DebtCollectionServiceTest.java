@@ -13,6 +13,8 @@ import static org.mockito.Mockito.when;
 
 import com.ecopedia.integration.payment.domain.BookingsUnavailableException;
 import com.ecopedia.integration.payment.domain.CardBrand;
+import com.ecopedia.integration.payment.domain.DebtEvent;
+import com.ecopedia.integration.payment.domain.DebtEventType;
 import com.ecopedia.integration.payment.domain.DebtNotFoundException;
 import com.ecopedia.integration.payment.domain.DebtPaymentDeclinedException;
 import com.ecopedia.integration.payment.domain.DebtPaymentInProgressException;
@@ -32,6 +34,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -57,6 +60,8 @@ class DebtCollectionServiceTest {
     private DebtCollectionServiceImpl service;
     private PendingPayment debt;
     private PaymentMethod card;
+    /** Los avisos que publicó el servicio, en orden. */
+    private List<DebtEvent> events;
 
     @BeforeEach
     void setUp() {
@@ -65,7 +70,8 @@ class DebtCollectionServiceTest {
         gateway = mock(PaymentGatewayPort.class);
         bookings = mock(DriverBookingsPort.class);
         clock = new MovingClock(CLOSED_AT);
-        service = new DebtCollectionServiceImpl(debts, cards, gateway, bookings, clock, INTERVAL, 3);
+        events = new ArrayList<>();
+        service = new DebtCollectionServiceImpl(debts, cards, gateway, bookings, events::add, clock, INTERVAL, 3);
 
         // La carga se cerró a las 12:00 y el cobro original falló: primer reintento a las 12:20.
         debt = new PendingPayment(DRIVER, 1L, new BigDecimal("4320.00"), "rechazada", "session-9", CLOSED_AT);
@@ -125,6 +131,8 @@ class DebtCollectionServiceTest {
                         eq("debt-50-retry-1"));
         verify(debts).releaseClaim(50L);
         verify(bookings, never()).cancelConfirmedBookingsForDebt(anyLong());
+        assertThat(events).extracting(DebtEvent::type).containsExactly(DebtEventType.DEBT_SETTLED);
+        assertThat(events.get(0).eventId()).isEqualTo("debt-50-settled");
     }
 
     @Test
@@ -153,6 +161,20 @@ class DebtCollectionServiceTest {
         verify(gateway).charge(anyString(), any(), anyString(), anyString(), eq("debt-50-retry-1"));
         verify(gateway).charge(anyString(), any(), anyString(), anyString(), eq("debt-50-retry-2"));
         verify(gateway).charge(anyString(), any(), anyString(), anyString(), eq("debt-50-retry-3"));
+
+        // Un aviso por reintento; el tercero es además la marca de la cuenta: uno solo (Manuel, 22/11).
+        assertThat(events)
+                .extracting(DebtEvent::eventId)
+                .containsExactly("debt-50-retry-1-failed", "debt-50-retry-2-failed", "debt-50-defaulted");
+        assertThat(events)
+                .extracting(DebtEvent::type)
+                .containsExactly(
+                        DebtEventType.DEBT_RETRY_FAILED, DebtEventType.DEBT_RETRY_FAILED, DebtEventType.DEBT_DEFAULTED);
+        assertThat(events).extracting(DebtEvent::attempt).containsExactly(1, 2, 3);
+        assertThat(events).extracting(DebtEvent::maxAttempts).containsOnly(3);
+        assertThat(events.get(0).nextAttemptAt()).isEqualTo(CLOSED_AT.plus(INTERVAL.multipliedBy(2)));
+        assertThat(events.get(2).nextAttemptAt()).isNull();
+        assertThat(events).extracting(DebtEvent::incurredAt).containsOnly(CLOSED_AT);
     }
 
     @Test
@@ -167,6 +189,7 @@ class DebtCollectionServiceTest {
         assertThat(debt.getRetryCount()).isZero();
         assertThat(debt.getNextAttemptAt()).isEqualTo(CLOSED_AT.plus(INTERVAL.multipliedBy(2)));
         assertThat(debt.nextRetryKey()).isEqualTo("debt-50-retry-1");
+        assertThat(events).isEmpty();
     }
 
     @Test
@@ -178,6 +201,7 @@ class DebtCollectionServiceTest {
 
         assertThat(debt.getRetryCount()).isEqualTo(1);
         verify(gateway, never()).charge(anyString(), any(), anyString(), anyString(), anyString());
+        assertThat(events).extracting(DebtEvent::type).containsExactly(DebtEventType.DEBT_RETRY_FAILED);
     }
 
     @Test
@@ -224,6 +248,7 @@ class DebtCollectionServiceTest {
 
         assertThat(paid.getStatus()).isEqualTo(PendingPaymentStatus.SETTLED);
         verify(gateway).charge(anyString(), any(), anyString(), anyString(), eq("debt-50-pay-key-abcdef12"));
+        assertThat(events).last().extracting(DebtEvent::type).isEqualTo(DebtEventType.DEBT_SETTLED);
     }
 
     @Test
@@ -237,6 +262,8 @@ class DebtCollectionServiceTest {
         assertThat(debt.getStatus()).isEqualTo(PendingPaymentStatus.PENDING);
         assertThat(debt.getRetryCount()).isZero();
         verify(debts).releaseClaim(50L);
+        // El conductor lo ve en el diálogo: no hace falta además un aviso.
+        assertThat(events).isEmpty();
     }
 
     @Test
@@ -257,6 +284,7 @@ class DebtCollectionServiceTest {
 
         assertThat(paid.getStatus()).isEqualTo(PendingPaymentStatus.SETTLED);
         verify(gateway, never()).charge(anyString(), any(), anyString(), anyString(), anyString());
+        assertThat(events).isEmpty();
     }
 
     @Test

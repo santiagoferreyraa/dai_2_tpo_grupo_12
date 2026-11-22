@@ -25,9 +25,11 @@ public record BookingEventMessage(
         BigDecimal depositAmount,
         Boolean depositRefunded,
         String cardLastFour,
-        Instant depositRefundableUntil) {
+        Instant depositRefundableUntil)
+        implements QueuedEvent {
 
-    NotificationToDispatch toDispatch() {
+    @Override
+    public NotificationToDispatch toDispatch() {
         return new NotificationToDispatch(
                 eventId,
                 type,
@@ -40,5 +42,10 @@ public record BookingEventMessage(
                 depositRefunded,
                 cardLastFour,
                 depositRefundableUntil);
+    }
+
+    @Override
+    public String describe() {
+        return type + " de la reserva " + bookingId;
     }
 }

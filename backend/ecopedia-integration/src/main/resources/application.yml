@@ -39,6 +39,18 @@ spring:
         format_sql: true
         default_schema: integration
 
+  # --- Broker ---
+  # El de docker-compose. Pagos publica ahí los avisos de las deudas para Notificaciones (ECO-62),
+  # en la misma cola que Reservas. Si el broker no está, el artefacto arranca y cobra igual: el aviso
+  # queda pendiente y se reenvía cuando vuelve (ver JmsDebtEventPublisher).
+  #
+  # Sin `mode`, igual que en charging: los tests usan el broker embebido porque el servidor de Artemis
+  # está solo en su classpath.
+  artemis:
+    broker-url: ${ECOPEDIA_BROKER_URL:tcp://localhost:61616}
+    user: ${ECOPEDIA_BROKER_USER:ecopedia}
+    password: ${ECOPEDIA_BROKER_PASSWORD}     # sin valor por defecto: sale del .env
+
 server:
   port: ${SERVER_PORT:8083}
 
@@ -89,6 +101,12 @@ ecopedia:
   # La deuda del conductor (ECO-62, decidido por Manuel el 20/11): después del cobro que falló, tres
   # reintentos cada 20 minutos; si fallan los tres, la cuenta queda marcada. El barrido mira cada
   # minuto qué reintentos tocan.
+  notifications:
+    # La cola de avisos. El nombre tiene que coincidir con el que escucha ecopedia-async.
+    queue: notifications.dispatch
+    # Cada cuánto se reintentan los avisos que no salieron porque el broker no estaba.
+    retry-interval: ${ECOPEDIA_NOTIFICATIONS_RETRY_INTERVAL:PT15S}
+
   payments:
     debt:
       retry-interval: ${ECOPEDIA_DEBT_RETRY_INTERVAL:PT20M}
@@ -120,6 +138,11 @@ spring:
   h2:
     console:
       enabled: true         # http://localhost:8083/h2-console
+
+  # Sin valor por defecto en el perfil de arriba; acá vacío, así los tests y un `pnpm dev` sin
+  # .env arrancan igual. Contra el broker de docker-compose la contraseña sale del .env.
+  artemis:
+    password: ${ECOPEDIA_BROKER_PASSWORD:}
 
 # El secreto de desarrollo. Existe solo en los perfiles dev y local: sin perfil (`pnpm demo`,
 # el JAR) no hay valor por defecto y el proceso no arranca sin ECOPEDIA_JWT_SECRET.
@@ -173,6 +196,11 @@ spring:
   h2:
     console:
       enabled: true         # http://localhost:8083/h2-console
+
+  # Sin valor por defecto en el perfil de arriba; acá vacío, así los tests y un `pnpm dev` sin
+  # .env arrancan igual. Contra el broker de docker-compose la contraseña sale del .env.
+  artemis:
+    password: ${ECOPEDIA_BROKER_PASSWORD:}
 
 # El secreto de desarrollo. Existe solo en los perfiles dev y local: sin perfil (`pnpm demo`,
 # el JAR) no hay valor por defecto y el proceso no arranca sin ECOPEDIA_JWT_SECRET.

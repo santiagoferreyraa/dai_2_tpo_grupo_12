@@ -14,6 +14,10 @@ import org.springframework.stereotype.Component;
 /**
  * La entrada de Notificaciones: consume la cola {@code notifications.dispatch}.
  *
+ * <p>Por la cola llegan dos clases de eventos: los de las reservas, que publica Reservas
+ * ({@code booking-event}), y desde ECO-62 los de las deudas, que publica Pagos ({@code debt-event}).
+ * Los dos se traducen a lo mismo y siguen el mismo camino; ver {@link QueuedEvent}.
+ *
  * <p>Es la capa de presentación del componente, el equivalente a un controlador: recibe, traduce
  * al lenguaje del dominio y delega. No decide nada.
  *
@@ -58,7 +62,7 @@ public class BookingEventListener {
     public void onBookingEvent(Message message) throws JMSException {
         int attempt = attemptOf(message);
 
-        BookingEventMessage event;
+        QueuedEvent event;
         try {
             event = read(message);
         } catch (JMSException | RuntimeException unreadable) {
@@ -68,7 +72,7 @@ public class BookingEventListener {
             throw unreadable;
         }
 
-        log.info("Recibido de la cola: {} de la reserva {}", event.type(), event.bookingId());
+        log.info("Recibido de la cola: {}", event.describe());
         try {
             notificationService.dispatch(event.toDispatch());
         } catch (RuntimeException failure) {
@@ -77,13 +81,13 @@ public class BookingEventListener {
         }
     }
 
-    private BookingEventMessage read(Message message) throws JMSException {
+    private QueuedEvent read(Message message) throws JMSException {
         Object body = converter.fromMessage(message);
-        if (body instanceof BookingEventMessage event) {
+        if (body instanceof QueuedEvent event) {
             return event;
         }
-        throw new MessageConversionException(
-                "Se esperaba un booking-event y llegó " + body.getClass().getName());
+        throw new MessageConversionException("Se esperaba un booking-event o un debt-event y llegó "
+                + body.getClass().getName());
     }
 
     /**
