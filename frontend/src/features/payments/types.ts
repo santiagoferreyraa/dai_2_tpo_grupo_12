@@ -27,6 +27,23 @@ export interface PaymentMethod {
 }
 
 /**
+ * Una deuda del conductor: una carga que no se pudo cobrar al cerrarla (ECO-62). Espeja
+ * `DebtResponse`.
+ *
+ * El estado viaja, pero la pantalla no lo muestra: "se sigue reintentando" o "la cuenta quedó
+ * marcada" es lo que pasa por detrás, y al conductor le alcanza con qué debe y cómo pagarlo
+ * (directiva 6). Tampoco viene el motivo del rechazo, que es texto de la pasarela.
+ */
+export interface Debt {
+  id: number
+  amount: number
+  /** Cuándo se cerró la carga que no se pudo cobrar. */
+  incurredAt: string
+  status: 'PENDING' | 'DEFAULTED' | 'SETTLED'
+  nextAttemptAt: string | null
+}
+
+/**
  * Lo que se manda para dar de alta una tarjeta.
  *
  * El conductor dueño NO va acá: sale del token. Si viajara en el cuerpo, cambiar un número en

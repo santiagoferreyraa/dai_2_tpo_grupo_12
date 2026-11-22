@@ -146,6 +146,10 @@ export default function BookingForm({
         <NoCardNotice deposit={deposit} onCancel={onCancel} cancelLabel={cancelLabel} />
       )}
 
+      {(step.kind === 'choosing' || step.kind === 'holding') && payment.status === 'debt' && (
+        <DebtNotice onCancel={onCancel} cancelLabel={cancelLabel} />
+      )}
+
       {(step.kind === 'choosing' || step.kind === 'holding') && payment.status === 'ready' && (
         <ChooseStep
           stationId={station.stationId}
@@ -194,7 +198,7 @@ export default function BookingForm({
  */
 function ErrorMessage({ error }: { error: BookingFlowError }) {
   const ref = useRef<HTMLDivElement>(null)
-  const { message, addCard } = error
+  const { message, addCard, payDebt } = error
 
   useEffect(() => {
     ref.current?.focus()
@@ -211,12 +215,50 @@ function ErrorMessage({ error }: { error: BookingFlowError }) {
           Agregar tarjeta
         </Link>
       )}
+      {/* La deuda se paga en la misma sección que las tarjetas (ECO-62). */}
+      {payDebt === true && (
+        <Link
+          to={ADD_CARD_PATH}
+          className="text-primary focus-visible:outline-primary self-start rounded text-sm font-semibold underline-offset-2 hover:underline focus-visible:outline-2"
+        >
+          Ir a Medios de pago
+        </Link>
+      )}
     </div>
   )
 }
 
 /** Donde se cargan las tarjetas: la sección de medios de pago del perfil. */
 const ADD_CARD_PATH = '/profile/payment-methods'
+
+/**
+ * En lugar del horario, cuando el conductor tiene una deuda sin pagar (ECO-62).
+ *
+ * Mismo motivo que `NoCardNotice`: con deuda el checkout rechaza la confirmación, así que dejarlo
+ * elegir horario sería retenerle un conector para terminar en un error. Sin el monto: ese número
+ * está en Medios de pago, que es donde se paga.
+ */
+function DebtNotice({ onCancel, cancelLabel }: { onCancel: () => void; cancelLabel: string }) {
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="border-border bg-surface/40 flex flex-col gap-1 rounded-2xl border px-4 py-3 text-sm">
+        <p className="text-text font-semibold">Tenés un pago pendiente</p>
+        <p className="text-text-muted">
+          Para reservar, primero pagá la carga que quedó sin cobrar. Lo hacés desde Medios de pago.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <button type="button" onClick={onCancel} className={GHOST_BUTTON}>
+          {cancelLabel}
+        </button>
+        <Link to={ADD_CARD_PATH} className={PRIMARY_BUTTON}>
+          Ir a pagar
+        </Link>
+      </div>
+    </div>
+  )
+}
 
 /**
  * En lugar del horario, cuando el conductor no tiene tarjeta.

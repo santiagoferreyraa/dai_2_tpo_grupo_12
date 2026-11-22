@@ -35,6 +35,8 @@ const NOTIFICATION_LOOK: Record<NotificationType, NotificationLook> = {
   BOOKING_CANCELLED: { Icon: CrossIcon, tint: 'text-danger' },
   /* Una reserva que se perdió porque pasó el tiempo: el reloj, en el rojo de la cancelada. */
   BOOKING_NO_SHOW: { Icon: ClockIcon, tint: 'text-danger' },
+  /* Una reserva anulada por una deuda: es una cancelada, aunque no la haya pedido el conductor. */
+  BOOKING_CANCELLED_FOR_DEBT: { Icon: CrossIcon, tint: 'text-danger' },
 }
 
 /**

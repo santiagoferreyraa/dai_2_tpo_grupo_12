@@ -40,6 +40,8 @@ export interface BookingFlowError {
   message: string
   /** Falta una tarjeta: además del mensaje, se ofrece el camino para cargarla. */
   addCard: boolean
+  /** Hay una deuda sin pagar (ECO-62): se ofrece el camino para pagarla. */
+  payDebt?: boolean
 }
 
 export interface BookingFlow {
@@ -352,6 +354,12 @@ function confirmErrorMessage(reason: unknown): BookingFlowError {
       )
     case 'GRACE_PERIOD_NOT_ACCEPTED':
       return plain(`Para confirmar, aceptá la tolerancia de ${GRACE_MINUTES} minutos.`)
+    case 'DRIVER_HAS_DEBT':
+      return {
+        message: 'Tenés un pago pendiente. Pagalo desde Medios de pago para poder reservar.',
+        addCard: false,
+        payDebt: true,
+      }
   }
 
   if (reason.status === 410 || reason.status === 404) {
