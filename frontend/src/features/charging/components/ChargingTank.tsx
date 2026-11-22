@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+
+import { clampPercent, useFluidLevel } from './useFluidLevel'
 
 interface ChargingTankProps {
   /** La batería del auto, 0–100. Null mientras el cargador no la informó: el recuadro queda vacío. */
@@ -14,14 +16,12 @@ interface ChargingTankProps {
 /**
  * El recuadro de vidrio que se va llenando de fluido verde con la carga (RF11).
  *
- * **El nivel es la batería real, no una animación decorativa.** La altura del fluido es el
- * porcentaje que informa el cargador; lo único que se inventa es el camino entre dos lecturas.
+ * **El fluido es solo del celular.** Ahí el recuadro es la pantalla entera y el nivel sube por toda
+ * ella. Desde tablet el recuadro es solo el marco de los paneles de vidrio, y lo que se llena es la
+ * batería horizontal de la escena (`ChargingBattery`): un recuadro de escritorio lleno hasta la
+ * mitad de verde tapaba el auto y el cargador, que ahí sí entran.
  *
- * **Sube en línea recta durante exactamente un intervalo de refresco.** Las lecturas llegan cada
- * pocos segundos; si el fluido llegara rápido y esperara, la carga se vería a saltos. Tardando lo
- * mismo que tarda el dato siguiente, cuando llega la próxima lectura todavía se está moviendo y
- * la subida se lee continua. La primera vez es distinta: arranca vacío y se llena hasta donde está
- * la batería con una curva que frena al final, que es lo que pide la vista al abrir la pantalla.
+ * Cómo se mueve el nivel entre lecturas lo resuelve `useFluidLevel`, igual para los dos.
  *
  * **Se mueve con `transform` y no con `height`.** La capa del fluido mide todo el recuadro y se
  * corre hacia abajo lo que falta cargar; así la anima la placa de video y la ola de arriba
@@ -34,44 +34,27 @@ export default function ChargingTank({
   children,
   className = '',
 }: ChargingTankProps) {
-  const level = clampPercent(percent ?? 0)
-
-  /*
-    Lo que se dibuja arranca en cero y pasa al nivel real en el cuadro siguiente: si el primer
-    render ya trajera el nivel, el navegador no tendría desde dónde animar y el fluido aparecería
-    lleno de golpe.
-  */
-  const [shown, setShown] = useState(0)
-  const filledOnce = useRef(false)
-  const [firstFill, setFirstFill] = useState(true)
-
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setShown(level))
-    return () => cancelAnimationFrame(frame)
-  }, [level])
+  const fluid = useFluidLevel(clampPercent(percent ?? 0), refreshMs)
 
   const levelStyle: CSSProperties = {
-    transform: `translateY(${String(100 - shown)}%)`,
-    transition: firstFill
-      ? 'transform 1800ms cubic-bezier(0.22, 1, 0.36, 1)'
-      : `transform ${String(refreshMs)}ms linear`,
+    transform: `translateY(${String(100 - fluid.shown)}%)`,
+    transition: fluid.transition,
   }
 
   return (
     <section
-      className={`charge-tank glass-panel relative isolate overflow-hidden rounded-3xl ${className}`}
+      /*
+        Sin vidrio propio en ningún tamaño: en el celular el recuadro es la pantalla entera, como el
+        mapa, y desde tablet es solo el marco de los paneles, que llevan el vidrio cada uno.
+      */
+      className={`relative isolate overflow-hidden md:overflow-visible ${className}`}
       aria-label="Estado de la carga"
     >
       <div
         aria-hidden="true"
-        className="charge-level pointer-events-none absolute inset-0 -z-10"
+        className="charge-level pointer-events-none absolute inset-0 -z-10 md:hidden"
         style={levelStyle}
-        onTransitionEnd={() => {
-          if (!filledOnce.current && shown > 0) {
-            filledOnce.current = true
-            setFirstFill(false)
-          }
-        }}
+        onTransitionEnd={fluid.onTransitionEnd}
       >
         <Waves />
         <div className="charge-fluid absolute inset-0">
@@ -85,10 +68,6 @@ export default function ChargingTank({
       {children}
     </section>
   )
-}
-
-function clampPercent(value: number): number {
-  return Math.min(100, Math.max(0, value))
 }
 
 /** Dos períodos de la misma onda en 1200 de ancho: correrla 600 la deja igual que al principio. */
@@ -176,7 +155,7 @@ function Bubbles() {
 function LimitLine({ percent }: { percent: number }) {
   return (
     <div
-      className="pointer-events-none absolute inset-x-0 z-0 h-[3px]"
+      className="pointer-events-none absolute inset-x-0 z-0 h-[3px] md:hidden"
       style={{
         bottom: `${String(percent)}%`,
         background:

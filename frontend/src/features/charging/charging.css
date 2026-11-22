@@ -281,26 +281,321 @@
 }
 
 /*
-  En el celular el recuadro es la pantalla entera, como el mapa: sin borde, sin esquinas y sin
-  vidrio. Va acá y no como clases de Tailwind porque `.glass-panel` no está en una capa, y una
-  utilidad como `border-0` no le gana.
+  ───────────── La batería de tablet y escritorio ─────────────
+
+  La carcasa es del mismo vidrio que las tarjetas, con un filo más marcado; adentro, el hueco es
+  más oscuro que el vidrio, como el fondo de un tubo, para que el fluido resalte encima.
 */
-@media (max-width: 767.98px) {
-  .charge-tank.glass-panel {
-    border: 0;
-    border-radius: 0;
-    background-color: transparent;
-    box-shadow: none;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
+.charge-battery-shell {
+  background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+  border: 1px solid var(--color-border);
+  box-shadow:
+    0 10px 30px rgb(0 0 0 / 0.22),
+    inset 0 1px 0 rgb(255 255 255 / 0.18);
+}
+
+.charge-battery-cap {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--color-text) 32%, transparent),
+    color-mix(in srgb, var(--color-text) 14%, transparent)
+  );
+  border: 1px solid var(--color-border);
+  border-left: 0;
+}
+
+/* Mientras carga, la pila brilla apenas en verde por fuera: la energía se nota desde lejos. */
+.charge-battery-shell--live {
+  box-shadow:
+    0 10px 30px rgb(0 0 0 / 0.22),
+    0 0 36px color-mix(in srgb, var(--fluid-top) 18%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 0.18);
+}
+
+.charge-battery-track {
+  background: color-mix(in srgb, var(--color-text) 7%, transparent);
+  box-shadow: inset 0 2px 8px rgb(0 0 0 / 0.28);
+}
+
+/*
+  El fluido de la pila: el degradado va de arriba abajo y no hacia el frente, como el de un tubo
+  con luz de arriba. Así se lee redondo aunque la pila sea plana.
+*/
+.charge-battery-fluid {
+  background: linear-gradient(
+    to bottom,
+    var(--fluid-back) 0%,
+    var(--fluid-top) 28%,
+    var(--fluid-bottom) 100%
+  );
+}
+
+/*
+  El frente del fluido, ondulado. Es una máscara y no un SVG pegado al borde: con un SVG aparte, el
+  degradado de arriba abajo no seguía en la ola y el borde se veía como otra pieza.
+
+  Dos capas que se suman: todo el cuerpo hasta 13px antes del borde, y en esos últimos 14px una
+  ola vertical que se repite. Mover la ola hacia abajo es lo que la hace correr; la tira mide un
+  período justo, así que el bucle no tiene salto. Se pisan un píxel para que no quede una raya.
+*/
+.charge-battery-wave {
+  --wave-edge: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 64' preserveAspectRatio='none'%3E%3Cpath d='M0 0H7Q14 16 7 32T7 64H0Z'/%3E%3C/svg%3E");
+  -webkit-mask:
+    linear-gradient(#000 0 0) left / calc(100% - 13px) 100% no-repeat,
+    var(--wave-edge) right 0 top 0 / 14px 64px repeat-y;
+  mask:
+    linear-gradient(#000 0 0) left / calc(100% - 13px) 100% no-repeat,
+    var(--wave-edge) right 0 top 0 / 14px 64px repeat-y;
+  animation: charge-battery-wave 1.6s linear infinite;
+}
+
+/*
+  La ola de atrás: unos píxeles adelante y corriendo al revés, que es lo que da la profundidad. Va
+  en el verde del cuerpo y semitransparente, no en el más claro: con ese, la franja que asoma
+  delante del frente se leía como una línea blanca.
+*/
+.charge-battery-wave--back {
+  background: var(--fluid-top);
+  opacity: 0.45;
+  transform: translateX(5px);
+  animation-duration: 2.3s;
+  animation-direction: reverse;
+}
+
+@keyframes charge-battery-wave {
+  from {
+    -webkit-mask-position:
+      left,
+      right 0 top 0;
+    mask-position:
+      left,
+      right 0 top 0;
+  }
+  to {
+    -webkit-mask-position:
+      left,
+      right 0 top 64px;
+    mask-position:
+      left,
+      right 0 top 64px;
+  }
+}
+
+/* Las chispas: trazos cortos que cruzan la pila hacia el frente. */
+.charge-spark {
+  position: absolute;
+  left: -2rem;
+  border-radius: 9999px;
+  background: linear-gradient(to right, transparent, rgb(240 255 220 / 0.5));
+  animation: charge-spark-run var(--spark-duration, 3s) linear infinite;
+  animation-delay: var(--spark-delay, 0s);
+  opacity: 0;
+}
+
+@keyframes charge-spark-run {
+  0% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    /* El ancho de la pila entera (la caja de las chispas es el contenedor): las recorta el nivel. */
+    transform: translateX(calc(100cqw + 2rem));
+    opacity: 0;
+  }
+}
+
+/* Lo que está después del límite: rayado suave, batería que esta carga no va a llenar. */
+.charge-battery-beyond {
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--color-text) 9%, transparent) 0 2px,
+    transparent 2px 9px
+  );
+}
+
+/* Las divisiones de las celdas: un corte fino que deja ver el hueco a través del fluido. */
+.charge-battery-cell {
+  border-left: 2px solid color-mix(in srgb, var(--color-surface) 40%, transparent);
+}
+
+/* La marca del límite adentro de la pila: la misma línea del recuadro del celular, vertical. */
+.charge-battery-target {
+  background: repeating-linear-gradient(to bottom, var(--color-text) 0 5px, transparent 5px 9px);
+  opacity: 0.55;
+}
+
+.charge-battery-marker {
+  background: var(--color-text);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+/* El reflejo de vidrio de arriba: una franja de luz que no llega a los bordes. */
+.charge-battery-gloss {
+  background: linear-gradient(
+    to bottom,
+    rgb(255 255 255 / 0.12) 0%,
+    rgb(255 255 255 / 0.03) 30%,
+    transparent 44%,
+    transparent 85%,
+    rgb(0 0 0 / 0.08) 100%
+  );
+}
+
+/*
+  El resplandor detrás del auto: la luz verde que deja la carga, en el piso. Late despacio mientras
+  carga y queda quieto cuando termina.
+*/
+.charge-aura {
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--fluid-top) 34%, transparent),
+    color-mix(in srgb, var(--fluid-top) 10%, transparent) 60%,
+    transparent
+  );
+}
+
+.charge-aura--live {
+  animation: charge-breathe 4s ease-in-out infinite;
+}
+
+@keyframes charge-breathe {
+  0%,
+  100% {
+    opacity: 0.65;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+/*
+  Los medidores de arco de la potencia y la energía. La pista es el mismo hueco que el de la
+  batería; el relleno lleva el degradado del fluido (lo pone el SVG) con las puntas redondeadas.
+*/
+.charge-gauge-track,
+.charge-gauge-fill {
+  fill: none;
+  stroke-width: 14;
+  stroke-linecap: round;
+}
+
+.charge-gauge-track {
+  stroke: color-mix(in srgb, var(--color-text) 10%, transparent);
+}
+
+.charge-gauge-fill {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--fluid-top) 45%, transparent));
+}
+
+.charge-gauge-needle {
+  fill: var(--color-text);
+}
+
+/* La unidad debajo del número: vuelve a la tipografía de la interfaz, el número es el condensado. */
+.charge-gauge-unit {
+  font-family: "Plus Jakarta Sans", sans-serif;
+}
+
+/* Los extremos de la escala, en las puntas del arco: el mínimo y el máximo contra los que se mide. */
+.charge-gauge-scale {
+  fill: var(--color-text-muted);
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/*
+  La esfera del reloj: un filo fino y las marcas hacia adentro, en el color del texto, como en un
+  reloj de pared. Las de los minutos, finas y tenues; las de las horas, más gruesas y enteras. Sin
+  verde: el verde queda para lo que se llena.
+*/
+/*
+  Sólidos y no semitransparentes: el filo y las marcas se tocan, y con transparencia, de cerca se
+  veía cada marca chica pasando a través del filo. El filo va en el mismo color que las marcas de
+  las horas; las de los minutos se mezclan con el color de la superficie en vez de con
+  transparente, así dan un tono más suave sin dejar ver lo de abajo.
+*/
+.charge-clock-rim {
+  fill: none;
+  stroke: var(--color-text);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.charge-clock-tick,
+.charge-clock-tick--major {
+  stroke-linecap: butt;
+}
+
+.charge-clock-tick {
+  stroke: color-mix(in srgb, var(--color-text) 45%, var(--color-surface));
+  stroke-width: 1.4;
+}
+
+.charge-clock-tick--major {
+  stroke: var(--color-text);
+  stroke-width: 3.5;
+}
+
+/* La sombra del mapa: lo despega del panel, como una foto apoyada encima. */
+.charge-map-shadow {
+  box-shadow:
+    0 14px 32px rgb(0 0 0 / 0.28),
+    0 3px 8px rgb(0 0 0 / 0.16);
+}
+
+[data-theme="light"] .charge-map-shadow {
+  box-shadow:
+    0 14px 32px rgb(40 50 90 / 0.18),
+    0 3px 8px rgb(40 50 90 / 0.1);
+}
+
+/*
+  El contorno del círculo de la batería del celular se deforma despacio, como una gota: el radio de
+  cada una de las cuatro esquinas va y viene por separado, así el borde se ondula sin dejar de ser
+  redondo. Los valores se apartan a lo sumo siete puntos del 50% y el ciclo es largo: tiene que leerse vivo, no
+  distraer del número, que queda quieto adentro.
+*/
+.charge-dial-blob {
+  animation: charge-dial-blob 9s ease-in-out infinite;
+}
+
+@keyframes charge-dial-blob {
+  0%,
+  100% {
+    border-radius: 50% 50% 50% 50% / 50% 50% 50% 50%;
+  }
+  25% {
+    border-radius: 57% 43% 54% 46% / 45% 56% 44% 55%;
+  }
+  50% {
+    border-radius: 45% 55% 43% 57% / 56% 44% 55% 45%;
+  }
+  75% {
+    border-radius: 54% 46% 57% 43% / 46% 55% 45% 54%;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .charge-wave,
   .charge-wave-bob,
-  .charge-bubble {
+  .charge-bubble,
+  .charge-battery-wave,
+  .charge-aura--live,
+  .charge-dial-blob {
     animation: none;
+  }
+
+  .charge-spark {
+    display: none;
   }
 
   .charge-level {
