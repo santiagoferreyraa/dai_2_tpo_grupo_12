@@ -17,8 +17,8 @@ data
 backend/*/data
 simulation/*/data
 
-# Lo que no entra en ninguna imagen.
-agent
+# Lo que no entra en ninguna imagen. (agent/ sí: lo usa docker/agent.Dockerfile; sus node_modules
+# quedan afuera por la regla de arriba.)
 qa
 docs
 *.log

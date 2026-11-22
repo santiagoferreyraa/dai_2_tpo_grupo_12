@@ -186,16 +186,30 @@ describe('los horarios libres', () => {
     assert.match((toolResultAt(model, 1) as { error: string }).error, /venció/)
   })
 
-  it('un conector fuera de servicio trae el motivo que dio Reservas', async () => {
+  it('un conector que no se puede reservar se cuenta con palabras propias, no con las del backend', async () => {
     const { model, ask } = setup([availability, { text: 'Está roto.' }], {
       authorization: TOKEN,
-      reply: () => ({ status: 409, body: { detail: 'El conector está fuera de servicio' } }),
+      reply: () => ({ status: 409, body: { detail: 'El conector 12 está fuera de servicio' } }),
     })
     await ask('¿Está libre?')
     assert.equal(
       (toolResultAt(model, 1) as { error: string }).error,
-      'El conector está fuera de servicio',
+      'Ese conector no se puede reservar ahora. Ofrecé otro conector o estación.',
     )
+  })
+
+  it('el detail del backend nunca llega al modelo, ni ante un estado que no se espera', async () => {
+    const { model, ask } = setup([availability, { text: 'Uy.' }], {
+      authorization: TOKEN,
+      reply: () => ({
+        status: 500,
+        body: { detail: 'JDBC: relation charging.bookings does not exist; conductor 77' },
+      }),
+    })
+    await ask('¿Está libre?')
+    const error = (toolResultAt(model, 1) as { error: string }).error
+    assert.doesNotMatch(error, /JDBC|conductor 77|charging\.bookings/)
+    assert.match(error, /pruebe de nuevo/)
   })
 })
 

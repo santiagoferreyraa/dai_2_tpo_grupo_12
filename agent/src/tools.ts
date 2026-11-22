@@ -216,13 +216,16 @@ function summarize(results: StationResult[]) {
 /**
  * Un error de backend contado para el modelo, que se lo va a contar al conductor.
  *
+ * **Una frase propia por estado, nunca el texto del backend**: el `detail` de Ecopedia es para el log
+ * y lo que sale de acá puede llegar a la pantalla (ver `EcopediaError`). Las frases dicen qué hacer,
+ * no qué pasó por detrás (directiva 6).
+ *
  * El 401 y el 403 no se devuelven al front como tales: el cliente HTTP del front cierra la sesión
  * ante cualquiera de los dos, y un token vencido se resuelve mejor con un "volvé a iniciar sesión"
  * dentro de la conversación que con un deslogueo en medio del chat.
  *
- * Van juntos porque en Ecopedia un token vencido llega como 403, no como 401: `SecurityConfig`
- * deja pasar todas las URL y quien rechaza es el `@PreAuthorize`. Las herramientas solo llaman a
- * rutas públicas o que piden sesión a secas, así que un 403 acá es siempre la sesión.
+ * Van juntos porque Ecopedia contestaba 403 a un token vencido hasta el #56, que lo pasó a 401. Las
+ * herramientas solo llaman a rutas públicas o que piden sesión a secas, así que los dos son la sesión.
  */
 function explain(error: unknown): string {
   if (!(error instanceof EcopediaError)) return 'No se pudo consultar Ecopedia.'
@@ -232,10 +235,16 @@ function explain(error: unknown): string {
     case 401:
     case 403:
       return 'La sesión del conductor venció o no es válida. Pedile que vuelva a iniciar sesión.'
+    case 400:
+      return 'La consulta no es válida. Revisá los datos que usaste y probá de otra forma.'
     case 404:
       return 'No existe: revisá el id.'
+    case 409:
+      return 'Ese conector no se puede reservar ahora. Ofrecé otro conector o estación.'
+    case 429:
+      return 'Ecopedia está recibiendo demasiados pedidos. Pedile al conductor que espere un momento.'
     default:
-      return error.message
+      return 'Ecopedia no pudo responder en este momento. Pedile al conductor que pruebe de nuevo.'
   }
 }
 

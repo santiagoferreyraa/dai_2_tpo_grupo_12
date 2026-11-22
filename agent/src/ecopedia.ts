@@ -54,12 +54,19 @@ export interface SearchCriteria {
   onlyAvailable?: boolean
 }
 
-/** Un error del backend, con el código para que la herramienta decida qué contarle al modelo. */
+/**
+ * Un error del backend: solo el estado HTTP, para que la herramienta decida qué contarle al modelo.
+ *
+ * **No trae el texto del backend, a propósito.** Desde el #56 el `detail` de las respuestas de error
+ * está escrito para el log (ids, motivos internos), y lo que la herramienta le pasa al modelo puede
+ * terminar en la pantalla del conductor (directiva 6). Las palabras las pone `explain`, en
+ * `tools.ts`, una por estado.
+ */
 export class EcopediaError extends Error {
   readonly status: number
 
-  constructor(message: string, status: number) {
-    super(message)
+  constructor(status: number) {
+    super(`Ecopedia respondió ${status}`)
     this.name = 'EcopediaError'
     this.status = status
   }
@@ -106,10 +113,14 @@ export function createEcopediaApi(options: EcopediaApiOptions): EcopediaApi {
       })
     } catch (cause) {
       if (signal?.aborted) throw cause
-      throw new EcopediaError('El servidor de Ecopedia no responde', 0)
+      throw new EcopediaError(0)
     }
 
-    if (!response.ok) throw new EcopediaError(await readMessage(response), response.status)
+    if (!response.ok) {
+      // El cuerpo no se lee: ver EcopediaError. Se descarta para liberar la conexión.
+      await response.body?.cancel().catch(() => undefined)
+      throw new EcopediaError(response.status)
+    }
     return (await response.json()) as T
   }
 
@@ -138,19 +149,5 @@ export function createEcopediaApi(options: EcopediaApiOptions): EcopediaApi {
       const params = new URLSearchParams({ connectorId: String(connectorId), from, to })
       return get(options.chargingUrl, `/api/bookings/availability?${params.toString()}`, signal)
     },
-  }
-}
-
-/**
- * El motivo que dio el backend. Spring contesta ProblemDetail (`detail`) o un cuerpo propio
- * (`message`); es la misma lectura que hace `frontend/src/lib/api.ts`.
- */
-async function readMessage(response: Response): Promise<string> {
-  const text = await response.text().catch(() => '')
-  try {
-    const body = JSON.parse(text) as { detail?: string; message?: string; title?: string }
-    return body.detail ?? body.message ?? body.title ?? `Error ${response.status}`
-  } catch {
-    return text.trim() !== '' ? text.trim() : `Error ${response.status}`
   }
 }

@@ -12,7 +12,7 @@ export interface Config {
   coreUrl: string
   /** Dónde está ecopedia-charging: la disponibilidad de un conector. */
   chargingUrl: string
-  /** `undefined` si falta: el agente arranca igual y el chat avisa que no está configurado. */
+  /** `undefined` si falta: el agente arranca igual y el chat avisa que no está disponible. */
   apiKey: string | undefined
   /** Modelos de Gemini en orden de preferencia. Si uno falla, se prueba el siguiente. */
   models: string[]

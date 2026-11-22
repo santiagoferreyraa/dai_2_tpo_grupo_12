@@ -140,6 +140,10 @@ docker compose up -d --build
 | `ECOPEDIA_JWT_SECRET` | Cualquier texto al azar de **64 caracteres o más** (firma los tokens) |
 | Las otras seis (`ECOPEDIA_DB_PASSWORD`, `ECOPEDIA_BROKER_PASSWORD`, `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN`, `ECOPEDIA_POWER_GRID_PASSWORD`, `ECOPEDIA_CHARGER_ACCESS_TOKEN`, `ECOPEDIA_INTERNAL_TOKEN`) | Cualquier texto al azar, solo letras y números. Nadie los escribe después: los usan los procesos entre sí |
 
+**El asistente del chat es opcional:** su clave, `GEMINI_API_KEY`, va comentada en `.env.example`. Sin
+ella el sistema arranca igual y el chat dice que no está configurado; para usarlo, sacarle el `#` y
+pegar la clave (ver "El asistente").
+
 Con alguna vacía, `docker compose up` no arranca y dice cuál falta. **En vez de completarlas a mano**,
 `node scripts/env-init.mjs` (= `pnpm env:init`; sin Node, ver abajo) arma el `.env` con todas al
 azar, también las dos contraseñas de las cuentas, que quedan escritas en el `.env`. No imprime
@@ -171,8 +175,8 @@ docker run --rm -v "$PWD":/app -w /app node:24-alpine node scripts/env-init.mjs 
 docker run --rm -v "${PWD}:/app" -w /app node:24-alpine node scripts/env-init.mjs        # PowerShell
 ```
 
-**Qué levanta.** Once contenedores: PostgreSQL, Artemis, los cuatro módulos, los tres simuladores y
-`web`, que es [Caddy](https://caddyserver.com/) sirviendo el front y repartiendo `/api` entre los
+**Qué levanta.** Doce contenedores: PostgreSQL, Artemis, los cuatro módulos, los tres simuladores, el
+asistente del chat (`agent`, en Node) y `web`, que es [Caddy](https://caddyserver.com/) sirviendo el front y repartiendo `/api` entre los
 módulos con las mismas reglas que el proxy de Vite (`docker/Caddyfile`). **Hacia afuera solo se
 publica `web`**; los módulos y los simuladores se hablan por la red interna de compose, y la base y el
 broker quedan en `127.0.0.1`, como siempre. Corre sin perfil de Spring, o sea contra PostgreSQL:
@@ -180,8 +184,8 @@ es el mismo ambiente que `pnpm demo`, **con los mismos volúmenes**, así que co
 
 | Comando | Qué hace |
 |---|---|
-| `docker compose ps` | El estado de los once. Los Java pasan a `healthy` cuando escuchan |
-| `docker compose logs -f core` | El log de uno (`charging`, `integration`, `async`, `payment-gateway`, `power-grid`, `charger`, `web`...) |
+| `docker compose ps` | El estado de los doce. Los Java y el asistente pasan a `healthy` cuando escuchan |
+| `docker compose logs -f core` | El log de uno (`charging`, `integration`, `async`, `payment-gateway`, `power-grid`, `charger`, `agent`, `web`...) |
 | `docker compose down` | Baja todo. Los datos quedan en los volúmenes |
 | `git pull && docker compose up -d --build` | Actualiza a lo último |
 
@@ -897,6 +901,9 @@ lo mismo que él. Para ubicar lugares usa Photon, el mismo servicio que el mapa.
 3. Reiniciá el panel `8085 agent`.
 
 Sin clave, el agente arranca igual y el chat dice que no está configurado.
+
+**Con Docker** es el contenedor `agent`, y Caddy le manda `/api/agent`. Toma la clave del mismo `.env`;
+después de cargarla, `docker compose up -d agent` lo recrea con ella.
 
 Cinco cosas que conviene saber:
 

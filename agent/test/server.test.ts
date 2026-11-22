@@ -112,10 +112,12 @@ describe('las fallas llegan como mensajes para el conductor, nunca como 401 o 40
   describe('sin clave de Gemini', () => {
     const post = serve(null)
 
-    it('contesta 503 y dice qué falta', async () => {
+    it('contesta 503 con qué hacer, sin nombrar la variable que falta', async () => {
       const response = await post({ message: 'hola', history: [] })
       assert.equal(response.status, 503)
-      assert.match(((await response.json()) as { message: string }).message, /GEMINI_API_KEY/)
+      const { message } = (await response.json()) as { message: string }
+      assert.doesNotMatch(message, /GEMINI|\.env/)
+      assert.match(message, /buscar estaciones en el mapa/)
     })
   })
 })

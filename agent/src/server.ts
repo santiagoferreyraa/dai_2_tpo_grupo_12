@@ -117,9 +117,15 @@ async function handle(
     return send(response, 400, { message: 'El pedido no tiene la forma esperada.' })
   }
 
+  /*
+   * Sin clave. Lo que ve el conductor dice qué hacer, no por qué (directiva 6): el motivo técnico
+   * —falta GEMINI_API_KEY— queda en el log del arranque, que es donde lo busca quien levanta el
+   * sistema (ver main.ts).
+   */
   if (assistant === null) {
     return send(response, 503, {
-      message: 'El asistente no está configurado: falta GEMINI_API_KEY en el .env.',
+      message:
+        'El asistente no está disponible en este momento. Mientras tanto, podés buscar estaciones en el mapa.',
     })
   }
 

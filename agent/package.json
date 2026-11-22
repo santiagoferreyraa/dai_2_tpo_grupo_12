@@ -2,6 +2,7 @@
   "name": "ecopedia-agent",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.24.0",
   "scripts": {
     "start": "node src/main.ts",
     "test": "node --test \"test/**/*.test.ts\"",
