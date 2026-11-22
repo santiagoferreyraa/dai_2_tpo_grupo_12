@@ -20,6 +20,7 @@
 #   8082 charging         Reservas y el checkout. Necesita a core arriba
 #   8083 integration      Pagos y RedEléctrica
 #   8084 async            Notificaciones. Necesita el broker
+#   8085 agent            El asistente del chat (Node). Necesita core y charging
 #   8086 payment-gateway  NO es Ecopedia: la pasarela de pagos simulada (REST)
 #   8087 power-grid       NO es Ecopedia: la distribuidora eléctrica simulada (SOAP)
 #   8088 charger          NO es Ecopedia: los cargadores simulados. Necesita el broker
@@ -31,6 +32,10 @@
 # avisos se pierden (pasó el 01/11, con Artemis detenido desde el día anterior). Si el broker ya
 # estaba arriba, no hace nada. Si Docker no está abierto o Windows tiene tomado el 61616, el error
 # queda en ese panel, que es donde hay que mirar.
+#
+# `8085 agent` es el asistente del chat, en TypeScript y no en Java: consulta a `core` y a
+# `charging` con el token del conductor. Sin GEMINI_API_KEY en el .env arranca igual, y el chat
+# avisa que no está configurado. Ver README, "El asistente".
 #
 # ---
 #
@@ -54,6 +59,8 @@ procs:
     shell: pnpm dev:pay
   8084 async:
     shell: pnpm dev:async
+  8085 agent:
+    shell: pnpm dev:agent
   8086 payment-gateway:
     shell: pnpm dev:gateway
   8087 power-grid:

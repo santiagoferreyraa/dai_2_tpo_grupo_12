@@ -205,6 +205,34 @@ services:
       ECOPEDIA_CORE_URL: http://core:8081
     depends_on: *infra
 
+  # --- El asistente del chat ---------------------------------------------------------------------
+
+  # Node, no Java: Strands Agents con Gemini (agent/). Consulta a core y a Reservas con el token del
+  # conductor que escribe. Sin GEMINI_API_KEY arranca igual y el chat dice que no está configurado:
+  # por eso la clave es opcional acá y no corta el `up`.
+  agent:
+    build:
+      context: .
+      dockerfile: docker/agent.Dockerfile
+    image: ecopedia-agent:local
+    container_name: ecopedia-agent
+    restart: unless-stopped
+    environment:
+      ECOPEDIA_CORE_URL: http://core:8081
+      ECOPEDIA_CHARGING_URL: http://charging:8082
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # Vacío, usa los modelos que trae el agente (agent/src/config.ts).
+      GEMINI_MODELS: ${GEMINI_MODELS:-}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8085/api/agent/health"]
+      interval: 10s
+      timeout: 3s
+      start_period: 20s
+      retries: 3
+    depends_on:
+      - core
+      - charging
+
   # --- La entrada: el front y el reparto de /api -------------------------------------------------
 
   web:
@@ -233,6 +261,7 @@ services:
       - charging
       - integration
       - async
+      - agent
 
 volumes:
   postgres-data:

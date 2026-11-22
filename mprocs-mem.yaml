@@ -18,6 +18,8 @@ procs:
     shell: pnpm dev:mem:pay
   8084 async:
     shell: pnpm dev:mem:async
+  8085 agent:
+    shell: pnpm dev:agent
   8086 payment-gateway:
     shell: pnpm dev:mem:gateway
   8087 power-grid:

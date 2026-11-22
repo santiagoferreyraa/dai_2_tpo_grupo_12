@@ -53,6 +53,12 @@
 	handle /api/notifications* {
 		reverse_proxy async:8084
 	}
+	# El asistente del chat (agent/). Una respuesta puede tardar hasta 45 s (el plan gratis de
+	# Gemini); Caddy no corta antes. El agente cuenta el límite de preguntas por la dirección que
+	# Caddy le pasa en X-Forwarded-For, que Caddy arma él mismo y no copia del cliente.
+	handle /api/agent* {
+		reverse_proxy agent:8085
+	}
 	handle /api/* {
 		reverse_proxy core:8081
 	}

@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router'
 
+import AgentAssistant from '@/features/agent/AgentAssistant'
 import IridescentBackdrop from '@/features/backdrop/IridescentBackdrop'
 import ActiveBookingBanner from '@/features/bookings/ActiveBookingBanner'
 import Navbar from '@/features/navigation/Navbar'
@@ -62,6 +63,15 @@ export default function App() {
         línea no mueve nada de lo de abajo. Ver `NotificationToasts`.
       */}
       <NotificationToasts />
+
+      {/*
+        El asistente: una burbuja fija en la esquina de abajo a la derecha, en todas las pantallas.
+
+        Va acá por lo mismo que la navegación —es parte del marco, no de ninguna pantalla— y
+        FUERA del <main>, porque flota sobre el contenido y no tiene que ocupar lugar en el flujo.
+        La conversación vive adentro del componente, así que cerrar el chat no la borra.
+      */}
+      <AgentAssistant />
 
       {/*
         Columna flex, no un bloque suelto: así una pantalla que quiere ocupar todo el alto

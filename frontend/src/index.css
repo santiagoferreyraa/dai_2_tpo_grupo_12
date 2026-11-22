@@ -11,6 +11,8 @@
 @import "./features/bookings/bookings.css";
 /* La ventanita de la campanita y los recuadros de aviso que entran solos. */
 @import "./features/notifications/notifications.css";
+/* La burbuja del agente —la gota que cambia de forma— y el panel del chat. */
+@import "./features/agent/agent.css";
 /* Los colores del "404" en burbujas, uno por tema. */
 @import "./features/auth/notFound.css";
 

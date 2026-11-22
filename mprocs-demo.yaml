@@ -28,6 +28,8 @@ procs:
     shell: pnpm demo:pay
   8084 async:
     shell: pnpm demo:async
+  8085 agent:
+    shell: pnpm dev:agent
   8086 payment-gateway:
     shell: pnpm demo:gateway
   8087 power-grid:

@@ -39,6 +39,7 @@ Una sola vez, después de clonar:
 ```bash
 pnpm install                  # en la raíz: el lanzador
 pnpm --dir frontend install   # el frontend
+pnpm --dir agent install      # el asistente del chat
 ```
 
 Y de ahí en más, **un solo comando levanta todo**:
@@ -72,7 +73,10 @@ proxy de Vite manda `/api/bookings` al 8082, `/api/payment-methods` al 8083,
 `/api/notifications` al 8084 y todo lo demás al 8081, así que desde el navegador se ve como una
 sola API.
 
-**Del sexto al octavo proceso no son Ecopedia:** son los sistemas externos simulados. La pasarela
+**El sexto es el asistente del chat** (`8085 agent`), un proceso en Node y no en Java: el proxy le
+manda `/api/agent`. Sin clave de Gemini arranca igual. Ver "El asistente", más abajo.
+
+**Del séptimo al noveno proceso no son Ecopedia:** son los sistemas externos simulados. La pasarela
 de pagos, en el 8086 (`8086 payment-gateway` en el panel), a la que Pagos le habla por REST; la
 distribuidora eléctrica, en el 8087 (`8087 power-grid`), a la que RedEléctrica le pregunta por SOAP
 antes de una carga rápida; y los cargadores, en el 8088 (`8088 charger`), que Terminales enciende y apaga por REST y que
@@ -81,7 +85,7 @@ simulada", "La distribuidora eléctrica simulada" y "Los cargadores simulados", 
 
 | Comando | Qué hace |
 |---------|----------|
-| `pnpm dev` | Los ocho procesos, cada uno en su panel |
+| `pnpm dev` | Los nueve procesos, cada uno en su panel |
 | `pnpm dev:back` | Solo `ecopedia-core` (8081) |
 | `pnpm dev:charging` | Solo Reservas (`ecopedia-charging`, 8082). Necesita el backend arriba |
 | `pnpm dev:pay` | Solo Pagos (`ecopedia-integration`, 8083), que sirve los medios de pago |
@@ -89,11 +93,12 @@ simulada", "La distribuidora eléctrica simulada" y "Los cargadores simulados", 
 | `pnpm dev:gateway` | Solo la pasarela de pagos simulada (8086). Pagos la necesita para cargar tarjetas |
 | `pnpm dev:grid` | Solo la distribuidora eléctrica simulada (8087, SOAP). Todavía no la llama ninguna pantalla |
 | `pnpm dev:charger` | Solo los cargadores simulados (8088). Para encender necesitan el broker. Todavía no los llama ninguna pantalla |
+| `pnpm dev:agent` | Solo el asistente del chat (8085). Ver "El asistente" |
 | `pnpm dev:front` | Solo el frontend |
 | `pnpm dev:plain` | Todos menos Notificaciones en una sola tira de logs, con prefijos `[back]`/`[charging]`/`[pay]`/`[gateway]`/`[grid]`/`[charger]`/`[front]` |
-| `pnpm dev:mem` | Los ocho, pero con las bases **en memoria**: se borra todo al bajar |
-| `pnpm demo` | Los ocho contra **PostgreSQL** (la pasarela, con su propia base en archivo; la distribuidora y los cargadores no tienen base). Necesita la infraestructura arriba |
-| `pnpm free-ports` | Libera el 8081, el 8082, el 8083, el 8084, el 8086, el 8087, el 8088 y el 5173 a mano |
+| `pnpm dev:mem` | Los nueve, pero con las bases **en memoria**: se borra todo al bajar |
+| `pnpm demo` | Los nueve contra **PostgreSQL** (la pasarela, con su propia base en archivo; la distribuidora y los cargadores no tienen base). Necesita la infraestructura arriba |
+| `pnpm free-ports` | Libera el 8081, el 8082, el 8083, el 8084, el 8085, el 8086, el 8087, el 8088 y el 5173 a mano |
 | `pnpm build` | Empaqueta el frontend adentro del JAR del backend |
 | `pnpm start` | Corre ese JAR |
 
@@ -135,6 +140,10 @@ docker compose up -d --build
 | `ECOPEDIA_JWT_SECRET` | Cualquier texto al azar de **64 caracteres o más** (firma los tokens) |
 | Las otras seis (`ECOPEDIA_DB_PASSWORD`, `ECOPEDIA_BROKER_PASSWORD`, `ECOPEDIA_PAYMENT_GATEWAY_ACCESS_TOKEN`, `ECOPEDIA_POWER_GRID_PASSWORD`, `ECOPEDIA_CHARGER_ACCESS_TOKEN`, `ECOPEDIA_INTERNAL_TOKEN`) | Cualquier texto al azar, solo letras y números. Nadie los escribe después: los usan los procesos entre sí |
 
+**El asistente del chat es opcional:** su clave, `GEMINI_API_KEY`, va comentada en `.env.example`. Sin
+ella el sistema arranca igual y el chat dice que no está configurado; para usarlo, sacarle el `#` y
+pegar la clave (ver "El asistente").
+
 Con alguna vacía, `docker compose up` no arranca y dice cuál falta. **En vez de completarlas a mano**,
 `node scripts/env-init.mjs` (= `pnpm env:init`; sin Node, ver abajo) arma el `.env` con todas al
 azar, también las dos contraseñas de las cuentas, que quedan escritas en el `.env`. No imprime
@@ -166,8 +175,8 @@ docker run --rm -v "$PWD":/app -w /app node:24-alpine node scripts/env-init.mjs 
 docker run --rm -v "${PWD}:/app" -w /app node:24-alpine node scripts/env-init.mjs        # PowerShell
 ```
 
-**Qué levanta.** Once contenedores: PostgreSQL, Artemis, los cuatro módulos, los tres simuladores y
-`web`, que es [Caddy](https://caddyserver.com/) sirviendo el front y repartiendo `/api` entre los
+**Qué levanta.** Doce contenedores: PostgreSQL, Artemis, los cuatro módulos, los tres simuladores, el
+asistente del chat (`agent`, en Node) y `web`, que es [Caddy](https://caddyserver.com/) sirviendo el front y repartiendo `/api` entre los
 módulos con las mismas reglas que el proxy de Vite (`docker/Caddyfile`). **Hacia afuera solo se
 publica `web`**; los módulos y los simuladores se hablan por la red interna de compose, y la base y el
 broker quedan en `127.0.0.1`, como siempre. Corre sin perfil de Spring, o sea contra PostgreSQL:
@@ -175,8 +184,8 @@ es el mismo ambiente que `pnpm demo`, **con los mismos volúmenes**, así que co
 
 | Comando | Qué hace |
 |---|---|
-| `docker compose ps` | El estado de los once. Los Java pasan a `healthy` cuando escuchan |
-| `docker compose logs -f core` | El log de uno (`charging`, `integration`, `async`, `payment-gateway`, `power-grid`, `charger`, `web`...) |
+| `docker compose ps` | El estado de los doce. Los Java y el asistente pasan a `healthy` cuando escuchan |
+| `docker compose logs -f core` | El log de uno (`charging`, `integration`, `async`, `payment-gateway`, `power-grid`, `charger`, `agent`, `web`...) |
 | `docker compose down` | Baja todo. Los datos quedan en los volúmenes |
 | `git pull && docker compose up -d --build` | Actualiza a lo último |
 
@@ -870,6 +879,54 @@ curl -X POST http://localhost:8088/v1/connectors/1/session \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"sessionId":"prueba-1","powerLimitKw":50}'
 curl http://localhost:8088/v1/connectors/1 -H "Authorization: Bearer $TOKEN"
+```
+
+### El asistente
+
+La burbuja de abajo a la derecha abre un chat con un agente que entiende pedidos como *"estoy en
+Plaza Italia, ¿dónde cargo?"*: ubica el lugar, busca estaciones cerca y recomienda a cuál ir. Con
+sesión iniciada, también dice qué horarios tiene libres un conector. **Solo consulta: no reserva
+ni confirma nada**, eso se hace desde el mapa.
+
+Es un proceso aparte en `agent/`, en TypeScript con [Strands Agents](https://strandsagents.com) y
+Gemini, en el 8085. `pnpm dev` lo levanta en el panel `8085 agent`, y el proxy de Vite le manda
+`/api/agent`. Consulta a core y a Reservas **con el token del conductor que escribe**, así que ve
+lo mismo que él. Para ubicar lugares usa Photon, el mismo servicio que el mapa.
+
+**Necesita una clave de Gemini**, que es personal y gratis:
+
+1. Sacala en https://aistudio.google.com/apikey (con una cuenta de Google, sin tarjeta).
+2. Pegala en el `.env` de la raíz: `GEMINI_API_KEY=tu_clave` (en el `.env.example` va comentada). **Nunca en otro archivo**: el `.env`
+   es el único que no se versiona.
+3. Reiniciá el panel `8085 agent`.
+
+Sin clave, el agente arranca igual y el chat dice que no está configurado.
+
+**Con Docker** es el contenedor `agent`, y Caddy le manda `/api/agent`. Toma la clave del mismo `.env`;
+después de cargarla, `docker compose up -d agent` lo recrea con ella.
+
+Cinco cosas que conviene saber:
+
+- **El plan gratis de Gemini es lento a ratos.** Una pregunta con búsqueda tarda de 5 a 30
+  segundos según la demanda, y a veces un modelo contesta 503. El agente prueba los modelos de
+  `GEMINI_MODELS` en orden; si todos fallan, el chat dice que está saturado.
+- **Hay un tope de 10 preguntas por minuto por persona**, para no agotar el cupo gratis. La
+  undécima recibe "Esperá N segundos". Se cuenta por la dirección del navegador, que el proxy de
+  Vite le pasa al agente, y se borra al reiniciar el panel `8085 agent`.
+- **Reiniciar el panel `8085 agent` le borra la memoria de las conversaciones abiertas.** Cada respuesta
+  sale sellada y el asistente descarta las que vuelven sin sello válido (así se defiende de un
+  historial inventado); el sello se hace con una clave que se genera al arrancar.
+- **Google puede usar lo que se le manda** en el plan gratis para mejorar sus modelos. No
+  escribas datos personales en el chat.
+- **En el panel `8085 agent` queda una línea por pregunta**, con el tiempo y las herramientas que usó:
+  `[agent] 200 en 12483 ms · con sesión · herramientas: find_place, search_stations`.
+
+Los tests no salen a la red: usan un modelo guionado.
+
+```bash
+pnpm --dir agent test        # los tests
+pnpm --dir agent typecheck   # los tipos
+pnpm --dir agent format      # el formato (Prettier, la misma configuración que el front)
 ```
 
 ### Producción: un solo artefacto
