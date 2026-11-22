@@ -929,6 +929,16 @@ pnpm --dir agent typecheck   # los tipos
 pnpm --dir agent format      # el formato (Prettier, la misma configuración que el front)
 ```
 
+**El eval set** (`agent/eval/`): 20 casos con su salida esperada y su criterio —15 del dominio y 5
+adversariales: inyección directa e indirecta, un pedido peligroso, fuga de datos y el proveedor caído—,
+sobre datos fijos (sin core ni Photon). CI corre en cada PR lo que no depende del modelo; contra
+Gemini de verdad se corre a mano y deja el informe en `agent/eval/results/`. Aprueba con el 90 % de los
+del dominio y todos los adversariales; si no llega, sale con código 1.
+
+```bash
+pnpm agent:eval              # los 20 contra Gemini, con la clave del .env (unos 3 minutos)
+```
+
 ### Producción: un solo artefacto
 
 ```bash

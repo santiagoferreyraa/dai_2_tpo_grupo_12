@@ -12,6 +12,7 @@
     "dev:grid": "node scripts/free-port.mjs 8087 && node scripts/with-env.mjs mvn -pl simulation/power-grid spring-boot:run -Dspring-boot.run.profiles=local",
     "dev:charger": "node scripts/free-port.mjs 8088 && node scripts/with-env.mjs mvn -pl simulation/charger spring-boot:run -Dspring-boot.run.profiles=local",
     "dev:front": "node scripts/free-port.mjs 5173 && pnpm --dir frontend dev",
+    "agent:eval": "node scripts/with-env.mjs pnpm --dir agent eval",
     "dev:agent": "node scripts/free-port.mjs 8085 && node scripts/with-env.mjs pnpm --dir agent start",
     "dev:plain": "concurrently --names back,charging,pay,gateway,grid,charger,front --prefix-colors cyan,yellow,blue,green,red,white,magenta --kill-others-on-fail \"pnpm dev:back\" \"pnpm dev:charging\" \"pnpm dev:pay\" \"pnpm dev:gateway\" \"pnpm dev:grid\" \"pnpm dev:charger\" \"pnpm dev:front\"",
     "dev:mem": "mprocs --config mprocs-mem.yaml",

@@ -1,2 +1,4 @@
 node_modules
 pnpm-lock.yaml
+# Los informes del eval los escribe eval/run.ts: son evidencia tal como salió, no código.
+eval/results
