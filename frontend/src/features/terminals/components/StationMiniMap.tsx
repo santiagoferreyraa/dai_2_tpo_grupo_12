@@ -50,6 +50,8 @@ interface StationMiniMapProps {
   focus: StationDetail
   /** El punto del usuario, si el navegador lo dio. */
   deviceLocation?: DeviceLocation | null
+  /** Cuánto se acerca. Por defecto el de la portada; la pantalla de carga lo abre un poco más. */
+  zoom?: number
   className?: string
 }
 
@@ -57,6 +59,7 @@ export default function StationMiniMap({
   stations,
   focus,
   deviceLocation = null,
+  zoom = MINI_ZOOM,
   className = '',
 }: StationMiniMapProps) {
   const theme = useTheme()
@@ -72,7 +75,7 @@ export default function StationMiniMap({
       */
       key={`${String(focus.id)}-${theme}`}
       center={[focus.latitude, focus.longitude]}
-      zoom={MINI_ZOOM}
+      zoom={zoom}
       /* Todos los gestos apagados: el recuadro es una imagen, no un mapa que se opera. */
       dragging={false}
       scrollWheelZoom={false}

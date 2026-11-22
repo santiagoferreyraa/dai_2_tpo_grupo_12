@@ -4,8 +4,8 @@ import { useNow } from '@/features/bookings/useNow'
 import { ApiError } from '@/lib/api'
 
 import { fetchSession, stopCharging } from '../data/sessionsRepository'
-import { formatDuration, formatKw, formatKwh } from '../format'
 import type { ChargingSession } from '../types'
+import ChargingStage from './ChargingStage'
 
 interface ActiveSessionCardProps {
   session: ChargingSession
@@ -87,67 +87,36 @@ export default function ActiveSessionCard({
   const elapsedMs = Math.max(0, now.getTime() - session.startedAt.getTime())
 
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex items-center gap-3">
-        <span aria-hidden="true" className="relative flex h-3 w-3">
-          <span className="bg-primary absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 motion-reduce:animate-none" />
-          <span className="bg-primary relative inline-flex h-3 w-3 rounded-full" />
-        </span>
-        <h1 className="text-text text-3xl leading-tight font-extrabold tracking-tight">Cargando</h1>
-      </header>
-
-      <dl className="grid grid-cols-2 gap-4">
-        <Stat label="Tiempo" value={formatDuration(elapsedMs)} />
-        <Stat label="Energía" value={`${formatKwh(session.kwhDelivered)} kWh`} />
-        <Stat
-          label="Batería"
-          value={
-            session.batteryPercent === null
-              ? `— / ${String(session.targetBatteryPercent ?? '—')}%`
-              : `${String(Math.round(session.batteryPercent))}% / ${String(session.targetBatteryPercent ?? '—')}%`
-          }
-        />
-        <Stat
-          label="Potencia"
-          value={
-            session.currentPowerKw !== null
-              ? `${formatKw(session.currentPowerKw)} kW`
-              : session.powerLimitKw !== null
-                ? `hasta ${formatKw(session.powerLimitKw)} kW`
-                : '—'
-          }
-        />
-      </dl>
-
-      <p className="text-text-muted text-xs leading-relaxed">
-        Conector {session.connectorId}. La carga se corta sola al llegar al{' '}
-        {session.targetBatteryPercent}% o cuando se termina tu tiempo disponible. El consumo se
-        cobra al terminar.
-      </p>
-
-      {error !== null && (
-        <p className="text-danger text-sm" role="alert">
-          {error}
-        </p>
-      )}
-
-      <button
-        type="button"
-        onClick={() => void handleStop()}
-        disabled={stopping}
-        className="border-danger text-danger hover:bg-danger/10 rounded-xl border px-6 py-3 text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {stopping ? 'Deteniendo…' : 'Detener carga'}
-      </button>
-    </div>
-  )
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="border-border/70 flex flex-col gap-1 rounded-2xl border px-4 py-3">
-      <dt className="text-text-muted text-xs font-semibold tracking-wide uppercase">{label}</dt>
-      <dd className="text-text text-xl font-extrabold tabular-nums">{value}</dd>
-    </div>
+    <ChargingStage
+      session={session}
+      elapsedMs={elapsedMs}
+      refreshMs={REFRESH_MS}
+      live
+      action={
+        <>
+          {error !== null && (
+            <p
+              className="text-danger glass-panel glass-over-photo rounded-xl px-4 py-2 text-sm"
+              role="alert"
+            >
+              {error}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => void handleStop()}
+            disabled={stopping}
+            /*
+              El contorno fino, un verde más claro que el del fluido, es lo que lo despega del fondo: con la carga alta, un botón
+              verde claro sobre el verde del fondo se perdía. Por dentro lleva un filo de luz arriba,
+              como el vidrio de las tarjetas.
+            */
+            className="brand-fill text-on-primary rounded-xl px-6 py-3.5 text-sm font-extrabold tracking-wide uppercase shadow-[0_6px_20px_rgb(0_0_0/0.25),inset_0_1px_0_rgb(255_255_255/0.45)] ring-1 ring-(--charge-button-ring) transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {stopping ? 'Deteniendo…' : 'Detener carga'}
+          </button>
+        </>
+      }
+    />
   )
 }

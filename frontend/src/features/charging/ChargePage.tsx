@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 
 import { refreshMyBookings } from '@/features/bookings/data/myBookingsStore'
 
 import ActiveSessionCard from './components/ActiveSessionCard'
-import SessionSummary from './components/SessionSummary'
+import ChargeSummaryDialog from './components/ChargeSummaryDialog'
+import ChargingStage from './components/ChargingStage'
 import StartChargingForm from './components/StartChargingForm'
 import { fetchActiveSession, fetchSession } from './data/sessionsRepository'
 import type { ChargingSession } from './types'
@@ -82,7 +83,8 @@ type PageState =
  *    viene con `?bookingId=`; si no, el backend usa su reserva para ese conector si es la hora, y si
  *    no tiene, la carga es sin reserva (RF10).
  * 2. **Cargando**: la sesión activa, con el botón para detenerla.
- * 3. **Terminada**: lo que entregó, lo que costó y cómo se cobró.
+ * 3. **Terminada**: la misma escena, quieta, con el resumen encima en un diálogo: lo que entregó,
+ *    lo que costó y cómo se cobró.
  *
  * Al abrirla siempre se pregunta primero si hay una sesión activa: el conductor puede volver desde
  * otra pantalla, otra pestaña u otro teléfono, y ofrecerle escanear estando ya cargando lo llevaría
@@ -90,6 +92,7 @@ type PageState =
  */
 export default function ChargePage() {
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const [state, setState] = useState<PageState>({ kind: 'loading' })
 
   const bookingParam = searchParams.get('bookingId')
@@ -148,6 +151,39 @@ export default function ChargePage() {
     refreshMyBookings()
   }, [])
 
+  const closeSummary = useCallback(() => {
+    void navigate('/')
+  }, [navigate])
+
+  /*
+    Cargando y terminada ocupan todo el ancho: son la escena del fluido, no un formulario. Terminada
+    es la misma escena, quieta en el nivel al que llegó, con el resumen encima. En el celular, sin
+    margen: el recuadro llega a los bordes del teléfono, como el mapa.
+  */
+  if (state.kind === 'active' || state.kind === 'finished') {
+    return (
+      <div className="flex flex-1 flex-col overflow-y-auto md:px-6 md:pt-6 md:pb-6">
+        {state.kind === 'active' ? (
+          <ActiveSessionCard session={state.session} onFinished={handleFinished} />
+        ) : (
+          <>
+            <ChargingStage
+              session={state.session}
+              elapsedMs={
+                state.session.stoppedAt === null
+                  ? 0
+                  : state.session.stoppedAt.getTime() - state.session.startedAt.getTime()
+              }
+              refreshMs={0}
+              live={false}
+            />
+            <ChargeSummaryDialog session={state.session} onClose={closeSummary} />
+          </>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="flex-1 overflow-y-auto">
       {/* El mismo centrado que contacto: `min-h-full` para que no se corte si no entra. */}
@@ -180,22 +216,6 @@ export default function ChargePage() {
               onStarted={handleStarted}
               onAlreadyCharging={reload}
             />
-          )}
-
-          {state.kind === 'active' && (
-            <ActiveSessionCard session={state.session} onFinished={handleFinished} />
-          )}
-
-          {state.kind === 'finished' && (
-            <div className="flex flex-col gap-6">
-              <SessionSummary session={state.session} />
-              <Link
-                to="/"
-                className="brand-fill text-on-primary self-start rounded-xl px-5 py-2.5 text-sm font-bold"
-              >
-                Volver al inicio
-              </Link>
-            </div>
           )}
         </div>
       </div>
