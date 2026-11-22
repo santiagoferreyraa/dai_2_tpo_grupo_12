@@ -4,8 +4,11 @@
 # Somos cuatro: si alguien mergea algo que no compila o que no está formateado, los otros
 # tres se lo llevan puesto en su próximo rebase.
 #
-# Los tres jobs corren en paralelo y son independientes. `api` es el de QA-05: levanta los cuatro backends y los tres simuladores
-# y les corre la colección de Postman con Newman.
+# Los cuatro jobs corren en paralelo y son independientes. `api` es el de QA-05: levanta los cuatro backends y los tres simuladores
+# y les corre la colección de Postman con Newman. `agent` es el del asistente del chat (agent/).
+#
+# Ojo: el nombre de cada job es un `context` del ruleset de main. "Agent (Node)" NO está en el
+# ruleset (no bloquea el merge); si se lo quiere obligatorio, lo agrega SantiagoF en Settings.
 
 name: CI
 
@@ -90,6 +93,44 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+  # El asistente del chat: Node con TypeScript, sin compilar (Node 24 le saca los tipos al correr).
+  # Mismos pasos que el front: dependencias exactas, formato, tipos y los tests, que usan un modelo
+  # guionado y no salen a la red ni piden la clave de Gemini.
+  agent:
+    name: Agent (Node)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Antes de setup-node, por lo mismo que en el front. La versión sale de agent/package.json.
+      - name: Preparar pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: agent/package.json
+
+      - name: Preparar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: agent/pnpm-lock.yaml
+
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      - name: Chequear formato
+        run: pnpm run format:check
+
+      - name: Tipos
+        run: pnpm run typecheck
+
+      - name: Tests
+        run: pnpm test
 
   # QA-05 (ECO-155): la colección de API, contra el sistema corriendo de verdad.
   #

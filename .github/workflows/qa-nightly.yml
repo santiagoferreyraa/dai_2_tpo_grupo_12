@@ -88,6 +88,18 @@ jobs:
             --output /src/reports/trivy-frontend.txt --exit-code 1 /src/frontend \
             || (cat reports/trivy-frontend.txt; exit 1)
 
+      # El asistente del chat (agent/). Lo que no se cierra con una versión del paquete propio se
+      # fuerza en agent/pnpm-workspace.yaml (overrides), con el porqué.
+      - name: Asistente (pnpm-lock)
+        if: always()
+        run: |
+          mkdir -p reports
+          docker run --rm -v "$PWD:/src" aquasec/trivy:0.57.0 fs \
+            --scanners vuln --severity HIGH,CRITICAL --format table \
+            --ignorefile /src/.trivyignore \
+            --output /src/reports/trivy-agent.txt --exit-code 1 /src/agent \
+            || (cat reports/trivy-agent.txt; exit 1)
+
       - name: Guardar reportes
         if: always()
         uses: actions/upload-artifact@v4

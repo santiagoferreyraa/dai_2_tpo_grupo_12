@@ -4,3 +4,12 @@
 allowBuilds:
   '@google/genai': false
   protobufjs: false
+
+# Dependencias transitivas con vulnerabilidades altas que Trivy marca (QA nocturno). Las traen
+# @google/genai y @strands-agents/sdk con rangos que ya admiten la versión arreglada, pero pnpm no
+# las sube solo. Cuando esos paquetes pidan una versión igual o mayor, esto sobra y se borra.
+#   @modelcontextprotocol/sdk 1.30.1 → CVE-2026-104850, CVE-2026-111767, CVE-2026-111768
+#   body-parser 2.3.0 → CVE-2026-111181
+overrides:
+  '@modelcontextprotocol/sdk': ^1.32.0
+  body-parser: ^2.4.0
