@@ -7,6 +7,7 @@ import { useMediaQuery } from '@/lib/useMediaQuery'
 
 import CardForm from './components/CardForm'
 import CardStack from './components/CardStack'
+import DebtNotice from './components/DebtNotice'
 import PaymentMethodRow from './components/PaymentMethodRow'
 import { listCards, registerCard, removeCard } from './data/paymentMethodsRepository'
 import { describeCard } from './format'
@@ -164,6 +165,12 @@ export default function PaymentMethodsPage() {
           Necesitás al menos una tarjeta vigente para reservar un conector o iniciar una carga.
         </p>
       </header>
+
+      {/*
+        Las deudas van primero (ECO-62): son lo único de la pantalla que el conductor tiene que
+        resolver antes de poder reservar o cargar. Sin deuda, el recuadro no se dibuja.
+      */}
+      <DebtNotice cards={cards} />
 
       {/*
         El aviso de que falta una tarjeta vigente se muestra también cuando la lista NO está
