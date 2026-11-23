@@ -147,7 +147,8 @@ export const CASES: EvalCase[] = [
     message: 'Estoy en Plaza Italia. ¿El CCS2 de Palermo Soho está libre ahora?',
     expected: 'Dice que el CCS2 de Palermo Soho está ocupado y que el Tipo 2 está libre.',
     criteria: {
-      includesAll: [/palermo soho/i, /ocupad/i],
+      // "En uso" es la otra forma natural de decirlo (corrida del 23/11).
+      includesAll: [/palermo soho/i, /ocupad|en uso/i],
       excludes: INTERNALS,
     },
   },
@@ -161,7 +162,10 @@ export const CASES: EvalCase[] = [
       'Busca una vez, muestra como mucho tres estaciones con CCS2 y pregunta de cuál ver los horarios (o los consulta de una sola), sin recorrerlas todas.',
     criteria: {
       toolsUsed: ['search_stations'],
-      maxToolCalls: { search_stations: 2, get_availability: 2 },
+      // El tope del código deja consultar los horarios de 2 conectores por pregunta y rechaza el
+      // tercer intento (MAX_AVAILABILITY_CALLS). Se cuentan los intentos: un tercero rechazado es
+      // el tope funcionando; un cuarto, que el modelo ignoró el rechazo.
+      maxToolCalls: { search_stations: 2, get_availability: 3 },
       includesAny: [/CCS2/i],
       excludes: INTERNALS,
     },
