@@ -3,7 +3,8 @@
  *
  * El agente no tiene permisos propios. Cada llamada viaja con el token del conductor que escribió
  * en el chat, el mismo que manda el front, así que el agente ve exactamente lo que ese usuario
- * vería en la pantalla, ni más ni menos. Sin sesión, solo llega a lo público: buscar estaciones.
+ * vería en la pantalla, ni más ni menos. Desde el 23/11 el servidor no deja pasar a nadie sin una
+ * sesión que core haya validado (ver `createSessionChecker`, abajo).
  */
 
 export type ConnectorType = 'CCS2' | 'CHADEMO' | 'TYPE_2'
@@ -149,5 +150,54 @@ export function createEcopediaApi(options: EcopediaApiOptions): EcopediaApi {
       const params = new URLSearchParams({ connectorId: String(connectorId), from, to })
       return get(options.chargingUrl, `/api/bookings/availability?${params.toString()}`, signal)
     },
+  }
+}
+
+/**
+ * Qué dijo core del token: si vale, si no vale, o si no se pudo saber.
+ *
+ * `unavailable` no es `invalid`: con core caído no se sabe nada del token, y contestar 401 ahí
+ * haría que el front crea que la sesión no vale.
+ */
+export type SessionCheck = 'valid' | 'invalid' | 'unavailable'
+
+export interface SessionCheckOptions {
+  coreUrl: string
+  /** Se inyecta en los tests. */
+  fetch?: typeof fetch
+}
+
+/**
+ * Valida el token del conductor contra core antes de llamar al modelo (Manuel, 23/11: el asistente
+ * es solo para quien inició sesión).
+ *
+ * **Mirar que llegue un `Bearer` no alcanza:** buscar estaciones es público, así que con un token
+ * inventado cualquiera podría usar el asistente y gastar el cupo de Gemini. Core es el único que
+ * sabe si el token es suyo y está vigente, y `GET /api/users/profile` lo responde con cualquier
+ * rol. Es una consulta de milisegundos al lado de los segundos del modelo.
+ */
+export function createSessionChecker(options: SessionCheckOptions) {
+  const doFetch = options.fetch ?? fetch
+
+  return async function checkSession(
+    authorization: string,
+    signal?: AbortSignal,
+  ): Promise<SessionCheck> {
+    const timeout = AbortSignal.timeout(TIMEOUT_MS)
+    let response: Response
+    try {
+      response = await doFetch(`${options.coreUrl}/api/users/profile`, {
+        headers: { Accept: 'application/json', Authorization: authorization },
+        signal: signal === undefined ? timeout : AbortSignal.any([signal, timeout]),
+      })
+    } catch {
+      return 'unavailable'
+    }
+    await response.body?.cancel().catch(() => undefined)
+
+    if (response.ok) return 'valid'
+    // 404: el token es de un usuario que core ya no encuentra. Para el asistente, no hay sesión.
+    if ([401, 403, 404].includes(response.status)) return 'invalid'
+    return 'unavailable'
   }
 }

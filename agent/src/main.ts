@@ -6,13 +6,12 @@
  */
 
 import { GoogleGenAI } from '@google/genai'
-import { FallbackStrategy, ModelRouter } from '@strands-agents/sdk'
-import { GoogleModel } from '@strands-agents/sdk/models/google'
 
 import { createAssistant } from './assistant.ts'
 import { readConfig } from './config.ts'
-import { createEcopediaApi } from './ecopedia.ts'
+import { createEcopediaApi, createSessionChecker } from './ecopedia.ts'
 import { findPlaces } from './geocoding.ts'
+import { createGeminiModel } from './gemini.ts'
 import { createServer } from './server.ts'
 
 const config = readConfig()
@@ -27,17 +26,7 @@ function buildAssistant() {
   const client = new GoogleGenAI({ apiKey: config.apiKey })
 
   return createAssistant({
-    /*
-     * Los modelos en cadena: si el primero contesta saturado, `FallbackStrategy` prueba el
-     * siguiente. Se arma por pedido porque el router se engancha al agente, y hay uno por pedido.
-     */
-    createModel: () =>
-      new ModelRouter(
-        config.models.map(
-          (modelId) => new GoogleModel({ client, modelId, params: { temperature: 0.3 } }),
-        ),
-        { strategy: new FallbackStrategy() },
-      ),
+    createModel: () => createGeminiModel(client, config.models),
     createApi: (authorization) =>
       createEcopediaApi({
         coreUrl: config.coreUrl,
@@ -50,7 +39,9 @@ function buildAssistant() {
 
 const assistant = buildAssistant()
 
-createServer({ assistant }).listen(config.port, () => {
+const checkSession = createSessionChecker({ coreUrl: config.coreUrl })
+
+createServer({ assistant, checkSession }).listen(config.port, () => {
   console.log(`[agent] escuchando en http://localhost:${config.port}`)
   console.log(`[agent] modelos: ${config.models.join(' → ')}`)
   console.log(`[agent] core: ${config.coreUrl} · reservas: ${config.chargingUrl}`)

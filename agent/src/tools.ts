@@ -34,11 +34,22 @@ const MAX_RADIUS_KM = 50
 
 const ZONE = 'America/Argentina/Buenos_Aires'
 
+/**
+ * Cuántos conectores puede consultar `get_availability` en una misma pregunta. Dos alcanzan para una
+ * estación con dos conectores del tipo pedido; más es el modelo recorriendo estación por estación,
+ * que es lo que hacía con "CCS2 con horarios libres" hasta pasar el tiempo (Manuel, 23/11). Se
+ * cuenta por conector porque es lo que la herramienta recibe: no sabe de qué estación es cada uno.
+ */
+export const MAX_AVAILABILITY_CALLS = 2
+
 const CONNECTOR_TYPE = z
   .enum(['CCS2', 'CHADEMO', 'TYPE_2'])
   .describe('Tipo de conector: CCS2, CHADEMO o TYPE_2 (Tipo 2).')
 
 export function createTools(deps: ToolDeps) {
+  /* Las herramientas se arman por pedido (un agente por pregunta), así que el contador también. */
+  let availabilityCalls = 0
+
   const findPlace = tool({
     name: 'find_place',
     description:
@@ -162,6 +173,15 @@ export function createTools(deps: ToolDeps) {
             'inicie sesión y vuelva a preguntar.',
         }
       }
+
+      if (availabilityCalls >= MAX_AVAILABILITY_CALLS) {
+        return {
+          error:
+            'Ya consultaste los horarios de una estación en esta pregunta. No consultes más: ' +
+            'mostrale al conductor lo que tenés y preguntale de qué otra estación quiere ver los horarios.',
+        }
+      }
+      availabilityCalls += 1
 
       const start = new Date(from)
       const end = new Date(to)

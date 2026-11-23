@@ -1,6 +1,7 @@
-import { Outlet } from 'react-router'
+import { Outlet, useLocation } from 'react-router'
 
 import AgentAssistant from '@/features/agent/AgentAssistant'
+import { useSession } from '@/features/auth/session'
 import IridescentBackdrop from '@/features/backdrop/IridescentBackdrop'
 import ActiveBookingBanner from '@/features/bookings/ActiveBookingBanner'
 import Navbar from '@/features/navigation/Navbar'
@@ -17,7 +18,14 @@ import NotificationToasts from '@/features/notifications/NotificationToasts'
  * izquierda y la barra del celular— y viven en `features/navigation`: este archivo monta una
  * línea y no sabe cuántas secciones hay ni cuál está activa.
  */
+/** Las pantallas donde no va la burbuja aunque haya sesión: se viene a entrar, no a charlar. */
+const WITHOUT_ASSISTANT = new Set(['/login', '/register'])
+
 export default function App() {
+  const session = useSession()
+  const { pathname } = useLocation()
+  const showAssistant = session !== null && !WITHOUT_ASSISTANT.has(pathname)
+
   return (
     /*
       `h-full` y no `min-h-full`: la altura tiene que quedar DEFINIDA, porque las pantallas
@@ -65,13 +73,19 @@ export default function App() {
       <NotificationToasts />
 
       {/*
-        El asistente: una burbuja fija en la esquina de abajo a la derecha, en todas las pantallas.
+        El asistente: una burbuja fija en la esquina de abajo a la derecha, **solo con sesión
+        iniciada** y fuera del login y el registro (Manuel, 23/11). El agente también rechaza a
+        quien llega sin sesión: esto es lo que se ve, no la seguridad.
 
         Va acá por lo mismo que la navegación —es parte del marco, no de ninguna pantalla— y
         FUERA del <main>, porque flota sobre el contenido y no tiene que ocupar lugar en el flujo.
         La conversación vive adentro del componente, así que cerrar el chat no la borra.
+
+        La `key` es la sesión: al cerrar sesión o entrar con otra cuenta el componente se monta de
+        nuevo y la conversación empieza vacía. Sin esto, lo hablado con una cuenta lo veía la
+        siguiente.
       */}
-      <AgentAssistant />
+      {showAssistant && <AgentAssistant key={`${session.userId}:${session.expiresAt}`} />}
 
       {/*
         Columna flex, no un bloque suelto: así una pantalla que quiere ocupar todo el alto

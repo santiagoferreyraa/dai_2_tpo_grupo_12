@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
+import { ModelThrottledError } from '@strands-agents/sdk'
+
 import { AssistantError, createAssistant, toMessages } from '../src/assistant.ts'
 import { createEcopediaApi } from '../src/ecopedia.ts'
 import type { Place } from '../src/geocoding.ts'
 import { REMINDER } from '../src/prompt.ts'
+import { MAX_AVAILABILITY_CALLS } from '../src/tools.ts'
 import { ScriptedModel, toolResultAt, type Step } from './scripted-model.ts'
 
 const CORE = 'http://core.test'
@@ -223,10 +226,72 @@ describe('la sesión en las instrucciones', () => {
     assert.match(systemPrompt(model), /El conductor inició sesión/)
   })
 
-  it('sin token, el modelo sabe que para ver horarios hace falta entrar', async () => {
-    const { model, ask } = setup([{ text: 'ok' }])
+  it('un pedido amplio se resuelve simple: tres estaciones y horarios de una sola', async () => {
+    const { model, ask } = setup([{ text: 'ok' }], { authorization: TOKEN })
     await ask('hola')
-    assert.match(systemPrompt(model), /El conductor NO inició sesión/)
+    assert.match(systemPrompt(model), /como máximo tres estaciones/)
+    assert.match(systemPrompt(model), /una sola estación por pregunta/)
+  })
+})
+
+describe('los topes de una pregunta (23/11)', () => {
+  const slot = (connectorId: number) => ({
+    tool: 'get_availability',
+    input: { connectorId, from: '2026-09-30T10:00:00-03:00', to: '2026-09-30T12:00:00-03:00' },
+  })
+
+  it(`los horarios se consultan de ${MAX_AVAILABILITY_CALLS} conectores como mucho por pregunta`, async () => {
+    const { model, requests, ask } = setup([slot(1), slot(2), slot(3), { text: 'Elegí una.' }], {
+      authorization: TOKEN,
+      reply: () => ({ body: [] }),
+    })
+    await ask('Horarios de todas las CCS2')
+
+    assert.equal(requests.length, MAX_AVAILABILITY_CALLS)
+    assert.match((toolResultAt(model, 3) as { error: string }).error, /Ya consultaste/)
+  })
+
+  it('una pregunta que pasa el tope de vueltas es "muy amplia", no una respuesta vacía', async () => {
+    const place = { tool: 'find_place', input: { query: 'Plaza Italia' } }
+    const { ask } = setup([place, place, place, place, place, place, { text: 'nunca llega' }], {
+      authorization: TOKEN,
+    })
+    await assert.rejects(ask('Todas las estaciones'), (error: unknown) => {
+      return error instanceof AssistantError && error.reason === 'too-broad'
+    })
+  })
+
+  it('cortada por tiempo, falla: nunca devuelve "Cancelled by user" como respuesta', async () => {
+    const model = new ScriptedModel([{ text: 'no debería leerse' }])
+    const assistant = createAssistant({
+      createModel: () => model,
+      createApi: (authorization) =>
+        createEcopediaApi({ coreUrl: CORE, chargingUrl: CHARGING, authorization }),
+      findPlaces: async () => [PLAZA_ITALIA],
+    })
+    const timedOut = new AbortController()
+    timedOut.abort()
+
+    await assert.rejects(
+      assistant.ask({
+        message: 'hola',
+        history: [],
+        authorization: TOKEN,
+        signal: timedOut.signal,
+      }),
+      (error: unknown) => !(error instanceof Error) || !/Cancelled by user/.test(error.message),
+    )
+  })
+
+  it('Gemini saturado se reintenta una sola vez, sin la espera larga de Strands', async () => {
+    const busy = () => ({ fail: new ModelThrottledError('429 RESOURCE_EXHAUSTED') })
+    const { model, ask } = setup([busy(), busy(), { text: 'ok' }], { authorization: TOKEN })
+    const started = Date.now()
+    await assert.rejects(ask('hola'), (error: unknown) => {
+      return error instanceof AssistantError && error.reason === 'busy'
+    })
+    assert.equal(model.calls.length, 2)
+    assert.ok(Date.now() - started < 3000, 'esperó de más entre reintentos')
   })
 })
 

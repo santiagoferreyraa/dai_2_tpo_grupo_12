@@ -5,11 +5,13 @@ import AgentChatPanel from './AgentChatPanel'
 import { useAgentChat } from './useAgentChat'
 
 /**
- * El asistente entero: la burbuja que está en todas las pantallas y el chat que abre.
+ * El asistente entero: la burbuja que está en todas las pantallas con sesión iniciada y el chat que
+ * abre.
  *
  * Lo monta `App.tsx` una sola vez, al lado de la navegación, y por eso vive acá la conversación:
  * el panel se desmonta cada vez que el chat se cierra, así que si el hilo estuviera adentro se
- * perdería lo hablado al cerrar sin querer. Acá arriba sobrevive a todo menos a recargar.
+ * perdería lo hablado al cerrar sin querer. Acá arriba sobrevive a todo menos a recargar y a
+ * cerrar sesión: `App.tsx` lo monta con la sesión como `key`, así que cada sesión empieza vacía.
  *
  * Es también el único archivo de la feature que conoce a los otros dos. Ver `agentClient.ts` para
  * la costura con el backend.
