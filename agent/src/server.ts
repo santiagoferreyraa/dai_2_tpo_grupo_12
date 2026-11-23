@@ -203,7 +203,8 @@ function describe(error: unknown, signal: AbortSignal): { status: number; messag
       case 'bad-key':
         return {
           status: 503,
-          message: 'El asistente no está bien configurado: revisá la clave de Gemini.',
+          message:
+            'El asistente no está disponible en este momento. Mientras tanto, podés buscar estaciones en el mapa.',
         }
       case 'failed':
         return { status: 502, message: 'El asistente no pudo responder. Probá de nuevo.' }
