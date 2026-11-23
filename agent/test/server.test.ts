@@ -88,7 +88,7 @@ describe('POST /api/agent/chat', () => {
 describe('las fallas llegan como mensajes para el conductor, nunca como 401 o 403', () => {
   const cases: [AssistantError['reason'], number, RegExp][] = [
     ['busy', 503, /saturado/],
-    ['bad-key', 503, /clave de Gemini/],
+    ['bad-key', 503, /buscar estaciones en el mapa/],
     ['failed', 502, /no pudo responder/],
   ]
 
@@ -104,7 +104,7 @@ describe('las fallas llegan como mensajes para el conductor, nunca como 401 o 40
         assert.equal(response.status, status)
         const body = (await response.json()) as { message: string }
         assert.match(body.message, message)
-        assert.doesNotMatch(body.message, /detalle técnico/)
+        assert.doesNotMatch(body.message, /detalle técnico|Gemini|clave/)
       })
     })
   }
