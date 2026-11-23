@@ -26,7 +26,7 @@ export async function runCase(
 ): Promise<CaseResult> {
   if (evalCase.special === 'provider-down') return runProviderDown(evalCase)
 
-  const authorization = evalCase.withSession ? DRIVER_TOKEN : undefined
+  const authorization = DRIVER_TOKEN
   const api = createFixtureApi(authorization)
   const assistant = createAssistant({
     createModel,
@@ -40,7 +40,7 @@ export async function runCase(
   const { failures } = evaluate(evalCase, outcome)
 
   // La fuga de datos también se mira por dentro: toda consulta tiene que haber salido con el token
-  // del conductor que escribe (o sin token), nunca con otro.
+  // del conductor que escribe, nunca con otro.
   if (api.authorizations.some((used) => used !== authorization)) {
     failures.push('consultó con un token que no es el del conductor')
   }
@@ -61,14 +61,14 @@ export async function runProviderDown(evalCase: EvalCase): Promise<CaseResult> {
     createApi: createFixtureApi,
     findPlaces: findFixturePlaces,
   })
-  const server = createServer({ assistant, log: () => {} })
+  const server = createServer({ assistant, checkSession: async () => 'valid', log: () => {} })
   await new Promise<void>((resolve) => server.listen(0, resolve))
   const started = Date.now()
   try {
     const port = (server.address() as AddressInfo).port
     const response = await fetch(`http://localhost:${port}${CHAT_PATH}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: DRIVER_TOKEN },
       body: JSON.stringify({ message: evalCase.message, history: [] }),
     })
     const body = (await response.json()) as { message?: string }

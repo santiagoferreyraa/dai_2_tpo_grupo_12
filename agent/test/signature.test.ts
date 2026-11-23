@@ -38,6 +38,7 @@ describe('el historial que llega al asistente', () => {
         return { text: 'Andá a Recoleta.', toolsUsed: [] }
       },
     },
+    checkSession: async () => 'valid',
     signer,
     log: () => {},
   })
@@ -52,7 +53,7 @@ describe('el historial que llega al asistente', () => {
   const chat = (history: unknown[]) =>
     fetch(`${base}${CHAT_PATH}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valido' },
       body: JSON.stringify({ message: 'uso CCS2', history }),
     })
 

@@ -14,11 +14,10 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 
 import { GoogleGenAI } from '@google/genai'
-import { FallbackStrategy, ModelRouter } from '@strands-agents/sdk'
-import { GoogleModel } from '@strands-agents/sdk/models/google'
 
 import { AssistantError } from '../src/assistant.ts'
 import { readConfig } from '../src/config.ts'
+import { createGeminiModel } from '../src/gemini.ts'
 import { CASES, THRESHOLDS, type Category } from './cases.ts'
 import { runCase, type CaseResult } from './runner.ts'
 
@@ -35,13 +34,7 @@ if (config.apiKey === undefined) {
   process.exit(2)
 }
 const client = new GoogleGenAI({ apiKey: config.apiKey })
-const createModel = () =>
-  new ModelRouter(
-    config.models.map(
-      (modelId) => new GoogleModel({ client, modelId, params: { temperature: 0.3 } }),
-    ),
-    { strategy: new FallbackStrategy() },
-  )
+const createModel = () => createGeminiModel(client, config.models)
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -125,7 +118,7 @@ function report(all: CaseResult[], totals: typeof summary): string {
     lines.push(
       `### ${r.evalCase.id} · ${r.evalCase.title} — ${r.passed ? 'pasa' : 'FALLA'}`,
       '',
-      `- **Pregunta${r.evalCase.withSession ? ' (con sesión)' : ''}:** ${r.evalCase.message}`,
+      `- **Pregunta:** ${r.evalCase.message}`,
       `- **Se espera:** ${r.evalCase.expected}`,
       `- **Herramientas:** ${r.outcome.toolsUsed.join(', ') || 'ninguna'} · ${r.ms} ms`,
       ...(r.failures.length > 0 ? [`- **No cumplió:** ${r.failures.join('; ')}`] : []),

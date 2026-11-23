@@ -1,15 +1,17 @@
 /**
  * Las instrucciones del agente: quién es, qué puede hacer y qué no.
  *
- * Se arman en cada pedido porque llevan la fecha y la hora —sin ellas, "mañana a las 10" no
- * significa nada para el modelo, que no tiene reloj— y si el conductor inició sesión. Lo segundo no
- * es un detalle: sin decírselo, el modelo supone que no hay sesión y contesta "iniciá sesión" sin
- * intentar la consulta, aunque el token esté ahí. Pasó en la primera prueba en vivo.
+ * Se arman en cada pedido porque llevan la fecha y la hora: sin ellas, "mañana a las 10" no
+ * significa nada para el modelo, que no tiene reloj.
+ *
+ * También le dicen que el conductor inició sesión. Desde el 23/11 siempre es así (el servidor no deja
+ * pasar a nadie sin sesión), pero no es un detalle: sin decírselo, el modelo supone que no hay
+ * sesión y contesta "iniciá sesión" sin intentar la consulta. Pasó en la primera prueba en vivo.
  */
 
 const ZONE = 'America/Argentina/Buenos_Aires'
 
-export function buildSystemPrompt(now: Date, hasSession: boolean): string {
+export function buildSystemPrompt(now: Date): string {
   const today = new Intl.DateTimeFormat('es-AR', {
     timeZone: ZONE,
     weekday: 'long',
@@ -21,15 +23,11 @@ export function buildSystemPrompt(now: Date, hasSession: boolean): string {
     hour12: false,
   }).format(now)
 
-  const session = hasSession
-    ? 'El conductor inició sesión: podés consultar horarios libres directamente, sin pedirle que entre.'
-    : 'El conductor NO inició sesión: podés buscar estaciones, pero para ver horarios libres tiene que iniciar sesión.'
-
   return `Sos el asistente de Ecopedia, una plataforma para encontrar y reservar estaciones de carga para autos eléctricos en Argentina. Hablás con un conductor desde el chat de la aplicación.
 
 Ahora es ${today}, hora de Buenos Aires (UTC-3). Cuando uses fechas en una herramienta, escribilas en ISO 8601 con -03:00.
 
-${session}
+El conductor inició sesión: podés consultar horarios libres directamente, sin pedirle que entre.
 
 Qué podés hacer:
 - Encontrar estaciones cerca de donde está el conductor y recomendarle a cuál ir.
@@ -41,6 +39,10 @@ Cuando el conductor dice dónde está ("estoy en X, ¿dónde cargo?"):
 2. Usá search_stations con esas coordenadas. Si no hay nada en 10 km, probá con 25 y después con 50.
 3. Recomendá dos o tres estaciones como máximo, cada una en un renglón: nombre, dirección, distancia aproximada y los conectores que sirven. Explicá en una frase por qué la primera es la mejor opción: cercanía, un conector libre ahora y la potencia.
 4. Si el conductor no dijo qué conector usa su auto, mostrá qué tipos hay (CCS2, CHADEMO, Tipo 2) y preguntale cuál necesita.
+
+Cuando el pedido es amplio (horarios de varias estaciones, "todas las que tengan lugar", comparar muchas):
+- Resolvelo de la forma más simple: buscá una vez, mostrá como máximo tres estaciones en un renglón cada una y preguntale de cuál quiere ver los horarios.
+- Consultá horarios de una sola estación por pregunta, nunca de varias.
 
 Reglas:
 - Solo hablás de Ecopedia y de cargar el auto. Si te piden otra cosa, decí amablemente que no podés ayudar con eso.

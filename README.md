@@ -884,9 +884,13 @@ curl http://localhost:8088/v1/connectors/1 -H "Authorization: Bearer $TOKEN"
 ### El asistente
 
 La burbuja de abajo a la derecha abre un chat con un agente que entiende pedidos como *"estoy en
-Plaza Italia, ¿dónde cargo?"*: ubica el lugar, busca estaciones cerca y recomienda a cuál ir. Con
-sesión iniciada, también dice qué horarios tiene libres un conector. **Solo consulta: no reserva
-ni confirma nada**, eso se hace desde el mapa.
+Plaza Italia, ¿dónde cargo?"*: ubica el lugar, busca estaciones cerca, recomienda a cuál ir y dice
+qué horarios tiene libres un conector. **Solo consulta: no reserva ni confirma nada**, eso se hace
+desde el mapa.
+
+**Es solo para quien inició sesión.** La burbuja no aparece sin sesión ni en el login y el registro,
+y el agente valida el token contra core antes de cada pregunta: sin sesión válida contesta 401 y el
+modelo ni se llama. La conversación se borra al cerrar sesión o al entrar con otra cuenta.
 
 Es un proceso aparte en `agent/`, en TypeScript con [Strands Agents](https://strandsagents.com) y
 Gemini, en el 8085. `pnpm dev` lo levanta en el panel `8085 agent`, y el proxy de Vite le manda
@@ -905,11 +909,16 @@ Sin clave, el agente arranca igual y el chat dice que no está configurado.
 **Con Docker** es el contenedor `agent`, y Caddy le manda `/api/agent`. Toma la clave del mismo `.env`;
 después de cargarla, `docker compose up -d agent` lo recrea con ella.
 
-Cinco cosas que conviene saber:
+Seis cosas que conviene saber:
 
 - **El plan gratis de Gemini es lento a ratos.** Una pregunta con búsqueda tarda de 5 a 30
-  segundos según la demanda, y a veces un modelo contesta 503. El agente prueba los modelos de
-  `GEMINI_MODELS` en orden; si todos fallan, el chat dice que está saturado.
+  segundos según la demanda, y a veces un modelo contesta saturado. El agente lo reintenta una vez
+  al segundo y después prueba el siguiente de `GEMINI_MODELS`; si todos fallan, el chat dice que está
+  saturado. Pasados 45 s dice que tardó demasiado.
+- **Cada pregunta tiene topes**, para no gastar el cupo en una sola: hasta 5 vueltas
+  modelo-herramienta, horarios de dos conectores como mucho y 1024 tokens por respuesta. Ante un
+  pedido amplio (*"todas las CCS2 con horarios libres"*) muestra tres estaciones y pregunta de cuál ver
+  los horarios; si igual pasa el tope, el chat pide achicar la consulta.
 - **Hay un tope de 10 preguntas por minuto por persona**, para no agotar el cupo gratis. La
   undécima recibe "Esperá N segundos". Se cuenta por la dirección del navegador, que el proxy de
   Vite le pasa al agente, y se borra al reiniciar el panel `8085 agent`.

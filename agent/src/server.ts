@@ -13,9 +13,11 @@
  * `signature` es el sello de cada respuesta del asistente: el front lo guarda y lo devuelve, y las
  * líneas del asistente que vuelven sin un sello válido se descartan. Ver `signature.ts`.
  *
- * **Nunca contesta 401 ni 403.** El cliente del front cierra la sesión ante cualquiera de los dos,
- * y un problema del agente no tiene por qué desloguear a nadie. Si el token venció, lo dice el
- * agente dentro de la conversación.
+ * **Solo con sesión, y contesta 401 si no la hay** (Manuel, 23/11). Sin token, o con uno que core
+ * rechaza, el modelo ni se llama. El 401 no desloguea a nadie por un error del agente: el front,
+ * ante un 401, cierra la sesión solo si el token venció según su propio reloj
+ * (`clearSessionIfExpired`), y en cualquier otro caso muestra el mensaje. Hasta el 23/11 era al
+ * revés ("nunca 401"): el asistente se podía usar sin sesión.
  */
 
 import { createServer as createHttpServer } from 'node:http'
@@ -23,12 +25,15 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { z } from 'zod'
 
 import { AssistantError, type AskInput, type AskResult } from './assistant.ts'
+import type { SessionCheck } from './ecopedia.ts'
 import { clientKey, createRateLimiter, type RateLimiter } from './rate-limit.ts'
 import { createSigner, type Signer } from './signature.ts'
 
 export interface ServerDeps {
   /** `null` cuando falta la clave de Gemini: el servicio arranca igual y lo avisa en el chat. */
   assistant: { ask(input: AskInput): Promise<AskResult> } | null
+  /** Valida el token contra core. Ver `createSessionChecker` en `ecopedia.ts`. */
+  checkSession: (authorization: string, signal?: AbortSignal) => Promise<SessionCheck>
   log?: (line: string) => void
   /** Por omisión, `QUESTIONS_PER_MINUTE` por cliente. Se inyecta en los tests. */
   rateLimiter?: RateLimiter
@@ -38,6 +43,7 @@ export interface ServerDeps {
 
 interface Context {
   assistant: ServerDeps['assistant']
+  checkSession: ServerDeps['checkSession']
   limiter: RateLimiter
   signer: Signer
   log: (line: string) => void
@@ -79,6 +85,7 @@ const ChatRequest = z.object({
 export function createServer(deps: ServerDeps): Server {
   const context: Context = {
     assistant: deps.assistant,
+    checkSession: deps.checkSession,
     limiter:
       deps.rateLimiter ?? createRateLimiter({ limit: QUESTIONS_PER_MINUTE, windowMs: 60_000 }),
     signer: deps.signer ?? createSigner(),
@@ -97,7 +104,7 @@ export function createServer(deps: ServerDeps): Server {
 async function handle(
   request: IncomingMessage,
   response: ServerResponse,
-  { assistant, limiter, signer, log }: Context,
+  { assistant, checkSession, limiter, signer, log }: Context,
 ): Promise<void> {
   const path = new URL(request.url ?? '/', 'http://localhost').pathname
 
@@ -129,9 +136,16 @@ async function handle(
     })
   }
 
+  /* Sin token no hay nada que validar: se corta antes de gastar una consulta a core. */
+  const authorization = request.headers.authorization
+  if (authorization === undefined || !/^Bearer \S+$/.test(authorization)) {
+    return rejectSession(response)
+  }
+
   /*
-   * El límite va después de validar: un pedido mal armado no llega al modelo, así que no gasta
-   * cupo y no tiene por qué contar.
+   * El límite va después de validar la forma: un pedido mal armado no llega al modelo, así que no
+   * gasta cupo y no tiene por qué contar. Y va antes de consultar a core, para que mandar tokens
+   * inventados en serie no se convierta en una ráfaga de consultas a core.
    */
   const forwarded = request.headers['x-forwarded-for']
   const client = clientKey(
@@ -144,6 +158,18 @@ async function handle(
     response.setHeader('Retry-After', String(quota.retryAfterSeconds))
     return send(response, 429, {
       message: `Hiciste muchas preguntas seguidas. Esperá ${quota.retryAfterSeconds} segundos y probá de nuevo.`,
+    })
+  }
+
+  const session = await checkSession(authorization)
+  if (session === 'invalid') {
+    log('[agent] 401 · el token no es válido para core')
+    return rejectSession(response)
+  }
+  if (session === 'unavailable') {
+    log('[agent] 503 · no se pudo validar la sesión con core')
+    return send(response, 503, {
+      message: 'El asistente no está disponible en este momento. Probá de nuevo en un rato.',
     })
   }
 
@@ -163,19 +189,17 @@ async function handle(
   )
   const dropped = parsed.history.length - history.length
 
-  const authorization = request.headers.authorization
   const started = Date.now()
 
   try {
     const result = await assistant.ask({
       message: parsed.message,
       history: history.map(({ role, text }) => ({ role, text })),
-      authorization: authorization?.startsWith('Bearer ') ? authorization : undefined,
+      authorization,
       signal,
     })
     log(
       `[agent] 200 en ${Date.now() - started} ms` +
-        ` · ${authorization ? 'con' : 'sin'} sesión` +
         ` · herramientas: ${result.toolsUsed.join(', ') || 'ninguna'}` +
         (dropped > 0 ? ` · ${dropped} respuesta(s) sin sello válido descartada(s)` : ''),
     )
@@ -206,11 +230,23 @@ function describe(error: unknown, signal: AbortSignal): { status: number; messag
           message:
             'El asistente no está disponible en este momento. Mientras tanto, podés buscar estaciones en el mapa.',
         }
+      case 'too-broad':
+        return {
+          status: 422,
+          message:
+            'Esa consulta es muy amplia para el asistente. Probá con una sola estación, por ejemplo: "¿qué horarios libres tiene la estación de Palermo?".',
+        }
       case 'failed':
         return { status: 502, message: 'El asistente no pudo responder. Probá de nuevo.' }
     }
   }
   return { status: 500, message: 'El asistente tuvo un error.' }
+}
+
+/** El 401 de siempre: el mismo texto con o sin token, para no contar por qué se rechazó. */
+function rejectSession(response: ServerResponse): void {
+  response.setHeader('WWW-Authenticate', 'Bearer')
+  send(response, 401, { message: 'Iniciá sesión para usar el asistente.' })
 }
 
 function detail(error: unknown): string {

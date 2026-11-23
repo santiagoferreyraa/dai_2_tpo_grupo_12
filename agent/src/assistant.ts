@@ -11,7 +11,13 @@
  * los tests corran con un modelo guionado y sin salir a la red.
  */
 
-import { Agent, ModelError, ModelThrottledError } from '@strands-agents/sdk'
+import {
+  Agent,
+  ConstantBackoff,
+  DefaultModelRetryStrategy,
+  ModelError,
+  ModelThrottledError,
+} from '@strands-agents/sdk'
 import type { MessageData, Model, ModelRouter } from '@strands-agents/sdk'
 
 import type { EcopediaApi } from './ecopedia.ts'
@@ -48,14 +54,27 @@ export interface AssistantDeps {
 
 /**
  * Cuántas vueltas modelo → herramienta puede dar por pregunta. El recorrido normal son tres
- * (lugar, búsqueda, respuesta), con margen para agrandar el radio o mirar horarios; más que esto
- * es un modelo dando vueltas, y cada vuelta gasta cupo del plan gratis.
+ * (lugar, búsqueda, respuesta), con margen para agrandar el radio una vez o mirar horarios; más que
+ * esto es un modelo dando vueltas, y cada vuelta gasta cupo del plan gratis. Era 8 hasta el 23/11:
+ * un pedido amplio ("CCS2 con horarios libres") llegaba a las 8 y pasaba los 45 s.
  */
-const MAX_TURNS = 8
+const MAX_TURNS = 5
+
+/**
+ * Cuántas veces se intenta cada llamada al modelo cuando Gemini contesta "saturado": la primera y
+ * un reintento, al segundo. Después prueba el modelo siguiente de la cadena.
+ *
+ * Lo que trae Strands por omisión son seis intentos con esperas de 4, 8, 16 y 32 s: con un solo
+ * "saturado" la pregunta ya pasaba los 45 s y se cortaba (lo encontró Manuel el 23/11). Al
+ * conductor le sirve más un "probá de nuevo" rápido que una espera larga.
+ */
+const MODEL_ATTEMPTS = 2
+const RETRY_DELAY_MS = 1000
 
 /** Por qué no hubo respuesta, para que el servidor elija el código y el mensaje. */
 export class AssistantError extends Error {
-  readonly reason: 'busy' | 'bad-key' | 'failed'
+  /** `too-broad`: la pregunta pidió más vueltas de las que se permiten. */
+  readonly reason: 'busy' | 'bad-key' | 'too-broad' | 'failed'
 
   constructor(reason: AssistantError['reason'], message: string, options?: ErrorOptions) {
     super(message, options)
@@ -71,10 +90,14 @@ export function createAssistant(deps: AssistantDeps) {
       const api = deps.createApi(input.authorization)
       const agent = new Agent({
         model: deps.createModel(),
-        systemPrompt: buildSystemPrompt(deps.now?.() ?? new Date(), api.hasSession),
+        systemPrompt: buildSystemPrompt(deps.now?.() ?? new Date()),
         tools: createTools({ api, findPlaces: deps.findPlaces }),
         messages: previous,
         printer: false,
+        retryStrategy: new DefaultModelRetryStrategy({
+          maxAttempts: MODEL_ATTEMPTS,
+          backoff: new ConstantBackoff({ delayMs: RETRY_DELAY_MS }),
+        }),
       })
 
       const before = agent.messages.length
@@ -85,9 +108,21 @@ export function createAssistant(deps: AssistantDeps) {
           cancelSignal: input.signal,
           limits: { turns: MAX_TURNS },
         })
+        /*
+         * Cortar por tiempo o por vueltas NO tira error en Strands: devuelve un resultado con el
+         * motivo. Sin este chequeo, el corte por tiempo llegaba al chat como la respuesta
+         * "Cancelled by user", sellada y metida en el historial (Manuel, 23/11).
+         */
+        if (result.stopReason === 'cancelled') {
+          throw new AssistantError('failed', 'Se cortó la respuesta (tiempo o desconexión)')
+        }
+        if (result.stopReason === 'limitTurns') {
+          throw new AssistantError('too-broad', `Pasó las ${MAX_TURNS} vueltas por pregunta`)
+        }
         text = String(result).trim()
       } catch (error) {
         if (input.signal?.aborted) throw error
+        if (error instanceof AssistantError) throw error
         throw classify(error)
       }
 

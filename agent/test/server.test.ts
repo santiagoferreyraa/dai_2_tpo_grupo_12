@@ -5,9 +5,19 @@ import { after, before, describe, it } from 'node:test'
 import { AssistantError, type AskInput, type AskResult } from '../src/assistant.ts'
 import { CHAT_PATH, createServer, QUESTIONS_PER_MINUTE, type ServerDeps } from '../src/server.ts'
 
+/** El token que core acepta en estos tests. Todo pedido lo lleva, salvo que se diga otra cosa. */
+const TOKEN = 'Bearer valido'
+
+/** Core de mentira: acepta `TOKEN` y rechaza cualquier otro. */
+const coreAccepting: ServerDeps['checkSession'] = async (authorization) =>
+  authorization === TOKEN ? 'valid' : 'invalid'
+
 /** Levanta el servidor en un puerto libre con el asistente que se le pase. */
-function serve(assistant: ServerDeps['assistant']) {
-  const server = createServer({ assistant, log: () => {} })
+function serve(
+  assistant: ServerDeps['assistant'],
+  checkSession: ServerDeps['checkSession'] = coreAccepting,
+) {
+  const server = createServer({ assistant, checkSession, log: () => {} })
   let base = ''
   before(async () => {
     await new Promise<void>((resolve) => server.listen(0, resolve))
@@ -18,7 +28,7 @@ function serve(assistant: ServerDeps['assistant']) {
   return (body: unknown, headers: Record<string, string> = {}, path = CHAT_PATH) =>
     fetch(`${base}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...headers },
+      headers: { 'Content-Type': 'application/json', Authorization: TOKEN, ...headers },
       body: typeof body === 'string' ? body : JSON.stringify(body),
     })
 }
@@ -54,13 +64,8 @@ describe('POST /api/agent/chat', () => {
   })
 
   it('le pasa el token del conductor al asistente', async () => {
-    await post({ message: 'hola', history: [] }, { Authorization: 'Bearer abc' })
-    assert.equal(received.at(-1)?.authorization, 'Bearer abc')
-  })
-
-  it('ignora un encabezado de autorización que no sea Bearer', async () => {
-    await post({ message: 'hola', history: [] }, { Authorization: 'Basic xyz' })
-    assert.equal(received.at(-1)?.authorization, undefined)
+    await post({ message: 'hola', history: [] })
+    assert.equal(received.at(-1)?.authorization, TOKEN)
   })
 
   it('rechaza un pedido sin mensaje con 400', async () => {
@@ -85,9 +90,60 @@ describe('POST /api/agent/chat', () => {
   })
 })
 
-describe('las fallas llegan como mensajes para el conductor, nunca como 401 o 403', () => {
+describe('sin una sesión que core acepte, 401 y el modelo ni se llama', () => {
+  const { assistant, received } = answering(async () => ({ text: 'ok', toolsUsed: [] }))
+  const checked: string[] = []
+  const post = serve(assistant, async (authorization) => {
+    checked.push(authorization)
+    if (authorization === 'Bearer core-caido') return 'unavailable'
+    return coreAccepting(authorization)
+  })
+
+  for (const [caso, authorization] of [
+    ['sin token', ''],
+    ['con un encabezado que no es Bearer', 'Basic xyz'],
+    ['con un token que core rechaza', 'Bearer inventado'],
+  ] as const) {
+    it(caso, async () => {
+      const before = received.length
+      const response = await post(
+        { message: 'hola', history: [] },
+        { Authorization: authorization },
+      )
+      assert.equal(response.status, 401)
+      assert.equal(response.headers.get('WWW-Authenticate'), 'Bearer')
+      const { message } = (await response.json()) as { message: string }
+      assert.match(message, /Iniciá sesión/)
+      assert.equal(received.length, before)
+    })
+  }
+
+  it('sin token ni siquiera le pregunta a core', async () => {
+    const before = checked.length
+    await post({ message: 'hola', history: [] }, { Authorization: '' })
+    assert.equal(checked.length, before)
+  })
+
+  it('con core caído contesta 503, no 401: no se sabe si la sesión vale', async () => {
+    const response = await post(
+      { message: 'hola', history: [] },
+      { Authorization: 'Bearer core-caido' },
+    )
+    assert.equal(response.status, 503)
+    assert.match(((await response.json()) as { message: string }).message, /Probá de nuevo/)
+  })
+
+  it('con el token bueno, core lo valida y el modelo contesta', async () => {
+    const response = await post({ message: 'hola', history: [] })
+    assert.equal(response.status, 200)
+    assert.equal(checked.at(-1), TOKEN)
+  })
+})
+
+describe('las fallas del modelo llegan como mensajes para el conductor', () => {
   const cases: [AssistantError['reason'], number, RegExp][] = [
     ['busy', 503, /saturado/],
+    ['too-broad', 422, /una sola estación/],
     ['bad-key', 503, /buscar estaciones en el mapa/],
     ['failed', 502, /no pudo responder/],
   ]
