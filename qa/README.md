@@ -18,7 +18,8 @@ Todo lo que el QA necesita para correr las pruebas de los criterios de la Clase 
 | `qa/ci/schemathesis.sh` | QA-25 | Pruebas de contrato: las respuestas de los 4 módulos contra su OpenAPI (`/v3/api-docs`) |
 | `backend/*/src/test/.../web/OpenApiContractTest.java` | QA-25 | Que el contrato se publique y declare token, errores y 201/204 |
 | `backend/ecopedia-integration/.../powergrid/ws/PowerGridWsClientTest.java` | QA-25 | Respuestas SOAP fuera del contrato (XSD) rechazadas |
-| `.github/workflows/qa-nightly.yml` | QA-06/08 | gitleaks, Trivy, ZAP y k6: a mano, cada noche y en cada push a `main` |
+| `.github/workflows/qa-nightly.yml` | QA-06/08/23 | gitleaks, Trivy, ZAP, k6 y PITest (`mutation`): a mano, cada noche y en cada push a `main` |
+| `pom.xml` (`pitest-maven`) | QA-23 (ECO-173) | Mutation testing con PIT sobre `com.ecopedia.*.domain.*` (umbral ≥ 60 %) |
 | `.gitleaksignore` | QA-08 (G6) | Los falsos positivos de gitleaks en el historial, cada uno justificado |
 | `.trivyignore` | QA-08 | Las vulnerabilidades que no se cierran subiendo una versión, con su mitigación |
 | `config/spotbugs-exclude.xml`, `config/pmd-ruleset.xml` | QA-17 (G3) | Análisis estático dentro de `mvn verify`, o sea en el check "Backend (Maven)" |
@@ -63,3 +64,11 @@ defectos. DEF-06 (login fallido en 400) queda así a propósito: ver `ApiExcepti
 ## Antes de commitear
 
 `mvn spotless:apply`: los tests nuevos se escribieron sin poder correr el formateador.
+
+## Mutation testing local (QA-23 / ECO-173)
+
+```bash
+mvn -B -pl backend/ecopedia-core,backend/ecopedia-charging,backend/ecopedia-integration,backend/ecopedia-async test-compile org.pitest:pitest-maven:mutationCoverage
+```
+
+Los reportes HTML/XML quedan en `backend/*/target/pit-reports/index.html`.
