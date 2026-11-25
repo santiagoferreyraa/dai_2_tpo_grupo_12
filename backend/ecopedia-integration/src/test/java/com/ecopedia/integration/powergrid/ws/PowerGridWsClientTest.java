@@ -22,6 +22,11 @@ import javax.xml.transform.Source;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.ws.client.core.WebServiceTemplate;
 import org.springframework.ws.test.client.MockWebServiceServer;
 import org.springframework.xml.transform.StringSource;
@@ -32,6 +37,7 @@ import org.springframework.xml.transform.StringSource;
  * que terminar. Que la distribuidora de verdad conteste así lo prueban sus propios tests, y el
  * adaptador contra ella, {@code PowerGridLiveTest}.
  */
+@ExtendWith(OutputCaptureExtension.class)
 class PowerGridWsClientTest {
 
     private static final String NS = "http://ecopedia.com/simulation/power-grid/v1";
@@ -166,6 +172,35 @@ class PowerGridWsClientTest {
 
         assertThatThrownBy(() -> client.checkFeasibility("CABA-CENTRO", new BigDecimal("50")))
                 .isInstanceOf(PowerGridUnavailableException.class);
+    }
+
+    /*
+     * QA-25: la respuesta se valida contra el contrato antes de leerla. Sin esa validación, JAXB lee
+     * estas respuestas a medias (un tope vacío, un motivo que no existe) y el cliente las da por
+     * buenas.
+     */
+    @ParameterizedTest(name = "{0}")
+    @CsvSource(
+            delimiter = '|',
+            textBlock =
+                    """
+            sin el tope de potencia | <nodeId>CABA-CENTRO</nodeId><feasible>true</feasible>
+            un motivo que el contrato no tiene | <nodeId>CABA-CENTRO</nodeId><feasible>false</feasible><maxAllowedPowerKw>50.00</maxAllowedPowerKw><reason>SIN_GANAS</reason>
+            una potencia con tres decimales | <nodeId>CABA-CENTRO</nodeId><feasible>true</feasible><maxAllowedPowerKw>50.125</maxAllowedPowerKw>
+            un nodo en minúsculas | <nodeId>caba-centro</nodeId><feasible>true</feasible><maxAllowedPowerKw>50.00</maxAllowedPowerKw>
+            """)
+    @DisplayName("Una respuesta que no cumple el contrato es una distribuidora no disponible")
+    void offContractResponse(String caseName, String fields, CapturedOutput output) {
+        powerGrid
+                .expect(soapHeader(WS_SECURITY))
+                .andRespond(
+                        withPayload(xml("<CheckNodeFeasibilityResponse xmlns=\"%s\">%s</CheckNodeFeasibilityResponse>"
+                                .formatted(NS, fields))));
+
+        assertThatThrownBy(() -> client.checkFeasibility("CABA-CENTRO", new BigDecimal("50")))
+                .isInstanceOf(PowerGridUnavailableException.class)
+                .hasMessageContaining("no cumple el contrato");
+        assertThat(output).contains("ERROR").contains("no cumple el contrato");
     }
 
     @Test

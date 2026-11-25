@@ -2,6 +2,7 @@ package com.ecopedia.core.terminal.web;
 
 import com.ecopedia.core.terminal.domain.*;
 import com.ecopedia.core.terminal.web.dto.*;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
@@ -51,6 +52,7 @@ public class TerminalController {
     /** RF04: Alta de una estación de carga. */
     @PostMapping("/stations")
     @PreAuthorize("hasAnyRole('CPO','ADMIN') and @terminalAccess.userIdOf(authentication) != null")
+    @ApiResponse(responseCode = "201", description = "Creado.")
     public ResponseEntity<StationResponse> createStation(
             Authentication authentication, @Valid @RequestBody StationRequest request) {
         Long ownerId = terminalAccess.userIdOf(authentication);
@@ -70,6 +72,7 @@ public class TerminalController {
     /** RF04: Baja lógica de una estación. */
     @DeleteMapping("/stations/{id}")
     @PreAuthorize("hasRole('ADMIN') or (hasRole('CPO') and @terminalAccess.ownsStation(#id, authentication))")
+    @ApiResponse(responseCode = "204", description = "Hecho, sin cuerpo.")
     public ResponseEntity<Void> deactivateStation(@PathVariable Long id) {
         terminalService.deactivateStation(id);
         return ResponseEntity.noContent().build();
@@ -78,6 +81,7 @@ public class TerminalController {
     /** RF05: Alta de un conector sobre una estación existente. */
     @PostMapping("/stations/{stationId}/connectors")
     @PreAuthorize("hasRole('ADMIN') or (hasRole('CPO') and @terminalAccess.ownsStation(#stationId, authentication))")
+    @ApiResponse(responseCode = "201", description = "Creado.")
     public ResponseEntity<ConnectorResponse> addConnector(
             @PathVariable Long stationId, @Valid @RequestBody ConfigureConnectorRequest request) {
         Connector created = terminalService.addConnector(stationId, request.connectorType(), request.maxPowerKw());
@@ -179,6 +183,7 @@ public class TerminalController {
     /** Eliminar un conector por ID. */
     @DeleteMapping("/connectors/{id}")
     @PreAuthorize("hasRole('ADMIN') or (hasRole('CPO') and @terminalAccess.ownsConnector(#id, authentication))")
+    @ApiResponse(responseCode = "204", description = "Hecho, sin cuerpo.")
     public ResponseEntity<Void> removeConnector(@PathVariable Long id) {
         terminalService.removeConnector(id);
         return ResponseEntity.noContent().build();

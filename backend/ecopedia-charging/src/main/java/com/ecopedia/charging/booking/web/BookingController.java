@@ -7,6 +7,7 @@ import com.ecopedia.charging.booking.web.dto.FreeWindowResponse;
 import com.ecopedia.charging.booking.web.dto.HoldRequest;
 import com.ecopedia.charging.booking.web.dto.HoldResponse;
 import com.ecopedia.charging.security.AuthenticatedUser;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import java.time.Instant;
 import java.util.List;
@@ -51,6 +52,7 @@ public class BookingController {
     /** RF08: retener un slot mientras el conductor confirma. */
     @PostMapping("/holds")
     @PreAuthorize("hasRole('CONDUCTOR')")
+    @ApiResponse(responseCode = "201", description = "Creado.")
     public ResponseEntity<HoldResponse> startHold(
             @AuthenticationPrincipal AuthenticatedUser driver, @Valid @RequestBody HoldRequest request) {
         Hold hold = bookingService.startHold(request.connectorId(), request.toWindow(), driver.id());
@@ -65,6 +67,7 @@ public class BookingController {
      */
     @DeleteMapping("/holds/{holdId}")
     @PreAuthorize("hasRole('CONDUCTOR')")
+    @ApiResponse(responseCode = "204", description = "Hecho, sin cuerpo.")
     public ResponseEntity<Void> releaseHold(
             @AuthenticationPrincipal AuthenticatedUser driver, @PathVariable UUID holdId) {
         bookingService.releaseHold(holdId, driver.id());
@@ -110,6 +113,7 @@ public class BookingController {
      */
     @DeleteMapping("/{bookingId}")
     @PreAuthorize("hasRole('CONDUCTOR')")
+    @ApiResponse(responseCode = "204", description = "Hecho, sin cuerpo.")
     public ResponseEntity<Void> cancel(
             @AuthenticationPrincipal AuthenticatedUser driver, @PathVariable Long bookingId) {
         bookingService.cancelBooking(bookingId, driver.id());

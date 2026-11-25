@@ -5,6 +5,7 @@ import com.ecopedia.charging.checkout.domain.CheckoutResult;
 import com.ecopedia.charging.checkout.web.dto.CheckoutBookingHttpRequest;
 import com.ecopedia.charging.checkout.web.dto.CheckoutBookingHttpResponse;
 import com.ecopedia.charging.security.AuthenticatedUser;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -49,6 +50,7 @@ public class CheckoutController {
      */
     @PostMapping("/booking")
     @PreAuthorize("hasRole('CONDUCTOR')")
+    @ApiResponse(responseCode = "201", description = "Creado.")
     public ResponseEntity<CheckoutBookingHttpResponse> processBookingCheckout(
             @AuthenticationPrincipal AuthenticatedUser driver,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,

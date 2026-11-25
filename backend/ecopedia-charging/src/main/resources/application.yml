@@ -52,6 +52,18 @@ spring:
 server:
   port: ${SERVER_PORT:8082}
 
+# El contrato OpenAPI (QA-25), en /v3/api-docs y sin sesión. Solo las rutas de /api: las de
+# /internal son entre módulos y no forman parte del contrato. JSON por defecto: sin esto springdoc
+# declara las respuestas como */* y el contrato no diría qué devuelve cada operación.
+springdoc:
+  # OpenAPI 3.0 y no la 3.1 que trae springdoc 2.8: OpenApiConfig marca los campos opcionales con
+  # nullable, que en 3.1 ya no existe.
+  api-docs:
+    version: openapi_3_0
+  paths-to-match: /api/**
+  default-produces-media-type: application/json
+  default-consumes-media-type: application/json
+
 ecopedia:
   notifications:
     # La cola de avisos. El nombre tiene que coincidir con el que escucha ecopedia-async.

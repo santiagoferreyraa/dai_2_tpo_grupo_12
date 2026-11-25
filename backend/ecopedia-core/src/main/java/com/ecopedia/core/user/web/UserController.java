@@ -9,6 +9,7 @@ import com.ecopedia.core.user.web.dto.ChangePasswordRequest;
 import com.ecopedia.core.user.web.dto.UpdateProfileRequest;
 import com.ecopedia.core.user.web.dto.UpdateRoleRequest;
 import com.ecopedia.core.user.web.dto.UserProfileResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
@@ -81,6 +82,7 @@ public class UserController {
      */
     @PutMapping("/profile/password")
     @PreAuthorize("isAuthenticated()")
+    @ApiResponse(responseCode = "204", description = "Hecho, sin cuerpo.")
     public ResponseEntity<Void> changeMyPassword(
             Authentication authentication, @Valid @RequestBody ChangePasswordRequest request) {
         User user = userService.getProfileByEmail(authentication.getName());
@@ -134,6 +136,7 @@ public class UserController {
      */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @ApiResponse(responseCode = "204", description = "Hecho, sin cuerpo.")
     public ResponseEntity<Void> deactivateUser(
             Authentication authentication,
             @PathVariable Long id,
@@ -146,6 +149,7 @@ public class UserController {
     /** Alta/Reactivación lógica de usuario (Solo ADMIN). */
     @PostMapping("/{id}/activate")
     @PreAuthorize("hasRole('ADMIN')")
+    @ApiResponse(responseCode = "204", description = "Hecho, sin cuerpo.")
     public ResponseEntity<Void> activateUser(@PathVariable Long id) {
         userService.activateUser(id);
         return ResponseEntity.noContent().build();

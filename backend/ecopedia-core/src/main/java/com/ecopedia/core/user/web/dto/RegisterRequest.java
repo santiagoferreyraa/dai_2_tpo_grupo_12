@@ -20,11 +20,17 @@ import jakarta.validation.constraints.Size;
  * record no declara. Se ignora en silencio y el usuario nace conductor igual.
  */
 public record RegisterRequest(
-        @NotBlank(message = "El email es obligatorio") @Email(message = "Formato de email inválido") String email,
+        // Los largos son los de la columna: más que eso daba 500 al guardar (QA-25).
+        @NotBlank(message = "El email es obligatorio")
+                @Email(message = "Formato de email inválido")
+                @Size(max = 120, message = "El email no puede superar los 120 caracteres")
+                String email,
         @NotBlank(message = "La contraseña es obligatoria")
                 @Size(min = 8, message = "La contraseña debe tener al menos 8 caracteres")
                 String password,
-        @NotBlank(message = "El nombre completo es obligatorio") String fullName) {
+        @NotBlank(message = "El nombre completo es obligatorio")
+                @Size(max = 120, message = "El nombre completo no puede superar los 120 caracteres")
+                String fullName) {
     public RegistrationData toDomainData() {
         return new RegistrationData(email, password, fullName, Role.CONDUCTOR);
     }

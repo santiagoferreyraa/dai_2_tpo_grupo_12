@@ -5,6 +5,9 @@ import com.ecopedia.integration.payment.domain.PendingPayment;
 import com.ecopedia.integration.payment.web.dto.DebtResponse;
 import com.ecopedia.integration.payment.web.dto.PayDebtRequest;
 import com.ecopedia.integration.security.AuthenticatedUser;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import java.util.List;
 import java.util.regex.Pattern;
 import org.springframework.http.HttpStatus;
@@ -60,6 +63,11 @@ public class DebtController {
      */
     @PostMapping("/{id}/payment")
     @PreAuthorize("hasRole('CONDUCTOR')")
+    // El cuerpo es Object porque el 400 sale de acá mismo: el contrato dice qué trae el 200.
+    @ApiResponse(
+            responseCode = "200",
+            description = "La deuda quedó pagada.",
+            content = @Content(schema = @Schema(implementation = DebtResponse.class)))
     public ResponseEntity<Object> payDebt(
             @PathVariable Long id,
             @RequestHeader(value = IDEMPOTENCY_KEY, required = false) String idempotencyKey,

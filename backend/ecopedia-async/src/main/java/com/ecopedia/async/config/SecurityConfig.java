@@ -3,6 +3,8 @@ package com.ecopedia.async.config;
 import com.ecopedia.async.security.JwtAuthenticationFilter;
 import com.ecopedia.async.security.NotFoundAccessDeniedHandler;
 import com.ecopedia.async.security.UnauthorizedEntryPoint;
+import com.ecopedia.async.web.ApiProblems;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -10,6 +12,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.firewall.RequestRejectedHandler;
 import org.springframework.security.web.header.writers.DelegatingRequestMatcherHeaderWriter;
 import org.springframework.security.web.header.writers.StaticHeadersWriter;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
@@ -70,5 +73,16 @@ public class SecurityConfig {
                         .accessDeniedHandler(accessDeniedHandler))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
+    }
+
+    /**
+     * Una URL que el firewall de Spring Security rechaza (un carácter de control codificado, un
+     * {@code //}, un {@code ;}) sale como los demás errores: 400 en Problem Details. Sin esto la
+     * contestaba el {@code /error} de Spring Boot con su propio JSON (lo encontró Schemathesis, QA-25).
+     */
+    @Bean
+    public RequestRejectedHandler requestRejectedHandler(ObjectMapper objectMapper) {
+        return (request, response, rejected) ->
+                ApiProblems.write(request, response, ApiProblems.invalidRequest(), objectMapper);
     }
 }

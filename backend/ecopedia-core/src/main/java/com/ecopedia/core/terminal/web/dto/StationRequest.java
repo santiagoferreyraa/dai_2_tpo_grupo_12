@@ -1,6 +1,8 @@
 package com.ecopedia.core.terminal.web.dto;
 
 import com.ecopedia.core.terminal.domain.StationData;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -8,11 +10,29 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 
 public record StationRequest(
-        @NotBlank(message = "El nombre es obligatorio") String name,
-        @NotBlank(message = "La dirección es obligatoria") String address,
-        @NotNull(message = "La latitud es obligatoria") Double latitude,
-        @NotNull(message = "La longitud es obligatoria") Double longitude,
-        List<String> photoUrls,
+        // Los largos son los de la columna: más que eso daba 500 al guardar (QA-25).
+        @NotBlank(message = "El nombre es obligatorio")
+                @Size(max = 120, message = "El nombre no puede superar los 120 caracteres")
+                String name,
+        @NotBlank(message = "La dirección es obligatoria")
+                @Size(max = 255, message = "La dirección no puede superar los 255 caracteres")
+                String address,
+        // Coordenadas que existen: sin el rango, una estación en latitud -2E16 se guardaba igual
+        // y quedaba fuera de toda búsqueda (lo encontró Schemathesis, QA-25).
+        @NotNull(message = "La latitud es obligatoria")
+                @DecimalMin(value = "-90", message = "La latitud va de -90 a 90")
+                @DecimalMax(value = "90", message = "La latitud va de -90 a 90")
+                Double latitude,
+        @NotNull(message = "La longitud es obligatoria")
+                @DecimalMin(value = "-180", message = "La longitud va de -180 a 180")
+                @DecimalMax(value = "180", message = "La longitud va de -180 a 180")
+                Double longitude,
+        // Una foto en null se guardaba y la portada salía rota (lo encontró Schemathesis, QA-25).
+        List<
+                        @NotBlank(message = "La dirección de una foto no puede estar vacía")
+                        @Size(max = 500, message = "La dirección de una foto no puede superar los 500 caracteres")
+                        String>
+                photoUrls,
         /*
          * El código del nodo tal como lo escribe la distribuidora: mayúsculas, números y guiones
          * (CABA-CENTRO). Vacío vale, y es "sin nodo". El formato cerrado evita que viaje a la

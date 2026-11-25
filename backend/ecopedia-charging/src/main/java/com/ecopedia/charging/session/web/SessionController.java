@@ -8,6 +8,8 @@ import com.ecopedia.charging.session.web.dto.ActivationHttpRequest;
 import com.ecopedia.charging.session.web.dto.ActivationHttpResponse;
 import com.ecopedia.charging.session.web.dto.SessionHttpResponse;
 import com.ecopedia.charging.session.web.dto.SessionStopResponse;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -40,6 +42,7 @@ public class SessionController {
      */
     @PostMapping("/activation")
     @PreAuthorize("hasRole('CONDUCTOR')")
+    @ApiResponse(responseCode = "201", description = "Creado.")
     public ResponseEntity<ActivationHttpResponse> activateSession(
             @AuthenticationPrincipal AuthenticatedUser driver,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
@@ -73,6 +76,9 @@ public class SessionController {
      */
     @GetMapping("/active")
     @PreAuthorize("hasRole('CONDUCTOR')")
+    @ApiResponse(responseCode = "200", description = "La sesión activa del conductor.")
+    // Sin cuerpo: sin "content" vacío, springdoc le pondría el de la sesión también al 204.
+    @ApiResponse(responseCode = "204", description = "El conductor no tiene una sesión activa.", content = @Content)
     public ResponseEntity<SessionHttpResponse> activeSession(@AuthenticationPrincipal AuthenticatedUser driver) {
         return activationService
                 .findActiveSession(driver.id())

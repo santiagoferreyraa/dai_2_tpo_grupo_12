@@ -14,7 +14,10 @@ Todo lo que el QA necesita para correr las pruebas de los criterios de la Clase 
 | `qa/zap/zap-plan.yaml` | QA-08 | Escaneo pasivo + activo autenticado |
 | `qa/ci/start-stack.sh`, `stop-stack.sh` | QA-05/06/08 | Levanta los 4 backends y los 3 simuladores, con usuarios ADMIN y CPO de prueba |
 | `qa/jira/*.csv` | QA-03/04 | Defectos y casos para importar en Jira |
-| `.github/workflows/ci.yml` (job `api`) | QA-05 | Newman en cada PR |
+| `.github/workflows/ci.yml` (job `api`) | QA-05, QA-25 | Newman y Schemathesis en cada PR |
+| `qa/ci/schemathesis.sh` | QA-25 | Pruebas de contrato: las respuestas de los 4 módulos contra su OpenAPI (`/v3/api-docs`) |
+| `backend/*/src/test/.../web/OpenApiContractTest.java` | QA-25 | Que el contrato se publique y declare token, errores y 201/204 |
+| `backend/ecopedia-integration/.../powergrid/ws/PowerGridWsClientTest.java` | QA-25 | Respuestas SOAP fuera del contrato (XSD) rechazadas |
 | `.github/workflows/qa-nightly.yml` | QA-06/08 | gitleaks, Trivy, ZAP y k6: a mano, cada noche y en cada push a `main` |
 | `.gitleaksignore` | QA-08 (G6) | Los falsos positivos de gitleaks en el historial, cada uno justificado |
 | `.trivyignore` | QA-08 | Las vulnerabilidades que no se cierran subiendo una versión, con su mitigación |
@@ -36,6 +39,9 @@ npx newman run qa/postman/ecopedia.postman_collection.json \
   --env-var integrationUrl=http://localhost:8083 --env-var asyncUrl=http://localhost:8084 \
   --env-var adminEmail=admin.qa@ecopedia.test --env-var adminPassword="$QA_ADMIN_PASSWORD" \
   --env-var cpoEmail=cpo.qa@ecopedia.test --env-var cpoPassword="$QA_CPO_PASSWORD"
+
+# Contrato (después de Newman; necesita `pip install schemathesis==4.34.2`)
+QA_ADMIN_EMAIL=admin.qa@ecopedia.test bash qa/ci/schemathesis.sh
 
 # Carga (el número que va al informe se mide en la máquina de la demo)
 k6 run qa/k6/load-critical.js
