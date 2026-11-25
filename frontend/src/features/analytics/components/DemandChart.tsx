@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type PointerEvent } from 'react'
 
 import { formatAmount, formatCount, formatDay, formatShortDate, formatTime } from '../format'
 import { useElementSize } from '../hooks'
@@ -71,10 +71,32 @@ export default function DemandChart({ series, from, to, animationKey }: DemandCh
   const gap = slotWidth > 6 ? Math.min(3, slotWidth * 0.25) : slotWidth > 2.5 ? 1 : 0
   const xOf = (date: Date) =>
     AXIS_LEFT + ((date.getTime() - from.getTime()) / (to.getTime() - from.getTime())) * plotWidth
-  const hoveredBar = hovered === null ? null : bars[hovered]
+  const hoveredBar = hovered === null ? null : (bars[hovered] ?? null)
+
+  /** La barra bajo el puntero, o `null` si está sobre el eje de la izquierda. */
+  function barAt(event: PointerEvent<HTMLDivElement>): number | null {
+    if (slotWidth === 0) return null
+    const x = event.clientX - event.currentTarget.getBoundingClientRect().left - AXIS_LEFT
+    if (x < 0) return null
+    return Math.min(bars.length - 1, Math.floor(x / slotWidth))
+  }
 
   return (
-    <div ref={ref} className="relative min-h-0 flex-1" onMouseLeave={() => setHovered(null)}>
+    /*
+      La barra se elige por la posición del puntero y no con un área por barra: con 168 barras de
+      2 px, ni el mouse ni el dedo pueden apuntarle a una sola. Mouse y toque van por el mismo
+      camino; la diferencia es que con el dedo el detalle se queda al soltar —con el mouse se va al
+      salir—, porque al levantar el dedo no hay otra forma de leerlo.
+    */
+    <div
+      ref={ref}
+      className="relative min-h-0 flex-1"
+      onPointerDown={(event) => setHovered(barAt(event))}
+      onPointerMove={(event) => setHovered(barAt(event))}
+      onPointerLeave={(event) => {
+        if (event.pointerType === 'mouse') setHovered(null)
+      }}
+    >
       {width > 0 && height > 0 && (
         <svg
           width={width}
@@ -138,19 +160,6 @@ export default function DemandChart({ series, from, to, animationKey }: DemandCh
               )
             })}
           </g>
-
-          {/* Columnas invisibles para el mouse: una barra de 2 px no se puede apuntar. */}
-          {bars.map((_, i) => (
-            <rect
-              key={`hit-${i}`}
-              x={AXIS_LEFT + i * slotWidth}
-              y={TOP_PAD}
-              width={slotWidth}
-              height={plotHeight}
-              fill="transparent"
-              onMouseEnter={() => setHovered(i)}
-            />
-          ))}
 
           {ticksOf(from, to).map((tick) => (
             <text
