@@ -1,5 +1,6 @@
 package com.ecopedia.core.user.domain;
 
+import com.ecopedia.core.shared.VersionCondition;
 import java.util.List;
 
 /**
@@ -27,8 +28,18 @@ public interface UserService {
      */
     User getProfileByEmail(String email);
 
-    /** Actualización de datos de perfil. */
-    User updateProfile(Long userId, ProfileData data);
+    /** Actualización de datos de perfil, sin condición sobre la versión. */
+    default User updateProfile(Long userId, ProfileData data) {
+        return updateProfile(userId, data, VersionCondition.any());
+    }
+
+    /**
+     * Actualización de datos de perfil, solo si la versión guardada cumple la condición (QA-30).
+     *
+     * @throws com.ecopedia.core.shared.StaleVersionException si la cuenta cambió desde que el
+     *     cliente la leyó
+     */
+    User updateProfile(Long userId, ProfileData data, VersionCondition condition);
 
     /**
      * Cambio de contraseña del propio usuario.

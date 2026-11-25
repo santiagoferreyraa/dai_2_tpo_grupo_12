@@ -9,6 +9,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -62,6 +63,15 @@ public class Station {
     @CollectionTable(name = "station_photos", joinColumns = @JoinColumn(name = "station_id"))
     @Column(name = "url", nullable = false, length = 500)
     private List<String> photoUrls = new ArrayList<>();
+
+    /**
+     * Sube en cada cambio, también de las fotos, y la API la publica como ETag (QA-30): un
+     * {@code PUT} con una versión vieja no pisa lo que guardó otro. La pone Hibernate, nunca el
+     * código; por eso no tiene setter.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
 
     public Long getId() {
         return id;
@@ -133,5 +143,9 @@ public class Station {
 
     public void setPhotoUrls(List<String> photoUrls) {
         this.photoUrls = photoUrls;
+    }
+
+    public long getVersion() {
+        return version;
     }
 }

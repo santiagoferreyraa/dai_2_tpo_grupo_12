@@ -1,12 +1,17 @@
 package com.ecopedia.core.terminal.web;
 
+import com.ecopedia.core.shared.VersionCondition;
 import com.ecopedia.core.terminal.domain.*;
 import com.ecopedia.core.terminal.web.dto.*;
+import com.ecopedia.core.web.EntityTags;
+import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 import java.util.List;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -60,13 +65,31 @@ public class TerminalController {
         return ResponseEntity.status(HttpStatus.CREATED).body(StationResponse.fromDomain(created));
     }
 
-    /** RF04: Edición de datos de una estación. */
+    /**
+     * RF04: Edición de datos de una estación.
+     *
+     * <p>Con {@code If-Match} (QA-30), solo si la estación sigue en la versión que leyó el cliente;
+     * si otro la cambió en el medio, 412. Sin la cabecera se guarda como antes. La respuesta trae
+     * la versión nueva, en el {@code ETag} y en el cuerpo.
+     */
     @PutMapping("/stations/{id}")
     @PreAuthorize("hasRole('ADMIN') or (hasRole('CPO') and @terminalAccess.ownsStation(#id, authentication))")
+    @ApiResponse(
+            responseCode = "200",
+            description = "Guardada.",
+            headers =
+                    @Header(
+                            name = HttpHeaders.ETAG,
+                            description = EntityTags.HEADER_DESCRIPTION,
+                            schema = @Schema(type = "string")))
     public ResponseEntity<StationResponse> updateStation(
-            @PathVariable Long id, @Valid @RequestBody StationRequest request) {
-        Station updated = terminalService.updateStation(id, request.toDomainData());
-        return ResponseEntity.ok(StationResponse.fromDomain(updated));
+            @PathVariable Long id,
+            @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @Valid @RequestBody StationRequest request) {
+        VersionCondition condition = EntityTags.ifMatch(ifMatch);
+        Station updated =
+                EntityTags.write(condition, () -> terminalService.updateStation(id, request.toDomainData(), condition));
+        return ResponseEntity.ok().eTag(EntityTags.of(updated.getVersion())).body(StationResponse.fromDomain(updated));
     }
 
     /** RF04: Baja lógica de una estación. */
@@ -137,12 +160,22 @@ public class TerminalController {
 
     /** Consultar una estación por ID. */
     @GetMapping("/stations/{id}")
+    @ApiResponse(
+            responseCode = "200",
+            description = "La estación.",
+            headers =
+                    @Header(
+                            name = HttpHeaders.ETAG,
+                            description = EntityTags.HEADER_DESCRIPTION,
+                            schema = @Schema(type = "string")))
     public ResponseEntity<StationResponse> getStation(@PathVariable Long id) {
         Station station = terminalService.getStation(id);
         List<ConnectorResponse> connectors = terminalService.getConnectorsByStation(id).stream()
                 .map(ConnectorResponse::fromDomain)
                 .toList();
-        return ResponseEntity.ok(StationResponse.fromDomain(station, connectors));
+        return ResponseEntity.ok()
+                .eTag(EntityTags.of(station.getVersion()))
+                .body(StationResponse.fromDomain(station, connectors));
     }
 
     /** Listar conectores (opcionalmente por estación). */

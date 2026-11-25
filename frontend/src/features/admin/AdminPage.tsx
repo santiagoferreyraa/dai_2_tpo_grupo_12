@@ -36,6 +36,7 @@ import {
   updateStation,
   updateUserRole,
 } from './data/adminRepository'
+import { STALE_VERSION_MESSAGE, isStaleVersion } from '@/lib/entityTag'
 import { adminErrorMessage, confirmationErrorMessage } from './errorMessage'
 import type { AdminDashboardMetrics, ConnectorItem, StationItem, UserItem } from './types'
 
@@ -111,6 +112,11 @@ export default function AdminPage() {
   const [stationPricingForm, setStationPricingForm] = useState({ deposit: '0', peak: true })
   const [stationPricingLoaded, setStationPricingLoaded] = useState(true)
   const [stationDepositError, setStationDepositError] = useState<string | null>(null)
+  /*
+   * El 412 de una estación que otro guardó mientras el formulario estaba abierto (QA-30). Va adentro
+   * del formulario y no en el aviso de la página, que queda tapado por el fondo del modal.
+   */
+  const [stationStaleError, setStationStaleError] = useState<string | null>(null)
 
   // Global Action Feedback
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
@@ -302,6 +308,7 @@ export default function AdminPage() {
     setStationPricingForm({ deposit: '0', peak: true })
     setStationPricingLoaded(true)
     setStationDepositError(null)
+    setStationStaleError(null)
     setStationModalOpen('create')
   }
 
@@ -316,6 +323,7 @@ export default function AdminPage() {
     })
     setStationNodeError(null)
     setStationDepositError(null)
+    setStationStaleError(null)
     setStationPricingLoaded(false)
     setStationModalOpen('edit')
     fetchStationPricing(station.id).then(
@@ -347,6 +355,7 @@ export default function AdminPage() {
     setSubmittingStation(true)
     setActionError(null)
     setActionSuccess(null)
+    setStationStaleError(null)
     try {
       if (stationModalOpen === 'create') {
         const created = await createStation(payload)
@@ -368,7 +377,12 @@ export default function AdminPage() {
         }
         setActionSuccess(`¡"${created.name}" creada exitosamente con ID ${created.id}!`)
       } else if (stationModalOpen === 'edit' && editingStation) {
-        const updated = await updateStation(editingStation.id, payload)
+        const updated = await updateStation(editingStation.id, payload, editingStation.version)
+        /*
+         * Con la versión nueva: si la seña falla después, reintentar desde el mismo formulario tiene
+         * que mandar la versión que acaba de quedar guardada, o daría 412 contra sí mismo (QA-30).
+         */
+        setEditingStation(updated)
         // Si no se pudo leer la seña, no se pisa con la que muestra el formulario por omisión.
         if (stationPricingLoaded) await saveStationPricing(updated.id, pricing)
         setActionSuccess(`¡Estación ${updated.id} "${updated.name}" actualizada correctamente!`)
@@ -377,7 +391,11 @@ export default function AdminPage() {
       await loadStations()
       await loadMetrics()
     } catch (err) {
-      setActionError(adminErrorMessage(err, 'No se pudo guardar la estación.'))
+      if (isStaleVersion(err)) {
+        setStationStaleError(STALE_VERSION_MESSAGE)
+      } else {
+        setActionError(adminErrorMessage(err, 'No se pudo guardar la estación.'))
+      }
     } finally {
       setSubmittingStation(false)
     }
@@ -1358,6 +1376,12 @@ export default function AdminPage() {
                   />
                   Cobrar tarifa de hora pico
                 </label>
+
+                {stationStaleError && (
+                  <p role="alert" className="text-xs font-medium text-rose-400">
+                    {stationStaleError}
+                  </p>
+                )}
 
                 <div className="mt-4 flex justify-end gap-2">
                   <button

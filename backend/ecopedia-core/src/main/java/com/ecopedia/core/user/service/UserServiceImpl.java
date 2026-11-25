@@ -2,6 +2,7 @@ package com.ecopedia.core.user.service;
 
 import com.ecopedia.core.security.JwtTokenProvider;
 import com.ecopedia.core.shared.ResourceNotFoundException;
+import com.ecopedia.core.shared.VersionCondition;
 import com.ecopedia.core.user.domain.*;
 import com.ecopedia.core.vehicle.domain.VehicleService;
 import java.util.List;
@@ -116,8 +117,10 @@ public class UserServiceImpl implements UserService {
      * reemplazo. La asimetría no es un descuido: está explicada en {@link ProfileData}.
      */
     @Override
-    public User updateProfile(Long userId, ProfileData data) {
+    public User updateProfile(Long userId, ProfileData data, VersionCondition condition) {
         User user = getProfile(userId);
+        // Sobre la misma entidad que se guarda: ver TerminalServiceImpl.updateStation.
+        condition.check(user.getVersion(), "Usuario " + userId);
         if (data.fullName() != null && !data.fullName().isBlank()) {
             user.setFullName(data.fullName());
         }

@@ -1,5 +1,6 @@
 import type { Role } from '@/features/auth/types'
 import { api } from '@/lib/api'
+import { ifMatch } from '@/lib/entityTag'
 
 import type {
   AdminDashboardMetrics,
@@ -117,8 +118,16 @@ export function createStation(data: StationFormData): Promise<StationItem> {
   return api.post<StationItem>('/stations', data)
 }
 
-export function updateStation(stationId: number, data: StationFormData): Promise<StationItem> {
-  return api.put<StationItem>(`/stations/${stationId}`, data)
+/**
+ * `version` es la de la fila que se abrió para editar: si alguien guardó la estación mientras tanto,
+ * el backend contesta 412 y no se pisa nada (QA-30).
+ */
+export function updateStation(
+  stationId: number,
+  data: StationFormData,
+  version: number,
+): Promise<StationItem> {
+  return api.put<StationItem>(`/stations/${stationId}`, data, { headers: ifMatch(version) })
 }
 
 export function deactivateStation(stationId: number): Promise<void> {

@@ -1,4 +1,5 @@
 import { api } from '@/lib/api'
+import { ifMatch } from '@/lib/entityTag'
 
 import type {
   Connector,
@@ -220,11 +221,22 @@ export async function createStation(input: StationInput): Promise<StationDetail>
   return getStation(station.id)
 }
 
-/** Edición de una estación existente. */
-export async function updateStation(id: number, input: StationInput): Promise<StationDetail> {
-  const current = await getStation(id)
+/**
+ * Edición de una estación existente.
+ *
+ * `version` es la que tenía la estación cuando se abrió el formulario, **no la de ahora**: si
+ * alguien la guardó mientras tanto, el backend contesta 412 y no se pisa nada (QA-30). Por eso la
+ * estación va primero y los conectores después: con el 412 no se toca ningún conector.
+ */
+export async function updateStation(
+  id: number,
+  input: StationInput,
+  version: number | undefined,
+): Promise<StationDetail> {
+  await api.put<Station>(`/stations/${id}`, toRequestBody(input), { headers: ifMatch(version) })
 
-  await api.put<Station>(`/stations/${id}`, toRequestBody(input))
+  /* Lo de antes, para saber qué conectores se borraron: se lee después del guardado que sí pasó. */
+  const current = await getStation(id)
   await saveConnectors(id, input.connectors, current.connectors)
 
   return getStation(id)
