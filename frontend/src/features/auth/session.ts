@@ -40,6 +40,7 @@ function toSession(auth: AuthResponse): Session {
     /* El login no manda ni el nombre ni el auto. Los trae `hydrateProfile` un instante después. */
     fullName: null,
     vehicle: null,
+    profileVersion: null,
   }
 }
 
@@ -90,7 +91,12 @@ function hydrateProfile(): void {
         tenerlo, así que se compara el token antes de tocar nada.
       */
       if (session === null || session.token !== opened.token) return
-      session = { ...session, fullName: profile.fullName, vehicle: profile.vehicle }
+      session = {
+        ...session,
+        fullName: profile.fullName,
+        vehicle: profile.vehicle,
+        profileVersion: profile.version,
+      }
       persist()
       notify()
     })
@@ -113,7 +119,12 @@ function hydrateProfile(): void {
  */
 export function applyProfile(profile: UserProfile): void {
   if (session === null) return
-  session = { ...session, fullName: profile.fullName, vehicle: profile.vehicle }
+  session = {
+    ...session,
+    fullName: profile.fullName,
+    vehicle: profile.vehicle,
+    profileVersion: profile.version,
+  }
   persist()
   notify()
 }

@@ -61,6 +61,8 @@ export interface UserProfile {
    * para traducirlo. Ver `UserProfileResponse` en el backend.
    */
   vehicle: VehicleModel | null
+  /** La versión guardada del perfil, que se manda en `If-Match` al editarlo (QA-30). */
+  version: number
 }
 
 /**
@@ -99,4 +101,12 @@ export interface Session {
    * que hay que mostrar algo igual. De eso se ocupa `displayNameOf`.
    */
   fullName: string | null
+  /**
+   * La versión del perfil que trajo la sesión, o `null` mientras no llegó (QA-30). Llega con el
+   * nombre y el auto, y se renueva con cada guardado: es la que el perfil manda en `If-Match`.
+   *
+   * Opcional porque una sesión guardada antes de este campo no la tiene; vuelve a llegar con el
+   * perfil que se pide al restaurarla.
+   */
+  profileVersion?: number | null
 }

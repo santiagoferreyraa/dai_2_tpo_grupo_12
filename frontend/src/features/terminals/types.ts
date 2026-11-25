@@ -28,6 +28,8 @@ export interface Station extends StationData {
   id: number
   ownerId: number
   active: boolean
+  /** La versión guardada, que se manda en `If-Match` al editarla (QA-30). */
+  version: number
 }
 
 /** Conector de una estación. Equivale a la entidad Connector. */

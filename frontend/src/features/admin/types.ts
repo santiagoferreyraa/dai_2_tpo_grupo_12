@@ -42,6 +42,8 @@ export interface StationItem {
   /** Nodo de la distribuidora (RF15); `null` si no tiene. */
   nodeId: string | null
   connectors?: ConnectorItem[]
+  /** La versión guardada, que se manda en `If-Match` al editarla (QA-30). */
+  version: number
 }
 
 /** Lo que manda el formulario de estación del backoffice, en el alta y en la edición. */

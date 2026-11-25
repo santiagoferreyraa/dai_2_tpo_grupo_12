@@ -963,6 +963,33 @@ al azar en las bajas y los cambios de rol, y bloquean al ADMIN 15 minutos. Hay q
 contrato (`wsdl/power-grid.xsd`, el que importa el WSDL). Una respuesta que no lo cumple se trata
 como distribuidora caída: la carga sale a potencia normal y queda un ERROR en el log.
 
+### Ediciones con ETag
+
+La edición de una estación (`PUT /api/stations/{id}`) y la del perfil (`PUT /api/users/profile`)
+no pisan lo que otro guardó en el medio. Cada estación y cada perfil tiene una versión que sube en
+cada cambio, y la API la manda como `ETag` (en la consulta y en la respuesta del guardado) y también
+en el cuerpo, como `version`:
+
+```bash
+curl -i http://localhost:8081/api/stations/1                 # ETag: "3"
+curl -X PUT http://localhost:8081/api/stations/1 \
+  -H "Authorization: Bearer $TOKEN" -H 'If-Match: "3"' \
+  -H "Content-Type: application/json" -d @estacion.json      # 200 y ETag: "4"
+# el mismo If-Match otra vez → 412, code STALE_VERSION: nadie pisa la versión 4
+```
+
+- **Sin `If-Match` se guarda como antes**, sin comprobar la versión (decisión del 25/11, para no
+  romper Postman, Schemathesis ni un `curl` a mano). El front siempre la manda.
+- `If-Match: *` vale para cualquier versión. Una etiqueta débil (`W/"3"`) o sin comillas no
+  coincide nunca: 412.
+- Por Caddy, una respuesta comprimida trae el `ETag` como `"3-gzip"`: se puede mandar así en el
+  `If-Match`, vale lo mismo que `"3"`.
+- El front muestra *"Tus cambios no se guardaron. Recargá la página y probá de nuevo."* y deja el
+  formulario abierto.
+- Dos guardados exactamente a la vez con el mismo `If-Match`: uno gana y el otro recibe 412. Sin
+  `If-Match`, el segundo recibe 409 `CONCURRENT_UPDATE` (antes ganaba el último).
+- La versión de la estación no cubre sus conectores, que se guardan por sus propias rutas.
+
 ### El asistente
 
 La burbuja de abajo a la derecha abre un chat con un agente que entiende pedidos como *"estoy en

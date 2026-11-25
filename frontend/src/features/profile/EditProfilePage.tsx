@@ -15,9 +15,14 @@ import { useVehicleModels } from '@/features/vehicles/catalog'
 import VehicleDialog from '@/features/vehicles/components/VehicleDialog'
 import { vehicleLabelOf } from '@/features/vehicles/vehicle'
 import { ApiError } from '@/lib/api'
+import { STALE_VERSION_MESSAGE, isStaleVersion } from '@/lib/entityTag'
 
 import { AVATAR_IDS, avatarSrc, chooseAvatar, useAvatarId } from './avatars'
 import ProfileCard from './components/ProfileCard'
+
+/** El 412 del perfil cuando la contraseña nueva ya se había guardado (ver `handleSubmit`). */
+const STALE_AFTER_PASSWORD_MESSAGE =
+  'Tu contraseña se cambió, pero el nombre y el auto no se guardaron. Recargá la página y probá de nuevo.'
 
 /**
  * La edición del perfil: ocupa la tarjeta grande, en lugar de la sección que se estaba mirando.
@@ -139,9 +144,10 @@ export default function EditProfilePage() {
 
     setFailure(null)
     try {
-      applyProfile(await updateMyProfile(savedName, vehicleModelId))
+      applyProfile(await updateMyProfile(savedName, vehicleModelId, session?.profileVersion))
     } catch (cause: unknown) {
-      setFailure(cause instanceof ApiError ? cause.message : 'No se pudo guardar el vehículo')
+      if (isStaleVersion(cause)) setFailure(STALE_VERSION_MESSAGE)
+      else setFailure(cause instanceof ApiError ? cause.message : 'No se pudo guardar el vehículo')
     }
   }
 
@@ -175,7 +181,11 @@ export default function EditProfilePage() {
       */
       if (changingPassword) await updateMyPassword(currentPassword, newPassword)
 
-      const profile = await updateMyProfile(fullName.trim(), vehicleModelId)
+      const profile = await updateMyProfile(
+        fullName.trim(),
+        vehicleModelId,
+        session?.profileVersion,
+      )
       applyProfile(profile)
 
       /*
@@ -187,8 +197,16 @@ export default function EditProfilePage() {
 
       void navigate('..', { relative: 'path' })
     } catch (cause: unknown) {
-      /* El mensaje viene del backend —"La contraseña actual no es correcta"— y se muestra tal cual. */
-      setFailure(cause instanceof ApiError ? cause.message : 'No se pudieron guardar los cambios')
+      if (isStaleVersion(cause)) {
+        /*
+          El perfil cambió desde otra pestaña (QA-30). Si había contraseña nueva, esa ya se guardó
+          —va primero, ver arriba—, y el mensaje no puede decir que no se guardó nada.
+        */
+        setFailure(changingPassword ? STALE_AFTER_PASSWORD_MESSAGE : STALE_VERSION_MESSAGE)
+      } else {
+        /* El mensaje viene del backend —"La contraseña actual no es correcta"— y se muestra tal cual. */
+        setFailure(cause instanceof ApiError ? cause.message : 'No se pudieron guardar los cambios')
+      }
       setSaving(false)
     }
   }

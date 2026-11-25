@@ -24,7 +24,9 @@ public record UserProfileResponse(
         Role role,
         boolean active,
         Instant createdAt,
-        VehicleModelResponse vehicle) {
+        VehicleModelResponse vehicle,
+        // La versión del ETag (QA-30): el front la manda en If-Match al guardar el perfil.
+        long version) {
 
     public static UserProfileResponse fromDomain(User user) {
         return new UserProfileResponse(
@@ -34,6 +36,7 @@ public record UserProfileResponse(
                 user.getRole(),
                 user.isActive(),
                 user.getCreatedAt(),
-                user.getVehicleModel() == null ? null : VehicleModelResponse.fromDomain(user.getVehicleModel()));
+                user.getVehicleModel() == null ? null : VehicleModelResponse.fromDomain(user.getVehicleModel()),
+                user.getVersion());
     }
 }

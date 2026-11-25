@@ -348,7 +348,9 @@
                   "let json = {};",
                   "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
                   "pm.test('responde 200', () => pm.response.to.have.status(200));",
-                  "pm.test(\"pm.expect(json.email).to.eql(pm.collectionVariables.get('driverEmail'))\", () => { pm.expect(json.email).to.eql(pm.collectionVariables.get('driverEmail')); });"
+                  "pm.test(\"pm.expect(json.email).to.eql(pm.collectionVariables.get('driverEmail'))\", () => { pm.expect(json.email).to.eql(pm.collectionVariables.get('driverEmail')); });",
+                  "pm.test(\"pm.expect(pm.response.headers.get('ETag')).to.eql(`\\\"${json.version}\\\"`)\", () => { pm.expect(pm.response.headers.get('ETag')).to.eql(`\"${json.version}\"`); });",
+                  "if (pm.response.code === 200) pm.collectionVariables.set('profileTag', pm.response.headers.get('ETag'));"
                 ]
               }
             }
@@ -366,6 +368,93 @@
               }
             ],
             "url": "{{coreUrl}}/api/users/profile"
+          }
+        },
+        {
+          "name": "Editar mi perfil con el ETag vigente (QA-30) → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 200', () => pm.response.to.have.status(200));",
+                  "pm.test(\"pm.expect(pm.response.headers.get('ETag')).to.not.eql(pm.collectionVariables.get('profileTag'))\", () => { pm.expect(pm.response.headers.get('ETag')).to.not.eql(pm.collectionVariables.get('profileTag')); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driverToken}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "{{profileTag}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{coreUrl}}/api/users/profile",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Conductor QA con ETag\",\n  \"vehicleModelId\": null\n}"
+            }
+          }
+        },
+        {
+          "name": "Editar mi perfil con un ETag viejo (QA-30) → 412",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 412', () => pm.response.to.have.status(412));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));",
+                  "pm.test(\"pm.expect(json.code).to.eql('STALE_VERSION')\", () => { pm.expect(json.code).to.eql('STALE_VERSION'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driverToken}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "{{profileTag}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{coreUrl}}/api/users/profile",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Pisaría al anterior\",\n  \"vehicleModelId\": null\n}"
+            }
           }
         },
         {
@@ -994,6 +1083,34 @@
           }
         },
         {
+          "name": "Estación nueva por id, con su ETag (QA-30) → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 200', () => pm.response.to.have.status(200));",
+                  "pm.test(\"pm.expect(pm.response.headers.get('ETag')).to.eql(`\\\"${json.version}\\\"`)\", () => { pm.expect(pm.response.headers.get('ETag')).to.eql(`\"${json.version}\"`); });",
+                  "if (pm.response.code === 200) pm.collectionVariables.set('stationTag', pm.response.headers.get('ETag'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{coreUrl}}/api/stations/{{newStationId}}"
+          }
+        },
+        {
           "name": "Edición de estación → 200",
           "event": [
             {
@@ -1004,7 +1121,8 @@
                   "let json = {};",
                   "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
                   "pm.test('responde 200', () => pm.response.to.have.status(200));",
-                  "pm.test(\"pm.expect(json.name).to.eql('Estaci\\u00f3n QA Editada')\", () => { pm.expect(json.name).to.eql('Estación QA Editada'); });"
+                  "pm.test(\"pm.expect(json.name).to.eql('Estaci\\u00f3n QA Editada')\", () => { pm.expect(json.name).to.eql('Estación QA Editada'); });",
+                  "pm.test(\"pm.expect(pm.response.headers.get('ETag')).to.eql(`\\\"${json.version}\\\"`)\", () => { pm.expect(pm.response.headers.get('ETag')).to.eql(`\"${json.version}\"`); });"
                 ]
               }
             }
@@ -1021,6 +1139,10 @@
                 "value": "Bearer {{cpoToken}}"
               },
               {
+                "key": "If-Match",
+                "value": "{{stationTag}}"
+              },
+              {
                 "key": "Content-Type",
                 "value": "application/json"
               }
@@ -1029,6 +1151,50 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Estación QA Editada\",\n  \"address\": \"Av. Corrientes 1234, CABA\",\n  \"latitude\": -34.6037,\n  \"longitude\": -58.3816,\n  \"photoUrls\": []\n}"
+            }
+          }
+        },
+        {
+          "name": "Edición de estación con un ETag viejo (QA-30) → 412",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 412', () => pm.response.to.have.status(412));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));",
+                  "pm.test(\"pm.expect(json.code).to.eql('STALE_VERSION')\", () => { pm.expect(json.code).to.eql('STALE_VERSION'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cpoToken}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "{{stationTag}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{coreUrl}}/api/stations/{{newStationId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Pisaría la edición anterior\",\n  \"address\": \"Av. Corrientes 1234, CABA\",\n  \"latitude\": -34.6037,\n  \"longitude\": -58.3816,\n  \"photoUrls\": []\n}"
             }
           }
         },

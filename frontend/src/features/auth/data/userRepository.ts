@@ -1,4 +1,5 @@
 import { api } from '@/lib/api'
+import { ifMatch } from '@/lib/entityTag'
 
 import type { UserProfile } from '../types'
 
@@ -44,8 +45,17 @@ export function fetchMyProfile(): Promise<UserProfile> {
 export function updateMyProfile(
   fullName: string,
   vehicleModelId: number | null,
+  /**
+   * La versión del perfil que tiene la sesión (QA-30): si se guardó desde otra pestaña, 412 y no se
+   * pisa. Sin versión todavía —el perfil no llegó—, se guarda sin condición, como antes.
+   */
+  version: number | null | undefined,
 ): Promise<UserProfile> {
-  return api.put<UserProfile>('/users/profile', { fullName, vehicleModelId })
+  return api.put<UserProfile>(
+    '/users/profile',
+    { fullName, vehicleModelId },
+    { headers: ifMatch(version) },
+  )
 }
 
 /**

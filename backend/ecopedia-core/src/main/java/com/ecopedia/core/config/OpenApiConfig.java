@@ -14,15 +14,19 @@ import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springdoc.core.customizers.OperationCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.AnnotatedElementUtils;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.method.HandlerMethod;
 
 /**
@@ -87,9 +91,21 @@ public class OpenApiConfig {
                 operation.addSecurityItem(new SecurityRequirement().addList(BEARER));
                 addProblem(operation, "401", "Hace falta una sesión válida.");
             }
+            if (acceptsIfMatch(handlerMethod)) {
+                addProblem(operation, "412", "El If-Match no es la versión guardada: alguien lo cambió en el medio.");
+            }
             ERRORS.forEach((status, description) -> addProblem(operation, status, description));
             return operation;
         };
+    }
+
+    /** Las escrituras con condición de versión (QA-30) son las que leen la cabecera {@code If-Match}. */
+    private static boolean acceptsIfMatch(HandlerMethod handlerMethod) {
+        return Arrays.stream(handlerMethod.getMethodParameters())
+                .map(parameter -> parameter.getParameterAnnotation(RequestHeader.class))
+                .filter(Objects::nonNull)
+                .anyMatch(header -> HttpHeaders.IF_MATCH.equalsIgnoreCase(header.name())
+                        || HttpHeaders.IF_MATCH.equalsIgnoreCase(header.value()));
     }
 
     /**
