@@ -1,10 +1,17 @@
 package com.ecopedia.integration.payment.gateway;
 
+import com.ecopedia.integration.payment.domain.PaymentGatewayPort;
+import com.ecopedia.integration.payment.domain.PaymentGatewayUnavailableException;
+import com.ecopedia.integration.resilience.CircuitBreakerSettings;
+import com.ecopedia.integration.resilience.CircuitBreakers;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
@@ -37,5 +44,22 @@ public class PaymentGatewayClientConfig {
                 .requestFactory(requestFactory)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                 .build();
+    }
+
+    /**
+     * El puerto que usa Pagos: el adaptador REST envuelto en el circuit breaker (ECO-68).
+     *
+     * <p>Es el único bean de {@link PaymentGatewayPort}. Los valores del circuito están en
+     * {@code ecopedia.payment-gateway.circuit-breaker}; ver {@link CircuitBreakerSettings}.
+     */
+    @Bean
+    public PaymentGatewayPort paymentGateway(
+            @Qualifier("paymentGatewayHttpClient") RestClient paymentGatewayHttpClient, Environment environment) {
+        CircuitBreaker circuitBreaker = CircuitBreakers.create(
+                "payment-gateway",
+                "la pasarela de pagos",
+                CircuitBreakers.settings(environment, "ecopedia.payment-gateway.circuit-breaker"),
+                PaymentGatewayUnavailableException.class);
+        return new CircuitBreakerPaymentGateway(new PaymentGatewayRestClient(paymentGatewayHttpClient), circuitBreaker);
     }
 }

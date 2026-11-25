@@ -136,6 +136,17 @@
             <artifactId>spring-boot-starter-artemis</artifactId>
         </dependency>
 
+        <!--
+            El circuit breaker delante de la pasarela y de la distribuidora (ECO-68). Solo el núcleo
+            de Resilience4j, sin el starter ni AOP: el circuito lo arma CircuitBreakers y lo usa un
+            decorador de cada puerto, a la vista en el código. Spring Boot no fija su versión.
+        -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-circuitbreaker</artifactId>
+            <version>2.4.0</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
