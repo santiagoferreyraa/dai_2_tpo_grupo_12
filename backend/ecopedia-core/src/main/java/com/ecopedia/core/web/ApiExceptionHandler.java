@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 /**
@@ -71,6 +72,17 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler({AccessDeniedException.class, AuthenticationException.class})
     public void handleSecurity(RuntimeException exception) {
         throw exception;
+    }
+
+    /**
+     * Un {@code multipart/form-data} que no se puede leer, por ejemplo sin {@code boundary}. Ningún
+     * endpoint recibe archivos, pero Spring intenta leer el cuerpo antes de elegir el controlador, y
+     * esto terminaba en el 500 de abajo (lo encontró Schemathesis, QA-25).
+     */
+    @ExceptionHandler(MultipartException.class)
+    public ProblemDetail handleUnreadableMultipart(MultipartException exception) {
+        log.debug("Cuerpo multipart ilegible: {}", exception.getMessage());
+        return ApiProblems.invalidRequest();
     }
 
     @ExceptionHandler(Exception.class)

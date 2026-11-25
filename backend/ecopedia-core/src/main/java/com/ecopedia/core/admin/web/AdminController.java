@@ -3,6 +3,7 @@ package com.ecopedia.core.admin.web;
 import com.ecopedia.core.admin.domain.AdminDashboard;
 import com.ecopedia.core.admin.domain.AdminService;
 import com.ecopedia.core.admin.web.dto.AdminDashboardResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -37,6 +38,7 @@ public class AdminController {
 
     /** Alta/Reactivación lógica administrativa de un usuario. */
     @PostMapping("/users/{id}/activate")
+    @ApiResponse(responseCode = "204", description = "Hecho, sin cuerpo.")
     public ResponseEntity<Void> activateUser(@PathVariable Long id) {
         adminService.activateUser(id);
         return ResponseEntity.noContent().build();
@@ -44,6 +46,7 @@ public class AdminController {
 
     /** Baja lógica administrativa de una estación de carga. */
     @DeleteMapping("/stations/{id}")
+    @ApiResponse(responseCode = "204", description = "Hecho, sin cuerpo.")
     public ResponseEntity<Void> deactivateStation(@PathVariable Long id) {
         adminService.deactivateStation(id);
         return ResponseEntity.noContent().build();

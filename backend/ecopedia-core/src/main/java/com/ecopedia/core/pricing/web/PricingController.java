@@ -10,7 +10,11 @@ import com.ecopedia.core.pricing.web.dto.NetworkRatesRequest;
 import com.ecopedia.core.pricing.web.dto.NetworkRatesResponse;
 import com.ecopedia.core.pricing.web.dto.StationPricingRequest;
 import com.ecopedia.core.pricing.web.dto.StationPricingResponse;
+import com.ecopedia.core.terminal.domain.ConnectorType;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -36,6 +40,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/pricing")
 public class PricingController {
+
+    /*
+     * Una carga no puede pasar de una batería llena. Las más grandes de autos a la venta rondan los
+     * 205 a 213 kWh (GMC Hummer EV, Chevrolet Silverado EV); la más grande del catálogo, 77,4 kWh.
+     */
+    private static final String MAX_KWH = "250";
+    /* La potencia más alta de cualquier conector: la de CCS2 (ver ConnectorType). */
+    private static final String MAX_POWER_KW = ConnectorType.HIGHEST_MAX_POWER_KW;
 
     private final PricingService pricingService;
     private final PricingRules rules;
@@ -99,10 +111,17 @@ public class PricingController {
      * cuándo, empezando ahora; con {@code start} (ISO-8601), empezando entonces, que es lo que decide si es
      * hora pico.
      */
+    /*
+     * Los topes de los kWh y la potencia (QA-25): Schemathesis pidió -1,8E308 kWh y la respuesta fue
+     * un costo negativo de 300 dígitos. Los valores, en MAX_KWH y MAX_POWER_KW.
+     */
     @GetMapping("/estimate")
     public EstimateCostResponse estimateCost(
             @RequestParam Long connectorId,
-            @RequestParam BigDecimal estimatedKwh,
+            @RequestParam
+                    @Positive(message = "Los kWh estimados tienen que ser mayores a cero")
+                    @DecimalMax(value = MAX_KWH, message = "Los kWh estimados van hasta 250")
+                    BigDecimal estimatedKwh,
             @RequestParam(required = false) Instant start) {
         ChargeBreakdown estimate =
                 pricingService.estimateCost(connectorId, estimatedKwh, start != null ? start : clock.instant());
@@ -117,10 +136,17 @@ public class PricingController {
     @GetMapping("/real-cost")
     public ChargeBreakdownResponse realCost(
             @RequestParam Long connectorId,
-            @RequestParam BigDecimal kwhConsumed,
-            @RequestParam BigDecimal deliveredPowerKw,
+            @RequestParam
+                    @PositiveOrZero(message = "Los kWh consumidos no pueden ser negativos")
+                    @DecimalMax(value = MAX_KWH, message = "Los kWh consumidos van hasta 250")
+                    BigDecimal kwhConsumed,
+            @RequestParam
+                    @PositiveOrZero(message = "La potencia entregada no puede ser negativa")
+                    @DecimalMax(value = MAX_POWER_KW, message = "La potencia entregada va hasta 500 kW")
+                    BigDecimal deliveredPowerKw,
             @RequestParam Instant start,
-            @RequestParam(defaultValue = "0") long excessMinutes) {
+            @RequestParam(defaultValue = "0") @PositiveOrZero(message = "Los minutos de exceso no pueden ser negativos")
+                    long excessMinutes) {
         ChargeBreakdown breakdown =
                 pricingService.calculateRealCost(connectorId, kwhConsumed, deliveredPowerKw, start, excessMinutes);
         return ChargeBreakdownResponse.from(kwhConsumed, excessMinutes, breakdown);

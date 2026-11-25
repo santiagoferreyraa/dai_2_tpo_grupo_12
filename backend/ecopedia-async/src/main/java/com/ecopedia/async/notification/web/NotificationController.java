@@ -3,6 +3,7 @@ package com.ecopedia.async.notification.web;
 import com.ecopedia.async.notification.domain.NotificationService;
 import com.ecopedia.async.notification.web.dto.NotificationFeedResponse;
 import com.ecopedia.async.security.AuthenticatedUser;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -52,6 +53,7 @@ public class NotificationController {
 
     @PostMapping("/{notificationId}/read")
     @PreAuthorize("isAuthenticated()")
+    @ApiResponse(responseCode = "204", description = "Hecho, sin cuerpo.")
     public ResponseEntity<Void> markAsRead(Authentication authentication, @PathVariable Long notificationId) {
         notificationService.markAsRead(notificationId, AuthenticatedUser.idOf(authentication));
         return ResponseEntity.noContent().build();
@@ -59,6 +61,7 @@ public class NotificationController {
 
     @PostMapping("/read-all")
     @PreAuthorize("isAuthenticated()")
+    @ApiResponse(responseCode = "204", description = "Hecho, sin cuerpo.")
     public ResponseEntity<Void> markAllAsRead(Authentication authentication) {
         notificationService.markAllAsRead(AuthenticatedUser.idOf(authentication));
         return ResponseEntity.noContent().build();
@@ -78,6 +81,7 @@ public class NotificationController {
      */
     @DeleteMapping("/{notificationId}")
     @PreAuthorize("isAuthenticated()")
+    @ApiResponse(responseCode = "204", description = "Hecho, sin cuerpo.")
     public ResponseEntity<Void> delete(Authentication authentication, @PathVariable Long notificationId) {
         notificationService.delete(notificationId, AuthenticatedUser.idOf(authentication));
         return ResponseEntity.noContent().build();
@@ -93,6 +97,7 @@ public class NotificationController {
      */
     @DeleteMapping
     @PreAuthorize("isAuthenticated()")
+    @ApiResponse(responseCode = "204", description = "Hecho, sin cuerpo.")
     public ResponseEntity<Void> deleteAll(Authentication authentication) {
         notificationService.deleteAll(AuthenticatedUser.idOf(authentication));
         return ResponseEntity.noContent().build();

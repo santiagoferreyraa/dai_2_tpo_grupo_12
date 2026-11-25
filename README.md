@@ -925,6 +925,44 @@ docker compose unpause payment-gateway  # vuelve la pasarela
 Con la distribuidora es lo mismo (`docker compose pause power-grid`): la habilitación de una carga
 rápida sale a potencia normal, primero esperando 5 s y, con el circuito abierto, al instante.
 
+### El contrato de la API
+
+Cada módulo publica su contrato **OpenAPI 3.0** en `/v3/api-docs`, sin sesión, con las rutas de
+`/api` (las de `/internal` son entre módulos y no están). Lo genera springdoc desde los
+controladores, sin Swagger UI.
+
+| Módulo | Contrato |
+|--------|----------|
+| core | http://localhost:8081/v3/api-docs |
+| charging | http://localhost:8082/v3/api-docs |
+| integration | http://localhost:8083/v3/api-docs |
+| async | http://localhost:8084/v3/api-docs |
+
+**Se lee en cada módulo, no por Caddy:** con `docker compose up`, `/v3/api-docs` no se reenvía
+hacia afuera, así que en el servidor no se ve. Para leerlo, `pnpm dev` o los JAR sueltos.
+
+Además de lo que springdoc deduce, el contrato declara qué operaciones piden el token (las que
+tienen `@PreAuthorize`, con su 401), los errores en Problem Details (RFC 9457, con el `code`), los
+201 y 204, y los campos que pueden venir en `null`. La configuración está en `OpenApiConfig` de cada
+módulo.
+
+**Schemathesis valida las respuestas reales contra el contrato** en el job `API (Newman)` de CI,
+después de la colección: genera pedidos para cada operación y falla si alguna respuesta es un 500,
+tiene un código no declarado o un cuerpo que no coincide con el contrato. Para correrlo en tu
+máquina, con el sistema levantado como para Newman (ver `qa/README.md`):
+
+```bash
+pip install schemathesis==4.34.2
+QA_ADMIN_EMAIL=... QA_ADMIN_PASSWORD=... bash qa/ci/schemathesis.sh   # informes en qa/schemathesis/
+```
+
+Corrido dos veces contra el mismo core, la segunda falla con 429: Schemathesis prueba contraseñas
+al azar en las bajas y los cambios de rol, y bloquean al ADMIN 15 minutos. Hay que reiniciar core.
+
+**Del lado SOAP**, `integration` valida cada respuesta de la distribuidora contra su copia del
+contrato (`wsdl/power-grid.xsd`, el que importa el WSDL). Una respuesta que no lo cumple se trata
+como distribuidora caída: la carga sale a potencia normal y queda un ERROR en el log.
+
 ### El asistente
 
 La burbuja de abajo a la derecha abre un chat con un agente que entiende pedidos como *"estoy en
