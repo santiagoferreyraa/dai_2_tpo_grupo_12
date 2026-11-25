@@ -12,5 +12,5 @@ public interface JpaPendingDepositRefundRepository
         extends JpaRepository<PendingDepositRefund, Long>, PendingDepositRefundRepository {
 
     @Override
-    List<PendingDepositRefund> findByRefundedAtIsNullOrderByCreatedAtAsc();
+    List<PendingDepositRefund> findByRefundedAtIsNullAndFailedAtIsNullOrderByCreatedAtAsc();
 }

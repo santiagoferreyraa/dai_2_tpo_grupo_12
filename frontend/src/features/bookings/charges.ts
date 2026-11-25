@@ -43,4 +43,6 @@ export const DEPOSIT_OUTCOME_LABEL: Partial<Record<DepositStatus, string>> = {
   REFUND_PENDING: 'devolución en curso',
   REFUNDED: 'devuelta',
   FORFEITED: 'no devuelta',
+  /* Va seguido de un link a Contacto: ver `Charges` en MyBookings. */
+  REFUND_FAILED: 'no pudimos devolverla,',
 }

@@ -1666,6 +1666,33 @@
             ],
             "url": "{{coreUrl}}/api/pricing/estimate?connectorId={{newConnectorId}}"
           }
+        },
+        {
+          "name": "Estimar un consumo menor que la seña → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 200', () => pm.response.to.have.status(200));",
+                  "pm.test(\"pm.expect(json.settledByDeposit).to.be.true\", () => { pm.expect(json.settledByDeposit).to.be.true; });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{coreUrl}}/api/pricing/estimate?connectorId={{newConnectorId}}&estimatedKwh=1"
+          }
         }
       ]
     },
@@ -2721,6 +2748,148 @@
           }
         },
         {
+          "name": "Retener un slot para soltarlo → 201",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const start = new Date(Date.now() + 3 * 24 * 3600e3); start.setUTCMinutes(0, 0, 0);",
+                  "pm.collectionVariables.set('releaseStart', start.toISOString());",
+                  "pm.collectionVariables.set('releaseEnd', new Date(start.getTime() + 3600e3).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.collectionVariables.set('releaseHoldId', json.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{chargingUrl}}/api/bookings/holds",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"connectorId\": {{seedConnectorId}},\n  \"start\": \"{{releaseStart}}\",\n  \"end\": \"{{releaseEnd}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Soltar la retención de otro (SEC-06) → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 404', () => pm.response.to.have.status(404));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cpoToken}}"
+              }
+            ],
+            "url": "{{chargingUrl}}/api/bookings/holds/{{releaseHoldId}}"
+          }
+        },
+        {
+          "name": "Soltar mi retención → 204",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driverToken}}"
+              }
+            ],
+            "url": "{{chargingUrl}}/api/bookings/holds/{{releaseHoldId}}"
+          }
+        },
+        {
+          "name": "Soltar una retención ya soltada → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 404', () => pm.response.to.have.status(404));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driverToken}}"
+              }
+            ],
+            "url": "{{chargingUrl}}/api/bookings/holds/{{releaseHoldId}}"
+          }
+        },
+        {
           "name": "Retener un slot → 201",
           "event": [
             {
@@ -3696,6 +3865,18 @@
     },
     {
       "key": "holdId",
+      "value": ""
+    },
+    {
+      "key": "releaseStart",
+      "value": ""
+    },
+    {
+      "key": "releaseEnd",
+      "value": ""
+    },
+    {
+      "key": "releaseHoldId",
       "value": ""
     },
     {

@@ -429,6 +429,31 @@ public class BookingServiceImpl implements BookingService {
         });
     }
 
+    @Override
+    public void releaseHold(UUID holdId, Long driverId) {
+        Hold hold;
+        synchronized (holdLock) {
+            hold = holds.get(holdId);
+            if (hold == null) {
+                throw new HoldNotFoundException(holdId);
+            }
+            if (!hold.driverId().equals(driverId)) {
+                // Sin tocarla, y contestando como si no existiera (SEC-06). El motivo queda en el log.
+                log.warn(
+                        "Acceso denegado: el conductor {} quiso soltar la retención {}, que es de otro",
+                        driverId,
+                        holdId);
+                throw new HoldNotFoundException(holdId);
+            }
+            holds.remove(holdId);
+        }
+        log.info(
+                "Se libera la retención {} del conector {}: el conductor {} cerró la reserva sin confirmar",
+                holdId,
+                hold.connectorId(),
+                driverId);
+    }
+
     /** Lo ejecuta el reloj al cumplirse el plazo. Si ya se confirmó, no queda nada que sacar. */
     private void expire(UUID holdId) {
         Hold expired = holds.remove(holdId);
@@ -675,6 +700,14 @@ public class BookingServiceImpl implements BookingService {
     }
 
     @Override
+    public void markDepositRefundFailed(Long bookingId) {
+        Booking booking =
+                bookingRepository.findById(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
+        booking.markDepositRefundFailed();
+        bookingRepository.save(booking);
+    }
+
+    @Override
     public Booking getBooking(Long bookingId) {
         return bookingRepository.findById(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
     }
@@ -723,7 +756,9 @@ public class BookingServiceImpl implements BookingService {
                 saved.getConnectorId(),
                 saved.getDepositStatus(),
                 saved.getDepositRefundAmount());
-        eventPublisher.publish(BookingEvent.cancelled(saved, now));
+        if (saved.isFromCheckout()) {
+            eventPublisher.publish(BookingEvent.activationFailed(saved, now));
+        }
         return saved;
     }
 
@@ -871,8 +906,6 @@ public class BookingServiceImpl implements BookingService {
                 connectorId,
                 booking.getWindow().start(),
                 booking.getWindow().end());
-
-        eventPublisher.publish(BookingEvent.confirmed(booking, now));
         return booking;
     }
 

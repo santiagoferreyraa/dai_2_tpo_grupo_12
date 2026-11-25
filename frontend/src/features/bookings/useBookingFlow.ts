@@ -4,7 +4,7 @@ import { refreshNotificationsSoon } from '@/features/notifications/data/notifica
 import { commitDeparture, discardDepartureDraft } from '@/features/terminals/departure'
 import { ApiError } from '@/lib/api'
 
-import { checkoutBooking, startHold } from './data/bookingsRepository'
+import { checkoutBooking, releaseHold, startHold } from './data/bookingsRepository'
 import { refreshMyBookings } from './data/myBookingsStore'
 import { GRACE_MINUTES } from './slots'
 import type { Booking, Hold } from './types'
@@ -76,12 +76,13 @@ const REUSE_MARGIN_MS = 15_000
  * acá quedarían recordadas retenciones que allá ya no existen, y confirmarlas daría un 404 que se
  * lee como "se te venció el tiempo" sin que se haya vencido nada.
  *
- * Para qué se recuerda: si el conductor vuelve a elegir EL MISMO horario, reusarla evita un viaje
- * al servidor y conserva la cuenta regresiva que ya venía corriendo.
+ * Para qué se recuerda: si el conductor vuelve a elegir EL MISMO horario sin cerrar el diálogo
+ * ("Cambiar horario"), reusarla evita un viaje al servidor y conserva la cuenta regresiva que ya
+ * venía corriendo.
  *
- * **Vive fuera del componente a propósito.** Adentro se perdería al cerrar el diálogo, y el caso
- * de arriba pasa igual: retener, cerrar sin confirmar, volver a abrir y pedir el mismo horario.
- * Afuera dura lo que dura la pestaña, que es lo mismo que puede durar el recuerdo de quien reservó.
+ * **Al cerrar el diálogo sin confirmar se suelta** (DEF-27, Manuel 25/11): antes quedaba retenida
+ * hasta vencer, y otro conductor esperaba 10 minutos por un horario que nadie iba a usar. Ver el
+ * efecto de `useBookingFlow`.
  */
 let pendingHold: Hold | null = null
 
@@ -148,10 +149,25 @@ export function useBookingFlow(connectorId: number): BookingFlow {
 
   /* Si el diálogo se cierra con un pedido viajando, la respuesta no tiene a quién actualizar. */
   const mounted = useRef(true)
+  /* El paso actual, para que el efecto de cierre sepa si había una confirmación viajando. */
+  const stepRef = useRef(step)
+  useEffect(() => {
+    stepRef.current = step
+  }, [step])
   useEffect(() => {
     mounted.current = true
     return () => {
       mounted.current = false
+      /*
+       * Cerrar el diálogo sin confirmar suelta la retención (DEF-27), en segundo plano y sin mostrar
+       * nada: si falla, vence sola. Con una confirmación viajando no se suelta: puede estar saliendo
+       * bien, y si sale, el éxito ya la olvida.
+       */
+      if (pendingHold !== null && stepRef.current.kind !== 'confirming') {
+        const { id } = pendingHold
+        pendingHold = null
+        releaseHold(id).catch(() => {})
+      }
       /*
        * Salir del flujo sin haber confirmado tira lo que se eligió como punto de partida en el
        * formulario (ECO-139): si no, el recorrido de esa estación seguía saliendo de una dirección
@@ -231,7 +247,8 @@ export function useBookingFlow(connectorId: number): BookingFlow {
            * revisión sería ofrecer confirmar algo que no se puede. Se vuelve a elegir el horario.
            * Cualquier otro error —la red, el servidor, Pagos que no contesta, la tarjeta que falta—
            * deja la retención como estaba, y se puede reintentar desde la revisión mientras no venza.
-           * Si fue la tarjeta, cargarla y volver al mismo horario reusa esta retención.
+           * Si fue la tarjeta y el conductor cierra el diálogo para cargarla, la retención se suelta
+           * (DEF-27): al volver, se pide de nuevo el mismo horario.
            */
           if (status === 410 || status === 404 || status === 409) {
             forgetHold(connectorId)

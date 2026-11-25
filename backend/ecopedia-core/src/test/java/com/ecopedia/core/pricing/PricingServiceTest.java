@@ -1,7 +1,6 @@
 package com.ecopedia.core.pricing;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -185,14 +184,18 @@ class PricingServiceTest {
         }
 
         @Test
-        @DisplayName("El estimado usa la potencia máxima del conector y no puede quedar por debajo de la seña")
-        void estimateUsesTheConnectorPowerAndKeepsTheFloor() {
+        @DisplayName("El estimado usa la potencia máxima del conector")
+        void estimateUsesTheConnectorPower() {
             ChargeBreakdown estimate = service.estimateCost(12L, new BigDecimal("40"), argentina("12:00"));
             assertThat(estimate.speed()).isEqualTo(ChargeSpeed.FAST);
             assertThat(estimate.total()).isEqualByComparingTo("6000");
+        }
 
-            assertThatThrownBy(() -> service.estimateCost(12L, new BigDecimal("10"), argentina("12:00")))
-                    .isInstanceOf(IllegalArgumentException.class);
+        @Test
+        @DisplayName("DEF-30: un consumo que no supera la seña ya no es un error: se estima igual")
+        void estimateBelowTheDepositIsNotAnError() {
+            ChargeBreakdown estimate = service.estimateCost(12L, new BigDecimal("10"), argentina("12:00"));
+            assertThat(estimate.total()).isEqualByComparingTo("1500");
         }
     }
 }

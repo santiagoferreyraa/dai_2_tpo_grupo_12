@@ -48,6 +48,10 @@ public class PendingDepositRefund {
     @Column(name = "refunded_at")
     private Instant refundedAt;
 
+    /** Cuándo Pagos dijo que esta devolución no se puede hacer; desde ahí no se vuelve a pedir. */
+    @Column(name = "failed_at")
+    private Instant failedAt;
+
     @Version
     @Column(name = "version", nullable = false)
     private Long version;
@@ -70,6 +74,15 @@ public class PendingDepositRefund {
 
     public boolean isRefunded() {
         return refundedAt != null;
+    }
+
+    /** Pagos no acepta la devolución: se deja de pedir y queda para revisarla a mano. */
+    public void markFailed(Instant at) {
+        this.failedAt = at;
+    }
+
+    public Instant getFailedAt() {
+        return failedAt;
     }
 
     public Long getId() {

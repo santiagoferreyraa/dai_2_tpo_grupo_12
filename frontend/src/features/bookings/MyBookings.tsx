@@ -219,6 +219,18 @@ function Charges({ booking }: { booking: Booking }) {
         <span>
           Seña <span className="text-text font-semibold">{formatMoney(booking.depositAmount)}</span>
           {outcome !== undefined && ` · ${outcome}`}
+          {/* DEF-29: no hay nada que reintentar desde acá; lo que sirve es decirle a quién escribir. */}
+          {booking.depositStatus === 'REFUND_FAILED' && (
+            <>
+              {' '}
+              <Link
+                to="/contact"
+                className="text-primary focus-visible:outline-primary rounded font-semibold underline underline-offset-2 focus-visible:outline-2"
+              >
+                escribinos
+              </Link>
+            </>
+          )}
         </span>
       ) : (
         <span>Sin seña</span>

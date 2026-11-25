@@ -37,6 +37,8 @@ const NOTIFICATION_LOOK: Record<NotificationType, NotificationLook> = {
   BOOKING_NO_SHOW: { Icon: ClockIcon, tint: 'text-danger' },
   /* Una reserva anulada por una deuda: es una cancelada, aunque no la haya pedido el conductor. */
   BOOKING_CANCELLED_FOR_DEBT: { Icon: CrossIcon, tint: 'text-danger' },
+  /* La carga de una reserva que no se pudo iniciar (RF13): la reserva se perdió, aunque no por el conductor. */
+  BOOKING_ACTIVATION_FAILED: { Icon: CrossIcon, tint: 'text-danger' },
   /*
     La deuda (ECO-62), con la tarjeta: es un tema de pagos, no de una reserva. En rojo mientras no se
     pudo cobrar; en el verde de la marca cuando se pagó.

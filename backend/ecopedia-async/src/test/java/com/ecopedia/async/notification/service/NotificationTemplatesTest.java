@@ -79,6 +79,29 @@ class NotificationTemplatesTest {
     }
 
     @Test
+    @DisplayName(
+            "DEF-25: la carga que no se pudo iniciar no dice \"Cancelaste\": dice qué pasó con la seña y qué hacer")
+    void activationFailedWithDeposit() {
+        NotificationToDispatch failed = event(NotificationType.BOOKING_ACTIVATION_FAILED, "8000.00", true, "4242");
+
+        assertThat(TEMPLATES.title(failed)).isEqualTo("No pudimos iniciar tu carga");
+        assertThat(TEMPLATES.body(failed, PALERMO))
+                .isEqualTo("No pudimos iniciar la carga de tu reserva en Estación Palermo del domingo 1/11 de 18:00 "
+                        + "a 19:00. Te reintegramos la seña. Podés reservar otro horario o elegir otra estación.")
+                .doesNotContain("Cancelaste");
+    }
+
+    @Test
+    @DisplayName("DEF-25: sin seña, el aviso de la carga que no se pudo iniciar no habla de una seña que no hubo")
+    void activationFailedWithoutDeposit() {
+        NotificationToDispatch failed = event(NotificationType.BOOKING_ACTIVATION_FAILED, null, null, null);
+
+        assertThat(TEMPLATES.body(failed, PALERMO))
+                .isEqualTo("No pudimos iniciar la carga de tu reserva en Estación Palermo del domingo 1/11 de 18:00 "
+                        + "a 19:00. Podés reservar otro horario o elegir otra estación.");
+    }
+
+    @Test
     @DisplayName("No-show sin seña: no habla de una seña que no hubo")
     void noShowWithoutDeposit() {
         NotificationToDispatch noShow = event(NotificationType.BOOKING_NO_SHOW, null, null, null);
