@@ -144,6 +144,9 @@ class AnalyticsServiceImplTest {
         assertThat(c10.peakPowerKw()).isEqualByComparingTo("22.00");
         assertThat(c10.peakDemandKw()).isEqualByComparingTo("20.00");
         assertThat(c10.connectorType()).isEqualTo("CCS2");
+        assertThat(c10.slots())
+                .extracting(AnalyticsDashboard.SlotDemand::start)
+                .containsExactly(at("10:00"), at("10:15"));
     }
 
     @Test

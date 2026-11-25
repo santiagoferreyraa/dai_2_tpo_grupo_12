@@ -56,6 +56,7 @@ public record AnalyticsDashboard(
      *
      * @param peakPowerKw la potencia más alta que informó una lectura.
      * @param peakDemandKw la franja de 15 minutos de mayor potencia media.
+     * @param slots sus franjas con lecturas: con ellas el tablero suma solo los conectores elegidos.
      */
     public record ConnectorDelivery(
             Long connectorId,
@@ -65,5 +66,11 @@ public record AnalyticsDashboard(
             BigDecimal energyKwh,
             long sessions,
             BigDecimal peakPowerKw,
-            BigDecimal peakDemandKw) {}
+            BigDecimal peakDemandKw,
+            List<SlotDemand> slots) {
+
+        public ConnectorDelivery {
+            slots = List.copyOf(slots);
+        }
+    }
 }

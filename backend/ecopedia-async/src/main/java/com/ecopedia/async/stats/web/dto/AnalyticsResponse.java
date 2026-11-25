@@ -53,14 +53,19 @@ public record AnalyticsResponse(
                     station.sessions(),
                     station.peakSimultaneousPowerKw(),
                     station.peakSimultaneousAt(),
-                    station.slots().stream()
-                            .map(slot -> new SlotDemandDto(
-                                    slot.start(), slot.energyKwh(), slot.demandKw(), slot.sessionsStarted()))
-                            .toList());
+                    SlotDemandDto.listOf(station.slots()));
         }
     }
 
-    public record SlotDemandDto(Instant start, BigDecimal energyKwh, BigDecimal demandKw, long sessionsStarted) {}
+    public record SlotDemandDto(Instant start, BigDecimal energyKwh, BigDecimal demandKw, long sessionsStarted) {
+
+        static List<SlotDemandDto> listOf(List<AnalyticsDashboard.SlotDemand> slots) {
+            return slots.stream()
+                    .map(slot ->
+                            new SlotDemandDto(slot.start(), slot.energyKwh(), slot.demandKw(), slot.sessionsStarted()))
+                    .toList();
+        }
+    }
 
     public record ConnectorDeliveryDto(
             Long connectorId,
@@ -70,7 +75,8 @@ public record AnalyticsResponse(
             BigDecimal energyKwh,
             long sessions,
             BigDecimal peakPowerKw,
-            BigDecimal peakDemandKw) {
+            BigDecimal peakDemandKw,
+            List<SlotDemandDto> slots) {
 
         static ConnectorDeliveryDto fromDomain(AnalyticsDashboard.ConnectorDelivery connector) {
             return new ConnectorDeliveryDto(
@@ -81,7 +87,8 @@ public record AnalyticsResponse(
                     connector.energyKwh(),
                     connector.sessions(),
                     connector.peakPowerKw(),
-                    connector.peakDemandKw());
+                    connector.peakDemandKw(),
+                    SlotDemandDto.listOf(connector.slots()));
         }
     }
 }

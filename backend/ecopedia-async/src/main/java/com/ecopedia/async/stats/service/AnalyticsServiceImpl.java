@@ -132,17 +132,6 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         List<StationDemand> result = new ArrayList<>();
         for (Map.Entry<Long, List<DemandSlot>> entry : grouped.entrySet()) {
             List<DemandSlot> group = entry.getValue();
-            TreeMap<Instant, List<DemandSlot>> perSlot = new TreeMap<>();
-            for (DemandSlot row : group) {
-                perSlot.computeIfAbsent(row.getSlotStart(), start -> new ArrayList<>())
-                        .add(row);
-            }
-            List<SlotDemand> slotDemands = perSlot.entrySet().stream()
-                    .map(slot -> {
-                        BigDecimal energy = energyOf(slot.getValue());
-                        return new SlotDemand(slot.getKey(), energy, demandOf(energy), sessionsOf(slot.getValue()));
-                    })
-                    .toList();
             Peak peak = peakOf(energyBySlot(group));
             result.add(new StationDemand(
                     entry.getKey(),
@@ -151,7 +140,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                     sessionsOf(group),
                     peak.demandKw(),
                     peak.at(),
-                    slotDemands));
+                    slotDemands(group)));
         }
         result.sort(Comparator.comparing(StationDemand::energyKwh).reversed());
         return result;
@@ -181,10 +170,26 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                     energyOf(group),
                     sessionsOf(group),
                     peakPower,
-                    peakOf(energyBySlot(group)).demandKw()));
+                    peakOf(energyBySlot(group)).demandKw(),
+                    slotDemands(group)));
         }
         result.sort(Comparator.comparing(ConnectorDelivery::energyKwh).reversed());
         return result;
+    }
+
+    /** Las franjas del grupo, sumando los conectores que caen en la misma, en orden. */
+    private static List<SlotDemand> slotDemands(List<DemandSlot> group) {
+        TreeMap<Instant, List<DemandSlot>> perSlot = new TreeMap<>();
+        for (DemandSlot row : group) {
+            perSlot.computeIfAbsent(row.getSlotStart(), start -> new ArrayList<>())
+                    .add(row);
+        }
+        return perSlot.entrySet().stream()
+                .map(slot -> {
+                    BigDecimal energy = energyOf(slot.getValue());
+                    return new SlotDemand(slot.getKey(), energy, demandOf(energy), sessionsOf(slot.getValue()));
+                })
+                .toList();
     }
 
     /** La energía de cada franja sumando todos los conectores: la base de la potencia simultánea. */

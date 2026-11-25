@@ -85,6 +85,7 @@ class AnalyticsApiTest {
                 .andExpect(jsonPath("$.totals.energyKwh").value(8.0))
                 .andExpect(jsonPath("$.stations[0].slots[0].demandKw").value(32.0))
                 .andExpect(jsonPath("$.connectors[*].connectorId", hasItem(9101)))
+                .andExpect(jsonPath("$.connectors[0].slots[0].demandKw").value(24.0))
                 .andExpect(jsonPath("$.stations[*].stationId", not(hasItem(9002))));
     }
 
