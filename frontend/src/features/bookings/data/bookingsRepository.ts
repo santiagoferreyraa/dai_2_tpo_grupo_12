@@ -60,6 +60,17 @@ export async function startHold(connectorId: number, start: Date, end: Date): Pr
 }
 
 /**
+ * Suelta una retención propia sin confirmarla (DEF-27): el horario vuelve a estar libre para los
+ * demás en el acto, en vez de a los 10 minutos.
+ *
+ * Quien la llama no espera la respuesta ni muestra nada: si falla (ya venció, ya se soltó, la red),
+ * la retención vence sola. Una ajena o inexistente da 404.
+ */
+export function releaseHold(holdId: string): Promise<void> {
+  return api.delete(`/bookings/holds/${holdId}`)
+}
+
+/**
  * ECO-33: los huecos libres de un conector entre dos instantes, en orden.
  *
  * Libre es lo que nadie tiene comprometido: ni una reserva confirmada ni una retención vigente,

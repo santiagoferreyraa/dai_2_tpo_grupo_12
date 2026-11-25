@@ -455,7 +455,7 @@ no directo a la base.
 
 ### Notificaciones
 
-Al confirmar o cancelar una reserva, Reservas deja un mensaje en la cola
+Al confirmar o cancelar una reserva, cuando no se presenta o cuando su carga no se pudo iniciar, Reservas deja un mensaje en la cola
 `notifications.dispatch` de Artemis, y `ecopedia-async` (8084) lo consume, arma el aviso, lo
 guarda y manda el mail. **El mail es simulado:** se escribe en el log. Por la misma cola, Pagos
 (`ecopedia-integration`) avisa lo que le pasa a una deuda: ver "La deuda del conductor".
@@ -569,6 +569,11 @@ no pide seña hasta que su operador la cargue.
 | Cancelar hasta 5 h antes del inicio | Se devuelve la seña, sola, en unos segundos |
 | Cancelar después | La seña no se devuelve |
 | No presentarse | A los 15 min del inicio la reserva pasa a `NO_SHOW`, el conector se libera, la seña no se devuelve y llega un aviso |
+| La carga no se pudo iniciar (la red en mantenimiento, el cargador que no enciende) | La reserva se libera, la seña se devuelve entera y llega el aviso "No pudimos iniciar tu carga" |
+| Pagos no acepta una devolución (el cobro no existe o ya se devolvió) | La seña queda `REFUND_FAILED`: no se vuelve a pedir, queda un ERROR para revisarla a mano y en Mis reservas dice "no pudimos devolverla, escribinos" |
+
+**Cerrar el diálogo de reservar sin confirmar suelta la retención** (`DELETE /api/bookings/holds/{id}`):
+el horario vuelve a estar libre en el acto, en vez de a los 10 minutos.
 
 **El checkout pide la cabecera `Idempotency-Key`** (sin ella, 400 `IDEMPOTENCY_KEY_REQUIRED`): el
 mismo valor en cada reintento del mismo pedido devuelve la reserva ya hecha en vez de cobrar otra
@@ -662,7 +667,8 @@ El cuerpo de la habilitación:
 - **Con `bookingId`**, es la carga de una reserva confirmada. Se puede habilitar **desde 15 minutos
   antes del turno y hasta que termina**, si la terminal no está tomada por el turno de otro.
 - **Sin `bookingId`**, es una carga sin reserva: no paga seña y su ventana va desde ahora hasta 15
-  minutos antes de la próxima reserva del conector (4 horas como máximo).
+  minutos antes de la próxima reserva del conector (4 horas como máximo). No manda ningún aviso: el
+  conductor está frente al cargador viendo la pantalla de carga.
 - `targetBatteryPercent` es opcional (80 si no viene).
 
 Lo que puede contestar, además del 201:

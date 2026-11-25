@@ -52,6 +52,12 @@ public record BookingEvent(
         return of(BookingEventType.BOOKING_CANCELLED_FOR_DEBT, booking, occurredAt, refunded);
     }
 
+    /** La seña de una reserva cuya carga no se pudo iniciar siempre se devuelve (RF13). */
+    public static BookingEvent activationFailed(Booking booking, Instant occurredAt) {
+        Boolean refunded = booking.getDepositStatus() == DepositStatus.NONE ? null : Boolean.TRUE;
+        return of(BookingEventType.BOOKING_ACTIVATION_FAILED, booking, occurredAt, refunded);
+    }
+
     public static BookingEvent noShow(Booking booking, Instant occurredAt) {
         return of(BookingEventType.BOOKING_NO_SHOW, booking, occurredAt, null);
     }

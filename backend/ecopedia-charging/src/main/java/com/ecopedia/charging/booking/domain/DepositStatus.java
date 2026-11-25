@@ -18,6 +18,12 @@ public enum DepositStatus {
     REFUND_PENDING,
     /** Devuelta a la tarjeta. */
     REFUNDED,
+    /**
+     * Correspondía devolverla y Pagos dijo que no se puede (el cobro no existe o ya se devolvió). No se
+     * arregla reintentando: el barrido deja de pedirla, queda un ERROR para revisarla a mano y el
+     * conductor ve que tiene que escribirnos.
+     */
+    REFUND_FAILED,
     /** Quedó para el operador: el conductor no se presentó o canceló fuera de plazo. */
     FORFEITED
 }

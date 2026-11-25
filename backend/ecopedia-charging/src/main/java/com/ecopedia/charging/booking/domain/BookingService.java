@@ -66,6 +66,15 @@ public interface BookingService {
     Hold startHold(Long connectorId, TimeWindow window, Long driverId);
 
     /**
+     * Suelta una retención propia antes de que venza: el conductor cerró el diálogo de reservar sin
+     * confirmar, y el horario vuelve a estar libre para los demás en el acto, en vez de a los 10 minutos.
+     *
+     * @throws HoldNotFoundException si no existe, ya venció o ya se soltó, y también si es de otro
+     *     conductor: las dos cosas se contestan igual (SEC-06), y la ajena no se toca
+     */
+    void releaseHold(UUID holdId, Long driverId);
+
+    /**
      * Consulta una retención vigente por id (ECO-35, para uso del Facade de Checkout).
      * Devuelve vacía si no existe o ya venció.
      */
@@ -127,6 +136,9 @@ public interface BookingService {
     /** Anota que Pagos devolvió la seña de la reserva. */
     void markDepositRefunded(Long bookingId);
 
+    /** Anota que Pagos no acepta devolver la seña de la reserva: deja de pedirse (REFUND_FAILED). */
+    void markDepositRefundFailed(Long bookingId);
+
     /**
      * Consume la reserva al iniciar la carga física en el conector (RF11, ECO-60).
      * Transiciona su estado a {@link BookingStatus#IN_PROGRESS} bajo la transacción declarativa.
@@ -157,6 +169,9 @@ public interface BookingService {
      *
      * <p>A diferencia de {@link #cancelBooking}, el reintegro de la seña no depende del plazo de
      * preaviso: el conductor se presentó en tiempo y forma y la falla es del operador o de la red.
+     *
+     * <p>Si la reserva vino del checkout, sale el aviso {@code BOOKING_ACTIVATION_FAILED}, que no es el
+     * de una cancelación. La de una carga sin reserva no avisa: el conductor ve el error en la pantalla.
      *
      * @throws BookingNotFoundException si la reserva no existe
      * @throws BookingStateConflictException si la reserva ya se cerró sin reintegro (409)
@@ -265,7 +280,8 @@ public interface BookingService {
      * <p>Verifica que el conector exista y esté operativo, toma el candado {@code holdLock},
      * comprueba que el conductor esté libre ({@code requireDriverFree}), calcula la ventana
      * disponible respetando el buffer de 15 minutos, libera cualquier retención previa del propio
-     * conductor y persiste la reserva con {@link DepositStatus#NONE}.
+     * conductor y persiste la reserva con {@link DepositStatus#NONE}. No publica ningún aviso: no es
+     * una reserva que el conductor hizo, y la pantalla de carga ya le muestra que empezó.
      *
      * @param connectorId Identificador del conector
      * @param driverId Identificador del conductor

@@ -86,8 +86,9 @@ class DepositRefundProcessorTest {
     }
 
     @Test
-    @DisplayName("Si Pagos no acepta devolverla, tampoco se anota como devuelta")
-    void doesNotRecordARefusedRefund() {
+    @DisplayName(
+            "DEF-29: si Pagos no acepta devolverla, no se anota como devuelta sino como fallida, y se deja de pedir")
+    void recordsARefusedRefundAsFailed() {
         doThrow(new DepositRefundRefusedException("DEPOSIT_NOT_REFUNDABLE"))
                 .when(depositGateway)
                 .refund(anyLong());
@@ -95,6 +96,7 @@ class DepositRefundProcessorTest {
         processor.refundPending();
 
         verify(bookingService, never()).markDepositRefunded(anyLong());
+        verify(bookingService).markDepositRefundFailed(33L);
     }
 
     @Test
@@ -140,7 +142,8 @@ class DepositRefundProcessorTest {
     @DisplayName("ECO-62: devuelve también la seña cobrada sin reserva y la marca devuelta")
     void refundsADepositChargedWithoutBooking() {
         PendingDepositRefund pendingRefund = chargedWithoutBooking();
-        when(pendingRefunds.findByRefundedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(pendingRefund));
+        when(pendingRefunds.findByRefundedAtIsNullAndFailedAtIsNullOrderByCreatedAtAsc())
+                .thenReturn(List.of(pendingRefund));
 
         processor.refundPending();
 
@@ -154,7 +157,8 @@ class DepositRefundProcessorTest {
     @DisplayName("ECO-62: con Pagos caído la seña sin reserva sigue pendiente para el próximo barrido")
     void keepsTheDepositWithoutBookingPendingWhenPaymentsIsDown() {
         PendingDepositRefund pendingRefund = chargedWithoutBooking();
-        when(pendingRefunds.findByRefundedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(pendingRefund));
+        when(pendingRefunds.findByRefundedAtIsNullAndFailedAtIsNullOrderByCreatedAtAsc())
+                .thenReturn(List.of(pendingRefund));
         doThrow(new DepositPaymentUnavailableException("caído", new RuntimeException()))
                 .when(depositGateway)
                 .refund(77L);
@@ -163,5 +167,22 @@ class DepositRefundProcessorTest {
 
         verify(pendingRefunds, never()).save(any());
         assertThat(pendingRefund.isRefunded()).isFalse();
+    }
+
+    @Test
+    @DisplayName("DEF-29: si Pagos no acepta devolver la seña sin reserva, queda como fallida y se deja de pedir")
+    void marksARefusedDepositWithoutBookingAsFailed() {
+        PendingDepositRefund pendingRefund = chargedWithoutBooking();
+        when(pendingRefunds.findByRefundedAtIsNullAndFailedAtIsNullOrderByCreatedAtAsc())
+                .thenReturn(List.of(pendingRefund));
+        doThrow(new DepositRefundRefusedException("DEPOSIT_NOT_REFUNDABLE"))
+                .when(depositGateway)
+                .refund(77L);
+
+        processor.refundPending();
+
+        verify(pendingRefunds).save(pendingRefund);
+        assertThat(pendingRefund.isRefunded()).isFalse();
+        assertThat(pendingRefund.getFailedAt()).isEqualTo(Instant.parse("2026-11-20T12:00:00Z"));
     }
 }

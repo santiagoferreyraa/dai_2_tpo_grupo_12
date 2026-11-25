@@ -205,6 +205,26 @@ class BookingApiTest {
                 .isEqualTo(201);
     }
 
+    @Test
+    @DisplayName("DEF-27: DELETE de la retención propia da 204 y el horario queda libre; la ajena da el 404 único")
+    void releasingAHoldFreesTheSlot() throws Exception {
+        Instant start = nextWindowStart();
+        String holdId = holdSlot(30L, start, DRIVER);
+
+        // La de otro: el mismo 404 que una que no existe, y la retención sigue en pie.
+        mockMvc.perform(delete("/api/bookings/holds/" + holdId).header(HttpHeaders.AUTHORIZATION, driver(OTHER_DRIVER)))
+                .andExpect(status().isNotFound());
+        assertThat(holdAttempt(30L, start, OTHER_DRIVER)).isEqualTo(409);
+
+        mockMvc.perform(delete("/api/bookings/holds/" + holdId).header(HttpHeaders.AUTHORIZATION, driver(DRIVER)))
+                .andExpect(status().isNoContent());
+        assertThat(holdAttempt(30L, start, OTHER_DRIVER)).isEqualTo(201);
+
+        // Ya soltada, no existe.
+        mockMvc.perform(delete("/api/bookings/holds/" + holdId).header(HttpHeaders.AUTHORIZATION, driver(DRIVER)))
+                .andExpect(status().isNotFound());
+    }
+
     /*
      * La otra mitad del bloqueo, contra la base de verdad: la reserva ocupa al CONDUCTOR, no solo
      * al conector. Acá importa que la consulta por conductor en JPQL diga lo mismo que el doble en

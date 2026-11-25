@@ -350,7 +350,22 @@ export default function AdminPage() {
     try {
       if (stationModalOpen === 'create') {
         const created = await createStation(payload)
-        await saveStationPricing(created.id, pricing)
+        try {
+          await saveStationPricing(created.id, pricing)
+        } catch {
+          /*
+           * DEF-28: la estación ya existe y la seña no se guardó. El formulario pasa a editar la
+           * estación recién creada, con lo que el operador había cargado: guardar de nuevo la edita y
+           * no la crea otra vez. Lo mismo que hace /stations.
+           */
+          setEditingStation(created)
+          setStationModalOpen('edit')
+          setStationDepositError(
+            'La estación se guardó, pero no pudimos guardar la seña ni la hora pico. Revisalas y guardá de nuevo.',
+          )
+          await loadStations()
+          return
+        }
         setActionSuccess(`¡"${created.name}" creada exitosamente con ID ${created.id}!`)
       } else if (stationModalOpen === 'edit' && editingStation) {
         const updated = await updateStation(editingStation.id, payload)

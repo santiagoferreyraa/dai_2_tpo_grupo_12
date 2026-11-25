@@ -10,6 +10,7 @@ import com.ecopedia.charging.security.AuthenticatedUser;
 import jakarta.validation.Valid;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -55,6 +56,19 @@ public class BookingController {
         Hold hold = bookingService.startHold(request.connectorId(), request.toWindow(), driver.id());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(HoldResponse.fromDomain(hold, bookingService.depositRefundDeadline(hold.window())));
+    }
+
+    /**
+     * Soltar una retención propia sin confirmarla: el horario vuelve a estar libre en el acto. Una
+     * retención inexistente, vencida o ajena da el mismo 404 (SEC-06); el front lo ignora, porque igual
+     * vence sola.
+     */
+    @DeleteMapping("/holds/{holdId}")
+    @PreAuthorize("hasRole('CONDUCTOR')")
+    public ResponseEntity<Void> releaseHold(
+            @AuthenticationPrincipal AuthenticatedUser driver, @PathVariable UUID holdId) {
+        bookingService.releaseHold(holdId, driver.id());
+        return ResponseEntity.noContent().build();
     }
 
     /** Las reservas del conductor que pregunta. */

@@ -53,7 +53,9 @@ public class DepositRefundProcessor {
     void refundPending() {
         try {
             bookingService.findPendingDepositRefunds().forEach(this::refund);
-            pendingRefunds.findByRefundedAtIsNullOrderByCreatedAtAsc().forEach(this::refundWithoutBooking);
+            pendingRefunds
+                    .findByRefundedAtIsNullAndFailedAtIsNullOrderByCreatedAtAsc()
+                    .forEach(this::refundWithoutBooking);
         } catch (RuntimeException failure) {
             // La base caída no tiene que matar el reloj: el próximo barrido lo vuelve a intentar.
             log.warn("No se pudo buscar las señas por devolver: {}", failure.getMessage());
@@ -80,8 +82,11 @@ public class DepositRefundProcessor {
                     pending.getChargeId(),
                     later.getMessage());
         } catch (DepositRefundRefusedException refused) {
+            // No se arregla reintentando: se deja de pedir, con un solo ERROR para revisarla a mano.
+            pending.markFailed(clock.instant());
+            pendingRefunds.save(pending);
             log.error(
-                    "Pagos no acepta devolver el cobro {} sin reserva del conductor {}: {}. Revisar a mano",
+                    "Pagos no acepta devolver el cobro {} sin reserva del conductor {}: {}. No se vuelve a pedir: revisar a mano",
                     pending.getChargeId(),
                     pending.getDriverId(),
                     refused.getMessage());
@@ -108,9 +113,14 @@ public class DepositRefundProcessor {
                     booking.getId(),
                     later.getMessage());
         } catch (DepositRefundRefusedException refused) {
-            // No se arregla reintentando, pero se sigue intentando para que el ERROR no se pierda en el log.
+            /*
+             * No se arregla reintentando: la reserva pasa a REFUND_FAILED, el barrido deja de pedirla y queda
+             * un solo ERROR para revisarla a mano. Antes se reintentaba cada 15 s con un ERROR cada vez. El
+             * conductor ve en Mis reservas que tiene que escribirnos.
+             */
+            bookingService.markDepositRefundFailed(booking.getId());
             log.error(
-                    "Pagos no acepta devolver la seña de la reserva {} (cobro {}): {}. Revisar a mano",
+                    "Pagos no acepta devolver la seña de la reserva {} (cobro {}): {}. No se vuelve a pedir: revisar a mano",
                     booking.getId(),
                     booking.getDepositChargeId(),
                     refused.getMessage());

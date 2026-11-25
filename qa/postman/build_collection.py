@@ -164,6 +164,10 @@ FOLDERS = [
         case("Estimar costo", "GET", f"{CORE}/api/pricing/estimate?connectorId={{{{newConnectorId}}}}&estimatedKwh=30", 200,
              check=["pm.expect(Number(json.estimatedCost)).to.be.above(0)"]),
         case("Estimar costo sin kWh", "GET", f"{CORE}/api/pricing/estimate?connectorId={{{{newConnectorId}}}}", 400),
+        # DEF-30: un consumo que no supera la seña ya no es un 400: se estima y avisa que se liquida por la seña.
+        case("Estimar un consumo menor que la seña", "GET",
+             f"{CORE}/api/pricing/estimate?connectorId={{{{newConnectorId}}}}&estimatedKwh=1", 200,
+             check=["pm.expect(json.settledByDeposit).to.be.true"]),
     ]),
     ("06 · Core · Backoffice (ADMIN)", [
         case("Tablero del administrador", "GET", f"{CORE}/api/admin/dashboard", 200, token="admin"),
@@ -238,6 +242,19 @@ FOLDERS = [
         case("Disponibilidad con el rango invertido", "GET",
              f"{CHARGING}/api/bookings/availability?connectorId={{{{seedConnectorId}}}}&from={{{{availTo}}}}&to={{{{availFrom}}}}",
              400, token="driver"),
+        # DEF-27: una retención que el conductor no confirma se suelta en el acto.
+        case("Retener un slot para soltarlo", "POST", f"{CHARGING}/api/bookings/holds", 201, token="driver",
+             pre=["const start = new Date(Date.now() + 3 * 24 * 3600e3); start.setUTCMinutes(0, 0, 0);",
+                  "pm.collectionVariables.set('releaseStart', start.toISOString());",
+                  "pm.collectionVariables.set('releaseEnd', new Date(start.getTime() + 3600e3).toISOString());"],
+             body={"connectorId": "{{seedConnectorId}}", "start": "{{releaseStart}}", "end": "{{releaseEnd}}"},
+             save={"releaseHoldId": "json.id"}),
+        case("Soltar la retención de otro (SEC-06)", "DELETE", f"{CHARGING}/api/bookings/holds/{{{{releaseHoldId}}}}",
+             404, token="cpo"),
+        case("Soltar mi retención", "DELETE", f"{CHARGING}/api/bookings/holds/{{{{releaseHoldId}}}}", 204,
+             token="driver"),
+        case("Soltar una retención ya soltada", "DELETE", f"{CHARGING}/api/bookings/holds/{{{{releaseHoldId}}}}",
+             404, token="driver"),
         case("Retener un slot", "POST", f"{CHARGING}/api/bookings/holds", 201, token="driver",
              pre=["const start = new Date(Date.now() + 2 * 24 * 3600e3); start.setUTCMinutes(0, 0, 0);",
                   "pm.collectionVariables.set('holdStart', start.toISOString());",
@@ -375,7 +392,7 @@ def main():
         "variable": [{"key": k, "value": ""} for k in (
             "adminToken", "adminId", "cpoToken", "cpoId", "driverEmail", "driverPassword", "newDriverPassword",
             "driverId", "driverToken", "otherEmail", "otherId", "roleEmail", "seedConnectorId", "newStationId",
-            "newConnectorId", "cardId", "availFrom", "availTo", "holdStart", "holdEnd", "holdId", "bookingId",
+            "newConnectorId", "cardId", "availFrom", "availTo", "holdStart", "holdEnd", "holdId", "releaseStart", "releaseEnd", "releaseHoldId", "bookingId",
             "notificationId", "pollTries", "checkoutKey")],
     }
     out = HERE / "ecopedia.postman_collection.json"

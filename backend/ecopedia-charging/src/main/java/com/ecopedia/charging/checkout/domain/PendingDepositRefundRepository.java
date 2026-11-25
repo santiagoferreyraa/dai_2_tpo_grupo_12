@@ -7,6 +7,8 @@ public interface PendingDepositRefundRepository {
 
     PendingDepositRefund save(PendingDepositRefund refund);
 
-    /** Las que todavía no se devolvieron, de la más vieja a la más nueva. */
-    List<PendingDepositRefund> findByRefundedAtIsNullOrderByCreatedAtAsc();
+    /**
+     * Las que todavía hay que pedir, de la más vieja a la más nueva: ni devueltas ni rechazadas por Pagos.
+     */
+    List<PendingDepositRefund> findByRefundedAtIsNullAndFailedAtIsNullOrderByCreatedAtAsc();
 }
