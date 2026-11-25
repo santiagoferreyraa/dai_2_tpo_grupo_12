@@ -54,7 +54,7 @@ export default defineConfig({
         target: 'http://localhost:8084',
         changeOrigin: true,
       },
-      '/api/stats': {
+      '/api/analytics': {
         target: 'http://localhost:8084',
         changeOrigin: true,
       },

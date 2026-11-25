@@ -15,7 +15,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 
 /**
- * Proyección de uso por sesión construida de forma idempotente desde el tópico {@code
+ * Cursor de cada sesión, construido de forma idempotente desde el tópico {@code
  * telemetry.charging} (ECO-301, RF16).
  */
 @Entity

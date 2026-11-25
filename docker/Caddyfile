@@ -53,7 +53,7 @@
 	handle /api/notifications* {
 		reverse_proxy async:8084
 	}
-	handle /api/stats* {
+	handle /api/analytics* {
 		reverse_proxy async:8084
 	}
 	# El asistente del chat (agent/). Una respuesta puede tardar hasta 45 s (el plan gratis de

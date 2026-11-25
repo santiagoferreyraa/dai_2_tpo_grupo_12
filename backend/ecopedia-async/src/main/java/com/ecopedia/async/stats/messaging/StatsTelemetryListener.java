@@ -1,8 +1,8 @@
 package com.ecopedia.async.stats.messaging;
 
 import com.ecopedia.async.config.JmsConfig;
+import com.ecopedia.async.stats.domain.AnalyticsService;
 import com.ecopedia.async.stats.domain.StatsTelemetryReading;
-import com.ecopedia.async.stats.domain.UsageStatsService;
 import jakarta.jms.JMSException;
 import jakarta.jms.Message;
 import org.slf4j.Logger;
@@ -25,15 +25,15 @@ public class StatsTelemetryListener {
     private static final Logger log = LoggerFactory.getLogger(StatsTelemetryListener.class);
     private static final String DELIVERY_COUNT = "JMSXDeliveryCount";
 
-    private final UsageStatsService usageStatsService;
+    private final AnalyticsService analyticsService;
     private final MessageConverter converter;
     private final int maxDeliveryAttempts;
 
     public StatsTelemetryListener(
-            UsageStatsService usageStatsService,
+            AnalyticsService analyticsService,
             MessageConverter converter,
             @Value("${ecopedia.telemetry.max-delivery-attempts}") int maxDeliveryAttempts) {
-        this.usageStatsService = usageStatsService;
+        this.analyticsService = analyticsService;
         this.converter = converter;
         this.maxDeliveryAttempts = maxDeliveryAttempts;
     }
@@ -55,7 +55,7 @@ public class StatsTelemetryListener {
         }
 
         try {
-            usageStatsService.recordTelemetry(reading);
+            analyticsService.recordTelemetry(reading);
         } catch (RuntimeException failure) {
             reportFailure(String.valueOf(reading.eventId()), attempt, failure);
             throw failure;
