@@ -67,6 +67,13 @@ ecopedia:
     # esto, un turno de 10 a 11 en Buenos Aires se avisaría "de 13:00 a 14:00".
     zone: ${ECOPEDIA_NOTIFICATIONS_ZONE:America/Argentina/Buenos_Aires}
 
+  telemetry:
+    # Tópico JMS donde publican los cargadores (ECO-301). Suscripción durable propia,
+    # independiente de ecopedia-charging-sessions.
+    topic: telemetry.charging
+    subscription: ecopedia-stats
+    max-delivery-attempts: 5
+
 ---
 # Perfil de desarrollo: base en memoria. Es el perfil que declaran los tests.
 spring:
