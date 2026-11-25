@@ -17,6 +17,8 @@
 @import "./features/auth/notFound.css";
 /* El fluido que llena la pantalla de carga: sus colores, las olas y las burbujas. */
 @import "./features/charging/charging.css";
+/* El tablero de Estadísticas: la silueta con pestaña, los pines amarillos y la entrada del gráfico. */
+@import "./features/analytics/analytics.css";
 
 /*
   Tema de la aplicación (RNF07 y RNF08).

@@ -1,0 +1,117 @@
+/*
+  Estadísticas (ECO-301): la silueta de vidrio del panel de arriba, los pines del mapa, la
+  entrada del gráfico y las listas.
+*/
+
+/*
+  El amarillo de los pines NO elegidos.
+
+  Amarillo y no gris ni rojo a propósito: en el resto de la aplicación el gris es "sin conectores
+  libres" y el rojo es error, y acá el pin apagado solo quiere decir "no está en lo que estás
+  mirando". Leído como gris o rojo, el operador pensaría que la estación no anda.
+
+  Cambia con el tema por lo mismo que el verde: un amarillo claro se lee sobre el mapa oscuro y se
+  pierde sobre el claro.
+*/
+:root {
+  --analytics-idle: #facc15;
+}
+
+[data-theme="light"] {
+  --analytics-idle: #b7860b;
+}
+
+/*
+  El vidrio de la figura con pestaña. Es el de `.glass-panel` repetido por la misma razón que en
+  `profile.css`: aquella clase dibuja el borde y la sombra siguiendo la caja rectangular, y acá la
+  figura no es un rectángulo. El relleno lo pone esta clase recortada con `clip-path`, el contorno
+  un `path` de SVG y la sombra el envoltorio con `drop-shadow`.
+*/
+.analytics-shape__glass {
+  background-color: color-mix(in srgb, var(--color-surface) 32%, transparent);
+  -webkit-backdrop-filter: blur(6px) saturate(1.5);
+  backdrop-filter: blur(6px) saturate(1.5);
+  transition: background-color 300ms ease;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .analytics-shape__glass {
+    background-color: var(--color-surface);
+  }
+}
+
+.analytics-shape__shadow {
+  filter: drop-shadow(0 8px 14px rgb(0 0 0 / 0.12));
+}
+
+.analytics-shape__outline {
+  stroke: color-mix(in srgb, var(--color-border) 78%, transparent);
+  transition: stroke 300ms ease;
+}
+
+/* El pin que no está en la selección: el redondel de siempre, en amarillo. */
+.analytics-pin--idle {
+  border-color: var(--analytics-idle);
+  color: var(--analytics-idle);
+}
+
+/*
+  La entrada de las barras: crecen desde el piso, una detrás de otra. La demora la pone cada
+  barra en línea (`--bar-delay`), así la ola recorre el gráfico de izquierda a derecha.
+*/
+.analytics-bar {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: analytics-bar-in 650ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--bar-delay, 0ms);
+}
+
+@keyframes analytics-bar-in {
+  from {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+/* Los paneles entran apenas desde abajo, escalonados, en vez de aparecer de golpe. */
+.analytics-rise {
+  animation: analytics-rise 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--rise-delay, 0ms);
+}
+
+@keyframes analytics-rise {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/*
+  Las listas scrollean adentro de su panel, suave y con una barra fina que no se come el ancho
+  de las columnas. `overscroll-behavior` evita que al llegar al final arrastre la página.
+*/
+.analytics-scroll {
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-text-muted) 35%, transparent) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .analytics-bar,
+  .analytics-rise {
+    animation: none;
+  }
+
+  .analytics-scroll {
+    scroll-behavior: auto;
+  }
+}

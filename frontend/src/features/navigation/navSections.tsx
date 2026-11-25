@@ -2,6 +2,7 @@ import type { Role } from '@/features/auth/types'
 
 import {
   BoltIcon,
+  ChartIcon,
   ContactIcon,
   HomeIcon,
   KeyIcon,
@@ -54,6 +55,8 @@ export const MAIN_SECTIONS: NavSection[] = [
   /* Iniciar, seguir y detener la carga (ECO-44). Solo el conductor carga autos. */
   { to: '/charge', label: 'Cargar', Icon: BoltIcon, roles: ['CONDUCTOR'] },
   { to: '/contact', label: 'Contacto', Icon: ContactIcon },
+  /* El tablero de ECO-301. Solo en escritorio: en el celular todavía no entra (ver AnalyticsPage). */
+  { to: '/analytics', label: 'Estadísticas', Icon: ChartIcon, roles: ['ADMIN', 'CPO'] },
   { to: '/admin', label: 'Backoffice', Icon: KeyIcon, roles: ['ADMIN'] },
 ]
 

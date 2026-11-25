@@ -2,6 +2,7 @@ import { createBrowserRouter } from 'react-router'
 
 import App from '@/App'
 import { adminRoutes } from '@/features/admin/routes'
+import { analyticsRoutes } from '@/features/analytics/routes'
 import { authRoutes } from '@/features/auth/routes'
 import { chargingRoutes } from '@/features/charging/routes'
 import { contactRoutes } from '@/features/contact/routes'
@@ -32,6 +33,7 @@ export const router = createBrowserRouter([
       ...contactRoutes,
       ...profileRoutes,
       ...adminRoutes,
+      ...analyticsRoutes,
       // ...bookingRoutes,
     ],
   },
