@@ -1,9 +1,16 @@
 package com.ecopedia.integration.powergrid.ws;
 
+import com.ecopedia.integration.powergrid.domain.PowerGridPort;
+import com.ecopedia.integration.powergrid.domain.PowerGridUnavailableException;
+import com.ecopedia.integration.resilience.CircuitBreakerSettings;
+import com.ecopedia.integration.resilience.CircuitBreakers;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import java.time.Duration;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.oxm.jaxb.Jaxb2Marshaller;
 import org.springframework.ws.client.core.WebServiceTemplate;
 import org.springframework.ws.client.support.interceptor.ClientInterceptor;
@@ -39,6 +46,24 @@ public class PowerGridClientConfig {
             @Value("${ecopedia.power-grid.read-timeout:5s}") Duration readTimeout)
             throws Exception {
         return buildTemplate(url, username, password, connectTimeout, readTimeout);
+    }
+
+    /**
+     * El puerto que usa RedEléctrica: el adaptador SOAP envuelto en el circuit breaker (ECO-68).
+     *
+     * <p>Es el único bean de {@link PowerGridPort}. Los valores del circuito están en
+     * {@code ecopedia.power-grid.circuit-breaker}; ver {@link CircuitBreakerSettings}.
+     */
+    @Bean
+    public PowerGridPort powerGrid(
+            @Qualifier("powerGridWebServiceTemplate") WebServiceTemplate powerGridWebServiceTemplate,
+            Environment environment) {
+        CircuitBreaker circuitBreaker = CircuitBreakers.create(
+                "power-grid",
+                "la distribuidora",
+                CircuitBreakers.settings(environment, "ecopedia.power-grid.circuit-breaker"),
+                PowerGridUnavailableException.class);
+        return new CircuitBreakerPowerGrid(new PowerGridWsClient(powerGridWebServiceTemplate), circuitBreaker);
     }
 
     /** Fuera del bean para que el test contra el proceso real arme el mismo cliente. */

@@ -15,10 +15,8 @@ import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
-import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
@@ -35,8 +33,10 @@ import org.springframework.web.client.RestClientResponseException;
  * mensaje en inglés pensado para el log; al conductor le llega una frase en castellano que dice qué
  * hacer, elegida acá según el código (directriz 7). Todo lo que no sea una respuesta —la pasarela
  * caída, lenta o rechazando la clave de acceso— es {@link PaymentGatewayUnavailableException}.
+ *
+ * <p>No es un bean propio: {@code PaymentGatewayClientConfig} lo envuelve en
+ * {@link CircuitBreakerPaymentGateway}, y el bean del puerto es ese decorador (ECO-68).
  */
-@Component
 public class PaymentGatewayRestClient implements PaymentGatewayPort {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentGatewayRestClient.class);
@@ -57,7 +57,7 @@ public class PaymentGatewayRestClient implements PaymentGatewayPort {
 
     private final RestClient restClient;
 
-    public PaymentGatewayRestClient(@Qualifier("paymentGatewayHttpClient") RestClient restClient) {
+    public PaymentGatewayRestClient(RestClient restClient) {
         this.restClient = restClient;
     }
 

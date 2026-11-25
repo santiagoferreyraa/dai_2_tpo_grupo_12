@@ -881,6 +881,44 @@ curl -X POST http://localhost:8088/v1/connectors/1/session \
 curl http://localhost:8088/v1/connectors/1 -H "Authorization: Bearer $TOKEN"
 ```
 
+### Resiliencia: la pasarela o la distribuidora caídas
+
+Si uno de los dos sistemas externos que usa `integration` deja de contestar, Ecopedia sigue
+funcionando:
+
+- **Pasarela caída:** no se puede reservar ni registrar una tarjeta (el conductor ve "probá de
+  nuevo en un momento"), pero el mapa, Mis reservas, los avisos y las cargas en curso siguen. El
+  cobro del consumo queda pendiente y las devoluciones se reintentan solas cuando vuelve.
+- **Distribuidora caída:** la carga se habilita igual, a potencia normal (22 kW).
+
+Delante de cada uno hay un **circuit breaker** (Resilience4j, en `integration/resilience`). Si de los
+últimos 10 pedidos, con al menos 5, la mitad no tuvo respuesta, el circuito se abre: durante 30 s no
+se llama a ese sistema y se contesta "no disponible" al instante, en vez de esperar el timeout en
+cada pedido. Después deja pasar 3 pedidos de prueba: si salen bien, se cierra. Una tarjeta rechazada
+o un nodo desconocido son respuestas y no lo abren. Los valores están en
+`ecopedia.payment-gateway.circuit-breaker` y `ecopedia.power-grid.circuit-breaker` del
+`application.yml` de `integration`.
+
+**Para mostrarlo**, con todo levantado por Docker. Va `pause` y no `stop`: con `stop` el nombre del
+contenedor deja de existir y la falla es instantánea aun sin circuito; con `pause` la pasarela queda
+colgada, que es el caso que el circuito resuelve.
+
+```bash
+docker compose pause payment-gateway    # la pasarela se cuelga
+# Registrar una tarjeta (o reservar) desde el front: cada intento tarda 5 s y dice "probá de
+# nuevo en un momento". Cuando la mitad de los últimos pedidos (al menos 5) falló, el circuito se
+# abre y los siguientes contestan lo mismo al instante. El log lo dice:
+docker compose logs -f integration | grep Circuito
+#   Circuito de la pasarela de pagos: cerrado (...) -> abierto (...)
+docker compose unpause payment-gateway  # vuelve la pasarela
+# Durante los 30 s siguientes sigue contestando al instante. Después, los pedidos salen bien:
+#   ... abierto (...) -> semiabierto (...)
+#   ... semiabierto (...) -> cerrado (...)
+```
+
+Con la distribuidora es lo mismo (`docker compose pause power-grid`): la habilitación de una carga
+rápida sale a potencia normal, primero esperando 5 s y, con el circuito abierto, al instante.
+
 ### El asistente
 
 La burbuja de abajo a la derecha abre un chat con un agente que entiende pedidos como *"estoy en

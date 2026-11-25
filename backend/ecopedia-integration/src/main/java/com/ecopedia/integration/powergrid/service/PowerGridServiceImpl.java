@@ -11,8 +11,9 @@ import org.springframework.stereotype.Service;
  *
  * <p>Es delgado a propósito. La regla de qué hacer con cada resultado —cargar a menos potencia con
  * un "no", qué hacer si no contesta— es de SesionesDeCarga ({@code ChargingPowerPolicy}, en
- * ecopedia-charging), y el circuit breaker, del ticket de resiliencia del Sprint 5. Lo que este componente garantiza es que nadie más sabe que del otro
- * lado hay SOAP.
+ * ecopedia-charging), y el circuit breaker va en el puerto que recibe ({@code CircuitBreakerPowerGrid},
+ * ECO-68), sin que este componente se entere. Lo que este componente garantiza es que nadie más sabe
+ * que del otro lado hay SOAP.
  */
 @Service
 public class PowerGridServiceImpl implements PowerGridService {

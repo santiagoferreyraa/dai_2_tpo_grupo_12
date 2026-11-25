@@ -12,8 +12,6 @@ import java.util.Iterator;
 import javax.xml.namespace.QName;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.stereotype.Component;
 import org.springframework.ws.client.WebServiceClientException;
 import org.springframework.ws.client.core.WebServiceTemplate;
 import org.springframework.ws.soap.SoapFaultDetail;
@@ -31,8 +29,10 @@ import org.springframework.ws.soap.client.SoapFaultClientException;
  *
  * <p>El Fault de credenciales deja un ERROR y no un WARN, como con la pasarela: no se arregla solo,
  * es la contraseña del .env mal copiada.
+ *
+ * <p>No es un bean propio: {@code PowerGridClientConfig} lo envuelve en {@link CircuitBreakerPowerGrid},
+ * y el bean del puerto es ese decorador (ECO-68).
  */
-@Component
 public class PowerGridWsClient implements PowerGridPort {
 
     private static final Logger log = LoggerFactory.getLogger(PowerGridWsClient.class);
@@ -45,7 +45,7 @@ public class PowerGridWsClient implements PowerGridPort {
 
     private final WebServiceTemplate webServiceTemplate;
 
-    public PowerGridWsClient(@Qualifier("powerGridWebServiceTemplate") WebServiceTemplate webServiceTemplate) {
+    public PowerGridWsClient(WebServiceTemplate webServiceTemplate) {
         this.webServiceTemplate = webServiceTemplate;
     }
 
