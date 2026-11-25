@@ -4,6 +4,7 @@ import com.ecopedia.core.user.domain.AuthToken;
 import com.ecopedia.core.user.domain.User;
 import com.ecopedia.core.user.domain.UserService;
 import com.ecopedia.core.user.web.dto.*;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +22,7 @@ public class AuthController {
 
     /** RF01 / ECO-24: Registro de usuarios. */
     @PostMapping("/register")
+    @ApiResponse(responseCode = "201", description = "Creado.")
     public ResponseEntity<UserProfileResponse> register(@Valid @RequestBody RegisterRequest request) {
         User registered = userService.register(request.toDomainData());
         return ResponseEntity.status(HttpStatus.CREATED).body(UserProfileResponse.fromDomain(registered));

@@ -88,7 +88,8 @@ public class PowerGridClientConfig {
         WebServiceTemplate template = new WebServiceTemplate(marshaller);
         template.setDefaultUri(url);
         template.setMessageSender(sender);
-        template.setInterceptors(new ClientInterceptor[] {security});
+        // La validación de la respuesta contra el contrato (QA-25) corre antes de que JAXB la lea.
+        template.setInterceptors(new ClientInterceptor[] {security, ResponseContractInterceptor.create()});
         return template;
     }
 }

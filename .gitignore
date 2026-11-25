@@ -35,6 +35,10 @@ build/
 /backend/*/data/
 /simulation/*/data/
 
+# --- QA ---
+# Los informes de Schemathesis (qa/ci/schemathesis.sh): CI los sube como artefacto.
+/qa/schemathesis/
+
 # --- IDE ---
 .idea/
 *.iml

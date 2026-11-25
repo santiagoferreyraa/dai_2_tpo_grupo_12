@@ -5,6 +5,7 @@ import com.ecopedia.integration.payment.domain.PaymentService;
 import com.ecopedia.integration.payment.web.dto.PaymentMethodResponse;
 import com.ecopedia.integration.payment.web.dto.RegisterCardRequest;
 import com.ecopedia.integration.security.AuthenticatedUser;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import java.time.Clock;
 import java.time.YearMonth;
@@ -55,6 +56,7 @@ public class PaymentMethodController {
     /** RF02: alta de una tarjeta. El número va a la pasarela y no se guarda. */
     @PostMapping
     @PreAuthorize("hasRole('CONDUCTOR')")
+    @ApiResponse(responseCode = "201", description = "Creado.")
     public ResponseEntity<PaymentMethodResponse> registerCard(
             @Valid @RequestBody RegisterCardRequest request, Authentication authentication) {
 
@@ -86,6 +88,7 @@ public class PaymentMethodController {
      */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('CONDUCTOR')")
+    @ApiResponse(responseCode = "204", description = "Hecho, sin cuerpo.")
     public ResponseEntity<Void> removeCard(@PathVariable Long id, Authentication authentication) {
         paymentService.removeCard(AuthenticatedUser.idOf(authentication), id);
         return ResponseEntity.noContent().build();

@@ -139,6 +139,9 @@ jobs:
   # broker sale del número de corrida: no es un secreto, el contenedor muere con el job.
   #
   # Los usuarios ADMIN y CPO los crea qa/ci/start-stack.sh con contraseñas al azar de esa corrida.
+  #
+  # QA-25 (ECO-175): después de Newman, las pruebas de contrato con Schemathesis contra el OpenAPI
+  # de cada módulo, sobre el mismo sistema levantado.
   api:
     name: API (Newman)
     runs-on: ubuntu-latest
@@ -193,6 +196,14 @@ jobs:
             --reporters cli,junit \
             --reporter-junit-export qa/newman/results.xml
 
+      # Corre aunque Newman haya fallado: son pruebas distintas y conviene ver las dos.
+      - name: Pruebas de contrato (Schemathesis)
+        if: ${{ !cancelled() }}
+        run: |
+          python3 -m pip install --quiet --user --break-system-packages schemathesis==4.34.2
+          export PATH="$HOME/.local/bin:$PATH"
+          bash qa/ci/schemathesis.sh
+
       - name: Guardar resultados y logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -200,6 +211,7 @@ jobs:
           name: newman
           path: |
             qa/newman/
+            qa/schemathesis/
             qa/ci/logs/
 
       - name: Bajar los backends

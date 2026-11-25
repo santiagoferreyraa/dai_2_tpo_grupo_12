@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ws.client.WebServiceClientException;
 import org.springframework.ws.client.core.WebServiceTemplate;
+import org.springframework.ws.client.support.interceptor.WebServiceValidationException;
 import org.springframework.ws.soap.SoapFaultDetail;
 import org.springframework.ws.soap.SoapFaultDetailElement;
 import org.springframework.ws.soap.client.SoapFaultClientException;
@@ -24,8 +25,9 @@ import org.springframework.ws.soap.client.SoapFaultClientException;
  * <p><b>Separa los tres resultados.</b> Una respuesta —que puede ser "no"— vuelve como
  * {@link Feasibility}. Un Fault del contrato ({@code UnknownNodeFault}, {@code InvalidDemandFault})
  * o uno de validación del XSD es un {@link PowerGridRequestRejectedException}, y se lo reconoce por
- * el elemento del detalle, no por el texto. Todo lo demás —la distribuidora caída, lenta, o un Fault
- * sin detalle como el de credenciales rechazadas— es {@link PowerGridUnavailableException}.
+ * el elemento del detalle, no por el texto. Todo lo demás —la distribuidora caída, lenta, un Fault
+ * sin detalle como el de credenciales rechazadas, o una respuesta que no cumple el contrato
+ * ({@link ResponseContractInterceptor})— es {@link PowerGridUnavailableException}.
  *
  * <p>El Fault de credenciales deja un ERROR y no un WARN, como con la pasarela: no se arregla solo,
  * es la contraseña del .env mal copiada.
@@ -67,6 +69,15 @@ public class PowerGridWsClient implements PowerGridPort {
                                     response.getReason().name()));
         } catch (SoapFaultClientException fault) {
             throw translate(fault, nodeId, requestedPowerKw);
+        } catch (WebServiceValidationException offContract) {
+            // ERROR y no WARN: no se arregla solo, la distribuidora contesta algo que el contrato no
+            // permite (ResponseContractInterceptor). Se sigue como si no hubiera contestado.
+            log.error(
+                    "La respuesta de la distribuidora por el nodo {} no cumple el contrato: {}",
+                    nodeId,
+                    offContract.getMessage());
+            throw new PowerGridUnavailableException(
+                    "La respuesta de la distribuidora no cumple el contrato", offContract);
         } catch (WebServiceClientException failure) {
             log.warn("La distribuidora no contestó por el nodo {}: {}", nodeId, failure.getMessage());
             throw new PowerGridUnavailableException("La distribuidora no contestó", failure);
