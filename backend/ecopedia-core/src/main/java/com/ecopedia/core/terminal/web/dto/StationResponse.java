@@ -13,7 +13,10 @@ public record StationResponse(
         boolean active,
         List<String> photoUrls,
         String nodeId,
-        List<ConnectorResponse> connectors) {
+        List<ConnectorResponse> connectors,
+        // La versión del ETag (QA-30), también acá porque el listado no puede llevar una cabecera
+        // por estación: el front la manda en If-Match al guardar.
+        long version) {
 
     public static StationResponse fromDomain(Station station) {
         return fromDomain(station, List.of());
@@ -30,6 +33,7 @@ public record StationResponse(
                 station.isActive(),
                 station.getPhotoUrls(),
                 station.getNodeId(),
-                connectors != null ? connectors : List.of());
+                connectors != null ? connectors : List.of(),
+                station.getVersion());
     }
 }

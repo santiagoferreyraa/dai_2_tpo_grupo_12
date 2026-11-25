@@ -1,5 +1,6 @@
 package com.ecopedia.core.terminal.domain;
 
+import com.ecopedia.core.shared.VersionCondition;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -39,8 +40,19 @@ public interface TerminalService {
     /** Si el conector cuelga de una estación del usuario. Falso también si no existe. */
     boolean isConnectorOwner(Long connectorId, Long userId);
 
-    /** Edición de los datos de una estación existente (RF04). */
-    Station updateStation(Long stationId, StationData data);
+    /** Edición de los datos de una estación existente (RF04), sin condición sobre la versión. */
+    default Station updateStation(Long stationId, StationData data) {
+        return updateStation(stationId, data, VersionCondition.any());
+    }
+
+    /**
+     * Edición de los datos de una estación existente (RF04), solo si la versión guardada cumple la
+     * condición (QA-30).
+     *
+     * @throws com.ecopedia.core.shared.StaleVersionException si alguien la cambió desde que el
+     *     cliente la leyó
+     */
+    Station updateStation(Long stationId, StationData data, VersionCondition condition);
 
     /** Baja lógica de una estación: deja de aparecer en la búsqueda (RF04). */
     void deactivateStation(Long stationId);

@@ -17,6 +17,7 @@ import {
 } from './data/stationsRepository'
 import { CONNECTOR_TYPES, CONNECTOR_TYPE_LABEL, POWER_STEPS, matchesFilters } from './format'
 import type { ConnectorType, StationDetail, StationInput } from './types'
+import { STALE_VERSION_MESSAGE, isStaleVersion } from '@/lib/entityTag'
 import { useMediaQuery } from '@/lib/useMediaQuery'
 import { useWheelToHorizontal } from './useWheelToHorizontal'
 
@@ -165,7 +166,15 @@ export default function StationsPage() {
   const handleSubmit = async (input: StationInput, pricing: StationPricingInput | null) => {
     setPricingFailure(null)
     if (sheet.kind === 'edit') {
-      const updated = await updateStation(sheet.stationId, input)
+      let updated: StationDetail
+      try {
+        // La versión de cuando se abrió el formulario: si otro guardó en el medio, 412 (QA-30).
+        updated = await updateStation(sheet.stationId, input, openStation?.version)
+      } catch (error) {
+        // El formulario muestra el `message` y queda abierto con lo que se escribió.
+        if (isStaleVersion(error)) throw new Error(STALE_VERSION_MESSAGE)
+        throw error
+      }
       setStations((rows) => rows.map((row) => (row.id === updated.id ? updated : row)))
       if (pricing !== null) {
         try {

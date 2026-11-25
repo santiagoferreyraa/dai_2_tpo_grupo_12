@@ -158,6 +158,30 @@ class OpenApiContractTest {
     }
 
     @Test
+    @DisplayName("Las escrituras con ETag declaran el If-Match, el 412 y la cabecera ETag (QA-30)")
+    void entityTags() {
+        for (String path : List.of("/api/stations/{id}", "/api/users/profile")) {
+            JsonNode write = operation("put", path);
+            assertThat(write.path("parameters").toString()).contains("If-Match");
+            assertThat(codes(write)).contains("412");
+            assertThat(write.path("responses").path("412").path("content").has("application/problem+json"))
+                    .isTrue();
+            assertThat(write.path("responses").path("200").path("headers").has("ETag"))
+                    .isTrue();
+            assertThat(write.path("responses").path("200").path("content").has("application/json"))
+                    .isTrue();
+            assertThat(operation("get", path)
+                            .path("responses")
+                            .path("200")
+                            .path("headers")
+                            .has("ETag"))
+                    .isTrue();
+        }
+        // Solo donde se compara la versión: el resto no puede contestar 412.
+        assertThat(codes(operation("post", "/api/stations"))).doesNotContain("412");
+    }
+
+    @Test
     @DisplayName("Las respuestas declaran JSON, no */*")
     void jsonResponses() {
         JsonNode content =

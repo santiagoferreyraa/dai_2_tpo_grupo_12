@@ -1,5 +1,6 @@
 package com.ecopedia.core.user.web;
 
+import com.ecopedia.core.shared.VersionCondition;
 import com.ecopedia.core.user.domain.AdminConfirmation;
 import com.ecopedia.core.user.domain.Role;
 import com.ecopedia.core.user.domain.User;
@@ -9,9 +10,13 @@ import com.ecopedia.core.user.web.dto.ChangePasswordRequest;
 import com.ecopedia.core.user.web.dto.UpdateProfileRequest;
 import com.ecopedia.core.user.web.dto.UpdateRoleRequest;
 import com.ecopedia.core.user.web.dto.UserProfileResponse;
+import com.ecopedia.core.web.EntityTags;
+import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.List;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -42,9 +47,17 @@ public class UserController {
      */
     @GetMapping("/profile")
     @PreAuthorize("isAuthenticated()")
+    @ApiResponse(
+            responseCode = "200",
+            description = "El perfil.",
+            headers =
+                    @Header(
+                            name = HttpHeaders.ETAG,
+                            description = EntityTags.HEADER_DESCRIPTION,
+                            schema = @Schema(type = "string")))
     public ResponseEntity<UserProfileResponse> getMyProfile(Authentication authentication) {
         User user = userService.getProfileByEmail(authentication.getName());
-        return ResponseEntity.ok(UserProfileResponse.fromDomain(user));
+        return ResponseEntity.ok().eTag(EntityTags.of(user.getVersion())).body(UserProfileResponse.fromDomain(user));
     }
 
     /**
@@ -59,14 +72,31 @@ public class UserController {
      *
      * <p>Devuelve el perfil ya guardado y no un 204, para que la pantalla muestre lo que quedó
      * en la base en vez de lo que ella misma mandó.
+     *
+     * <p>Con {@code If-Match} (QA-30), solo si el perfil sigue en la versión que leyó el cliente:
+     * con dos pestañas abiertas, la segunda en guardar recibe 412 en vez de pisar a la primera.
      */
     @PutMapping("/profile")
     @PreAuthorize("isAuthenticated()")
+    @ApiResponse(
+            responseCode = "200",
+            description = "Guardado.",
+            headers =
+                    @Header(
+                            name = HttpHeaders.ETAG,
+                            description = EntityTags.HEADER_DESCRIPTION,
+                            schema = @Schema(type = "string")))
     public ResponseEntity<UserProfileResponse> updateMyProfile(
-            Authentication authentication, @Valid @RequestBody UpdateProfileRequest request) {
+            Authentication authentication,
+            @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @Valid @RequestBody UpdateProfileRequest request) {
         User user = userService.getProfileByEmail(authentication.getName());
-        User updated = userService.updateProfile(user.getId(), request.toDomainData());
-        return ResponseEntity.ok(UserProfileResponse.fromDomain(updated));
+        VersionCondition condition = EntityTags.ifMatch(ifMatch);
+        User updated = EntityTags.write(
+                condition, () -> userService.updateProfile(user.getId(), request.toDomainData(), condition));
+        return ResponseEntity.ok()
+                .eTag(EntityTags.of(updated.getVersion()))
+                .body(UserProfileResponse.fromDomain(updated));
     }
 
     /**

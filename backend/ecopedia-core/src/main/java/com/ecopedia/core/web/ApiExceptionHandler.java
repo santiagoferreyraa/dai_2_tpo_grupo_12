@@ -1,6 +1,7 @@
 package com.ecopedia.core.web;
 
 import com.ecopedia.core.shared.ResourceNotFoundException;
+import com.ecopedia.core.shared.StaleVersionException;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -9,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSourceResolvable;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -44,6 +46,8 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
  *   <li>{@link ResourceNotFoundException}: el mismo 404 que una ruta inexistente (DEF-07).
  *   <li>{@link IllegalArgumentException}: 400 con el mensaje, que en los servicios está escrito
  *       para quien llama.
+ *   <li>{@link StaleVersionException}: 412 {@code STALE_VERSION}; y un choque de escrituras sin
+ *       {@code If-Match}, 409 {@code CONCURRENT_UPDATE} (QA-30).
  *   <li>Cualquier otra cosa: 500 con un texto genérico; la excepción, al log.
  * </ul>
  */
@@ -52,6 +56,11 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+
+    static final String STALE_VERSION_DETAIL =
+            "Los datos cambiaron desde que se leyeron. Volvé a leerlos y probá de nuevo.";
+    static final String CONCURRENT_UPDATE_CODE = "CONCURRENT_UPDATE";
+    static final String CONCURRENT_UPDATE_DETAIL = "Otra operación guardó al mismo tiempo. Probá de nuevo.";
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ProblemDetail handleNotFound(ResourceNotFoundException exception) {
@@ -62,6 +71,32 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ProblemDetail handleInvalidRequest(IllegalArgumentException exception) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+    }
+
+    /**
+     * Un {@code PUT} con un {@code If-Match} que ya no es la versión guardada (QA-30): 412 con
+     * {@code code} {@code STALE_VERSION}. El texto no dice qué cambió ni quién: las versiones, al log.
+     */
+    @ExceptionHandler(StaleVersionException.class)
+    public ProblemDetail handleStaleVersion(StaleVersionException exception) {
+        log.info("Escritura rechazada por versión vieja: {}", exception.getMessage());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.PRECONDITION_FAILED, STALE_VERSION_DETAIL);
+        problem.setProperty("code", StaleVersionException.CODE);
+        return problem;
+    }
+
+    /**
+     * Dos escrituras sobre la misma fila al mismo tiempo, sin {@code If-Match} que pedir: la segunda
+     * no pisa a la primera ({@code @Version}) y sale 409 con {@code code} {@code CONCURRENT_UPDATE}.
+     * Antes de que estaciones y usuarios tuvieran versión no pasaba (ganaba la última), y sin esto
+     * sería un 500.
+     */
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ProblemDetail handleConcurrentUpdate(OptimisticLockingFailureException exception) {
+        log.warn("Dos escrituras sobre la misma fila: {}", exception.getMessage());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, CONCURRENT_UPDATE_DETAIL);
+        problem.setProperty("code", CONCURRENT_UPDATE_CODE);
+        return problem;
     }
 
     /**

@@ -12,6 +12,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.time.Instant;
 
 /**
@@ -61,6 +62,14 @@ public class User {
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "vehicle_model_id")
     private VehicleModel vehicleModel;
+
+    /**
+     * Sube en cada cambio de la cuenta y la API la publica como ETag del perfil (QA-30). La pone
+     * Hibernate, nunca el código; por eso no tiene setter.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
 
     public Long getId() {
         return id;
@@ -124,5 +133,9 @@ public class User {
 
     public void setVehicleModel(VehicleModel vehicleModel) {
         this.vehicleModel = vehicleModel;
+    }
+
+    public long getVersion() {
+        return version;
     }
 }

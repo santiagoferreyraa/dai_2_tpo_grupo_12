@@ -1,6 +1,7 @@
 package com.ecopedia.core.terminal.service;
 
 import com.ecopedia.core.shared.ResourceNotFoundException;
+import com.ecopedia.core.shared.VersionCondition;
 import com.ecopedia.core.terminal.domain.*;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -61,10 +62,15 @@ public class TerminalServiceImpl implements TerminalService {
     }
 
     @Override
-    public Station updateStation(Long stationId, StationData data) {
+    public Station updateStation(Long stationId, StationData data, VersionCondition condition) {
         Station station = stationRepository
                 .findById(stationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Estación no encontrada con ID: " + stationId));
+        /*
+         * Sobre la misma entidad que después se guarda: si otro guarda entre esta comprobación y el
+         * commit, el UPDATE lleva la versión leída en el WHERE (@Version) y no pisa nada.
+         */
+        condition.check(station.getVersion(), "Estación " + stationId);
 
         station.setName(data.name());
         station.setAddress(data.address());
