@@ -35,8 +35,10 @@ export type BookingStatus = 'CONFIRMED' | 'CANCELLED' | 'NO_SHOW' | 'IN_PROGRESS
  * - `REFUND_PENDING`: se canceló a tiempo y la devolución está en camino.
  * - `REFUNDED`: devuelta a la tarjeta.
  * - `FORFEITED`: quedó para el operador, por cancelar tarde o no presentarse.
+ * - `REFUND_FAILED`: correspondía devolverla y Pagos no la aceptó (DEF-29); el conductor nos escribe.
  */
-export type DepositStatus = 'NONE' | 'CHARGED' | 'REFUND_PENDING' | 'REFUNDED' | 'FORFEITED'
+export type DepositStatus =
+  'NONE' | 'CHARGED' | 'REFUND_PENDING' | 'REFUNDED' | 'FORFEITED' | 'REFUND_FAILED'
 
 /** Lo que se manda para retener un slot. Equivale a HoldRequest. */
 export interface HoldRequest {

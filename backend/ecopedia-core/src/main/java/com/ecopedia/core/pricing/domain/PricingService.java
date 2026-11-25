@@ -49,9 +49,10 @@ public interface PricingService {
 
     /**
      * Lo que costaría cargar esa energía en ese conector empezando en ese instante (RF06), a la potencia
-     * máxima del conector y sin multa.
+     * máxima del conector y sin multa. Si no supera la seña, la reserva se liquida por la seña: el
+     * estimado igual se devuelve, y la comparación la hace quien lo muestra.
      *
-     * @throws IllegalArgumentException si el conector no existe, o si el estimado no supera la seña
+     * @throws IllegalArgumentException si el conector no existe
      */
     ChargeBreakdown estimateCost(Long connectorId, BigDecimal estimatedKwh, Instant start);
 

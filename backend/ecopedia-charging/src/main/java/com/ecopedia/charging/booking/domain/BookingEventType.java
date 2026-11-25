@@ -11,5 +11,11 @@ public enum BookingEventType {
     BOOKING_CANCELLED,
     BOOKING_NO_SHOW,
     /** La cuenta quedó marcada por una deuda vencida y la reserva se anuló, con la seña devuelta (ECO-62). */
-    BOOKING_CANCELLED_FOR_DEBT
+    BOOKING_CANCELLED_FOR_DEBT,
+    /**
+     * La carga de la reserva no se pudo iniciar por una falla ajena al conductor (la red, el cargador)
+     * y la reserva se liberó con la seña devuelta (RF13). No es una cancelación: el conductor no canceló
+     * nada, y el aviso no puede decirle que sí.
+     */
+    BOOKING_ACTIVATION_FAILED
 }

@@ -110,14 +110,11 @@ public class PricingServiceImpl implements PricingService {
     public ChargeBreakdown estimateCost(Long connectorId, BigDecimal estimatedKwh, Instant start) {
         Connector connector = terminalService.getConnector(connectorId);
         StationPricing station = stationPricingOf(connector);
-        ChargeBreakdown estimate = price(estimatedKwh, connector.getMaxPowerKw(), start, 0, station);
-
-        // Regla RF06: el estimado nunca puede ser menor a la seña cobrada.
-        if (estimate.total().compareTo(station.getDepositAmount()) < 0) {
-            throw new IllegalArgumentException("El importe estimado (" + estimate.total()
-                    + ") no supera el monto de la seña (" + station.getDepositAmount() + ")");
-        }
-        return estimate;
+        /*
+         * Un consumo que no supera la seña ya no es un error (DEF-30): la reserva se liquida por la seña,
+         * que es el piso (decidido el 01/11). El estimado lo informa; quien lo muestra compara con la seña.
+         */
+        return price(estimatedKwh, connector.getMaxPowerKw(), start, 0, station);
     }
 
     @Override

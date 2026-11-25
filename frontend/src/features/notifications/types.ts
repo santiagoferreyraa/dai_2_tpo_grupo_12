@@ -27,7 +27,8 @@
 /**
  * `BOOKING_NO_SHOW` es la incomparecencia (ECO-57): el conductor no se presentó y la reserva se
  * cerró sola. `BOOKING_CANCELLED_FOR_DEBT` es la reserva anulada por una deuda sin pagar (ECO-62),
- * con la seña devuelta. Los `DEBT_*` son de la deuda misma (ECO-62) y no tienen reserva: nació, falló
+ * con la seña devuelta. `BOOKING_ACTIVATION_FAILED` es la reserva cuya carga no se pudo iniciar por
+ * una falla ajena al conductor (RF13), también con la seña devuelta. Los `DEBT_*` son de la deuda misma (ECO-62) y no tienen reserva: nació, falló
  * un reintento, falló el último y la cuenta quedó marcada, o se pagó.
  */
 export type NotificationType =
@@ -35,6 +36,7 @@ export type NotificationType =
   | 'BOOKING_CANCELLED'
   | 'BOOKING_NO_SHOW'
   | 'BOOKING_CANCELLED_FOR_DEBT'
+  | 'BOOKING_ACTIVATION_FAILED'
   | 'DEBT_RECORDED'
   | 'DEBT_RETRY_FAILED'
   | 'DEBT_DEFAULTED'

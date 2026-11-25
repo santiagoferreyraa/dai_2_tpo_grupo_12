@@ -46,6 +46,7 @@ class NotificationTemplates {
             case BOOKING_CANCELLED -> "Reserva cancelada";
             case BOOKING_NO_SHOW -> "No te presentaste a tu reserva";
             case BOOKING_CANCELLED_FOR_DEBT -> "Anulamos tu reserva";
+            case BOOKING_ACTIVATION_FAILED -> "No pudimos iniciar tu carga";
             case DEBT_RECORDED -> "No pudimos cobrar tu carga";
             case DEBT_RETRY_FAILED -> "No pudimos cobrar tu carga" + attemptOf(request);
             case DEBT_DEFAULTED -> "Tu cuenta tiene un pago vencido";
@@ -85,6 +86,11 @@ class NotificationTemplates {
                 "Anulamos tu reserva " + where + " del " + when + " porque no pudimos cobrar tu última carga."
                         + (request.hasDeposit() ? " Te reintegramos la seña." : "")
                         + " Pagá el saldo desde Medios de pago para volver a reservar.";
+            // Dice qué hacer, no qué falló por detrás (Manuel, 02/11 y 25/11).
+            case BOOKING_ACTIVATION_FAILED ->
+                "No pudimos iniciar la carga de tu reserva " + where + " del " + when + "."
+                        + (request.hasDeposit() ? " Te reintegramos la seña." : "")
+                        + " Podés reservar otro horario o elegir otra estación.";
             case DEBT_RECORDED, DEBT_RETRY_FAILED, DEBT_DEFAULTED, DEBT_SETTLED ->
                 throw new IllegalArgumentException("Un aviso de deuda sin los datos de la deuda: " + request.eventId());
         };
@@ -108,7 +114,11 @@ class NotificationTemplates {
                         + ". Si tenías reservas, las anulamos y te devolvimos sus señas."
                         + " Para volver a reservar, pagala desde Medios de pago.";
             case DEBT_SETTLED -> "Cobramos " + charge + ". Ya podés volver a reservar.";
-            case BOOKING_CONFIRMED, BOOKING_CANCELLED, BOOKING_NO_SHOW, BOOKING_CANCELLED_FOR_DEBT ->
+            case BOOKING_CONFIRMED,
+                    BOOKING_CANCELLED,
+                    BOOKING_NO_SHOW,
+                    BOOKING_CANCELLED_FOR_DEBT,
+                    BOOKING_ACTIVATION_FAILED ->
                 throw new IllegalArgumentException("Un aviso de reserva con datos de deuda: " + request.eventId());
         };
     }

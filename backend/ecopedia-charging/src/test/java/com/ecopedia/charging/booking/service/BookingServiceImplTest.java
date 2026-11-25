@@ -129,6 +129,36 @@ class BookingServiceImplTest {
     }
 
     @Test
+    @DisplayName("DEF-27: soltar la retención propia libera el slot en el acto, sin esperar el vencimiento")
+    void releasingAHoldFreesTheSlotRightAway() {
+        started(AVAILABLE, Duration.ofMinutes(10));
+        TimeWindow window = windowIn(2);
+        Hold hold = service.startHold(CONNECTOR, window, DRIVER);
+
+        service.releaseHold(hold.id(), DRIVER);
+
+        assertThat(service.activeHoldCount()).isZero();
+        Hold retaken = service.startHold(CONNECTOR, window, OTHER_DRIVER);
+        assertThat(retaken.driverId()).isEqualTo(OTHER_DRIVER);
+    }
+
+    @Test
+    @DisplayName("DEF-27: la retención de otro no se suelta, y se contesta igual que una que no existe")
+    void releasingSomeoneElsesHoldLooksLikeItDoesNotExist() {
+        started(AVAILABLE, Duration.ofMinutes(10));
+        Hold hold = service.startHold(CONNECTOR, windowIn(2), DRIVER);
+
+        assertThatThrownBy(() -> service.releaseHold(hold.id(), OTHER_DRIVER))
+                .isInstanceOf(HoldNotFoundException.class);
+        assertThatThrownBy(() -> service.releaseHold(UUID.randomUUID(), OTHER_DRIVER))
+                .isInstanceOf(HoldNotFoundException.class);
+
+        assertThat(service.activeHoldCount()).isEqualTo(1);
+        assertThatThrownBy(() -> service.startHold(CONNECTOR, windowIn(2), OTHER_DRIVER))
+                .isInstanceOf(SlotUnavailableException.class);
+    }
+
+    @Test
     @DisplayName("No se puede retener dos veces una ventana que se cruza, en el mismo conector")
     void rejectsOverlappingHoldOnTheSameConnector() {
         started(AVAILABLE, Duration.ofMinutes(10));
@@ -1016,8 +1046,9 @@ class BookingServiceImplTest {
             assertThat(released.isPartialDepositRefund()).isFalse();
             assertThat(service.findPendingDepositRefunds()).containsExactly(released);
 
+            // DEF-25: el aviso es el de una carga que no se pudo iniciar, no el de una cancelación.
             BookingEvent event = events.published().get(events.published().size() - 1);
-            assertThat(event.type()).isEqualTo(BookingEventType.BOOKING_CANCELLED);
+            assertThat(event.type()).isEqualTo(BookingEventType.BOOKING_ACTIVATION_FAILED);
             assertThat(event.depositRefunded()).isTrue();
 
             // El conductor y el conector quedan libres inmediatamente.
@@ -1026,6 +1057,35 @@ class BookingServiceImplTest {
             // Idempotente si se vuelve a llamar.
             assertThat(service.releaseForActivationFailure(booking.getId()).getDepositStatus())
                     .isEqualTo(DepositStatus.REFUND_PENDING);
+        }
+
+        @Test
+        @DisplayName("DEF-29: una devolución que Pagos rechazó queda como fallida y el barrido deja de pedirla")
+        void aRefusedRefundLeavesThePendingList() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking booking = paidBookingIn(1);
+            clock.advance(Duration.ofHours(1).plusMinutes(5));
+            service.releaseForActivationFailure(booking.getId());
+            assertThat(service.findPendingDepositRefunds()).hasSize(1);
+
+            service.markDepositRefundFailed(booking.getId());
+
+            assertThat(service.findPendingDepositRefunds()).isEmpty();
+            assertThat(repository.findById(booking.getId()).orElseThrow().getDepositStatus())
+                    .isEqualTo(DepositStatus.REFUND_FAILED);
+        }
+
+        @Test
+        @DisplayName("DEF-25: si falla la habilitación de una carga sin reserva, no sale ningún aviso")
+        void activationFailureOfAWalkInSendsNoNotice() {
+            started(AVAILABLE, Duration.ofMinutes(10));
+            Booking walkIn = service.registerWalkIn(CONNECTOR, DRIVER);
+            int before = events.published().size();
+
+            Booking released = service.releaseForActivationFailure(walkIn.getId());
+
+            assertThat(released.getStatus()).isEqualTo(BookingStatus.CANCELLED);
+            assertThat(events.published()).hasSize(before);
         }
 
         @Test
@@ -1123,9 +1183,8 @@ class BookingServiceImplTest {
             assertThat(booking.getDepositAmount()).isEqualByComparingTo(BigDecimal.ZERO);
             assertThat(booking.getWindow()).isEqualTo(new TimeWindow(now, now.plus(MAX_WINDOW)));
 
-            BookingEvent event = events.published().get(events.published().size() - 1);
-            assertThat(event.type()).isEqualTo(BookingEventType.BOOKING_CONFIRMED);
-            assertThat(event.bookingId()).isEqualTo(booking.getId());
+            // DEF-26: no es una reserva que el conductor hizo, así que no le llega "Reserva confirmada".
+            assertThat(events.published()).isEmpty();
         }
 
         @Test

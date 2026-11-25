@@ -127,6 +127,30 @@ class PricingDepositApiTest {
     }
 
     @Test
+    @DisplayName("DEF-30: un consumo que no supera la seña da 200 y avisa que la reserva se liquida por la seña")
+    void estimateBelowTheDepositIsSettledByTheDeposit() throws Exception {
+        Connector connector = givenConnector("150");
+        pricingService.updateStationPricing(connector.getStation().getId(), new BigDecimal("8000"), false);
+
+        // 2 kWh a $ 550 son $ 1.100: menos que la seña de $ 8.000.
+        mockMvc.perform(get("/api/pricing/estimate")
+                        .param("connectorId", String.valueOf(connector.getId()))
+                        .param("estimatedKwh", "2")
+                        .param("start", "2026-11-02T15:00:00Z"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estimatedCost").value(1100.00))
+                .andExpect(jsonPath("$.depositAmount").value(8000.00))
+                .andExpect(jsonPath("$.settledByDeposit").value(true));
+
+        // 20 kWh son $ 11.000: supera la seña y se cobra el consumo.
+        mockMvc.perform(get("/api/pricing/estimate")
+                        .param("connectorId", String.valueOf(connector.getId()))
+                        .param("estimatedKwh", "20")
+                        .param("start", "2026-11-02T15:00:00Z"))
+                .andExpect(jsonPath("$.settledByDeposit").value(false));
+    }
+
+    @Test
     @DisplayName("Un conector inexistente contesta 404: quien llama lo lee como sin seña")
     void unknownConnectorIsNotFound() throws Exception {
         mockMvc.perform(get("/api/pricing/deposit").param("connectorId", "999999"))

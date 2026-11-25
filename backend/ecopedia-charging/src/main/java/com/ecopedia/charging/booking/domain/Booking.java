@@ -225,6 +225,11 @@ public class Booking {
         this.depositStatus = DepositStatus.REFUNDED;
     }
 
+    /** Pagos no acepta la devolución y no se va a volver a pedir (ver {@link DepositStatus#REFUND_FAILED}). */
+    public void markDepositRefundFailed() {
+        this.depositStatus = DepositStatus.REFUND_FAILED;
+    }
+
     /**
      * Consume la reserva al iniciar la sesión de carga (RF11, ECO-60).
      * Transición a IN_PROGRESS bajo la transacción declarativa de habilitación. Solo desde
@@ -385,5 +390,14 @@ public class Booking {
 
     public String getCheckoutKey() {
         return checkoutKey;
+    }
+
+    /**
+     * Si la reserva la hizo el conductor desde el checkout. La que no, es la reserva instantánea de una
+     * carga sin reserva (ECO-58): el conductor está frente al cargador y nunca reservó nada, así que no
+     * tiene sentido avisarle por una "reserva".
+     */
+    public boolean isFromCheckout() {
+        return checkoutKey != null;
     }
 }
