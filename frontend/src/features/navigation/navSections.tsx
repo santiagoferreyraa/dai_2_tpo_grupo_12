@@ -43,6 +43,23 @@ export interface NavSection {
    * marcada en todas las pantallas y Estaciones se encendería mirando el mapa.
    */
   end?: boolean
+  /**
+   * Solo en el celular: la sección no lleva a ningún lado, abre una solapa con estas opciones.
+   *
+   * Existe para que el operador y el administrador no tengan seis íconos en una barra pensada
+   * para cinco. Estadísticas cuelga del lugar donde ya trabaja cada uno —sus Estaciones, el
+   * Backoffice— en vez de ocupar uno más. La sección está activa si lo está cualquiera de las
+   * opciones.
+   */
+  group?: NavSection[]
+}
+
+/** El tablero de ECO-301. En escritorio va suelto; en el celular, adentro de una solapa. */
+const ANALYTICS_SECTION: NavSection = {
+  to: '/analytics',
+  label: 'Estadísticas',
+  Icon: ChartIcon,
+  roles: ['ADMIN', 'CPO'],
 }
 
 /**
@@ -55,8 +72,7 @@ export const MAIN_SECTIONS: NavSection[] = [
   /* Iniciar, seguir y detener la carga (ECO-44). Solo el conductor carga autos. */
   { to: '/charge', label: 'Cargar', Icon: BoltIcon, roles: ['CONDUCTOR'] },
   { to: '/contact', label: 'Contacto', Icon: ContactIcon },
-  /* El tablero de ECO-301. Solo en escritorio: en el celular todavía no entra (ver AnalyticsPage). */
-  { to: '/analytics', label: 'Estadísticas', Icon: ChartIcon, roles: ['ADMIN', 'CPO'] },
+  ANALYTICS_SECTION,
   { to: '/admin', label: 'Backoffice', Icon: KeyIcon, roles: ['ADMIN'] },
 ]
 
@@ -72,7 +88,29 @@ export const PROFILE_SECTION: NavSection = { to: '/profile', label: 'Perfil', Ic
 
 export const BASE_MOBILE_SECTIONS: NavSection[] = [
   { to: '/', label: 'Inicio', Icon: HomeIcon, end: true },
-  { to: '/stations', label: 'Estaciones', Icon: StationsIcon, end: true, roles: ['CPO'] },
+  /*
+    Las dos solapas: Estaciones del operador y Backoffice del administrador, cada una con
+    Estadísticas al lado. La del administrador reemplaza a la burbuja flotante con la llave que
+    tenía antes: el Backoffice pasa a tener su lugar en la barra, como cualquier otra sección.
+  */
+  {
+    to: '/stations',
+    label: 'Estaciones',
+    Icon: StationsIcon,
+    end: true,
+    roles: ['CPO'],
+    group: [
+      { to: '/stations', label: 'Estaciones', Icon: StationsIcon, end: true },
+      ANALYTICS_SECTION,
+    ],
+  },
+  {
+    to: '/admin',
+    label: 'Backoffice',
+    Icon: KeyIcon,
+    roles: ['ADMIN'],
+    group: [{ to: '/admin', label: 'Backoffice', Icon: KeyIcon }, ANALYTICS_SECTION],
+  },
   { to: '/stations/map', label: 'Mapa', Icon: MapIcon },
   /* Iniciar, seguir y detener la carga (ECO-44). Solo el conductor carga autos. */
   { to: '/charge', label: 'Cargar', Icon: BoltIcon, roles: ['CONDUCTOR'] },
@@ -91,6 +129,7 @@ export const MOBILE_SECTIONS: NavSection[] = [...BASE_MOBILE_SECTIONS, PROFILE_S
  * lista, no durante.
  */
 export function isSectionActive(section: NavSection, pathname: string): boolean {
+  if (section.group !== undefined) return section.group.some((o) => isSectionActive(o, pathname))
   if (section.end === true) return pathname === section.to
   return pathname === section.to || pathname.startsWith(`${section.to}/`)
 }

@@ -868,11 +868,100 @@ body {
   top: calc(-1 * (var(--notch-lift) + var(--puck-size) / 2));
   transform: translateX(-50%);
   box-shadow: 0 6px 18px color-mix(in srgb, var(--color-primary) 30%, transparent);
+  transition:
+    transform 320ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 220ms ease;
+}
+
+/*
+  La solapa abierta: el círculo de la barra sube hacia ella y se desvanece mientras los dos de la
+  solapa salen de su lugar. `translateX(-50%)` se repite porque `transform` se reemplaza entero.
+*/
+.mobile-nav__puck--lifted {
+  transform: translate(-50%, -28px) scale(0.7);
+  opacity: 0;
+}
+
+/*
+  La solapa de una sección con grupo (ver `GroupFlap` en MobileNav).
+
+  Un tono más oscura que la barra: el mismo `--color-surface` mezclado con negro, así que sigue al
+  tema sin un color propio. Se lee como algo que sale DE la barra y no como otra barra arriba.
+
+  Cerrada, está bajada y transparente, escondida detrás de la barra; abierta, sube con la misma
+  curva que mueve el círculo entre secciones.
+*/
+.mobile-nav__flap {
+  background-color: color-mix(in srgb, var(--color-surface) 84%, black);
+  filter: drop-shadow(0 -6px 18px rgb(0 0 0 / 0.28));
+  transform: translateY(70%);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 380ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 200ms ease;
+}
+
+[data-theme="light"] .mobile-nav__flap {
+  background-color: color-mix(in srgb, var(--color-surface) 93%, black);
+  filter: drop-shadow(0 -4px 14px rgb(0 0 0 / 0.12));
+}
+
+.mobile-nav__flap--open {
+  transform: none;
+  opacity: 1;
+}
+
+/*
+  La solapa nunca toma toques: solo sus dos opciones, y solo abierta. La parte que se esconde
+  detrás de la barra queda justo sobre los íconos de al lado (Inicio, Mapa), y si la solapa
+  capturara el toque ahí, esos íconos dejarían de responder mientras está abierta.
+*/
+.mobile-nav__flap--open a {
+  pointer-events: auto;
+}
+
+/*
+  Los dos círculos de la solapa. Cerrada, cada uno está corrido hasta el lugar del círculo de la
+  barra (`--from-x`, `--from-y`, los calcula `GroupFlap`) y achicado; al abrirse viajan a su
+  opción. Es lo que hace que el círculo se vea subir y partirse en dos.
+*/
+.mobile-nav__option {
+  transform: translate(var(--from-x), var(--from-y)) scale(0.6);
+  opacity: 0;
+  transition:
+    transform 420ms cubic-bezier(0.32, 0.72, 0, 1) 60ms,
+    opacity 200ms ease 60ms;
+}
+
+.mobile-nav__flap--open .mobile-nav__option {
+  transform: none;
+  opacity: 1;
+}
+
+/* La opción en la que NO se está: vidrio sobre la solapa, con el borde de siempre. */
+.mobile-nav__option--idle {
+  background-color: color-mix(in srgb, var(--color-surface) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent);
+}
+
+.mobile-nav__option-label {
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.mobile-nav__flap--open .mobile-nav__option-label {
+  opacity: 1;
+  transition-delay: 220ms;
 }
 
 /* Para quien pidió menos movimiento, el círculo aparece en su lugar en vez de viajar. */
 @media (prefers-reduced-motion: reduce) {
-  .mobile-nav {
+  .mobile-nav,
+  .mobile-nav__puck,
+  .mobile-nav__flap,
+  .mobile-nav__option,
+  .mobile-nav__option-label {
     transition: none;
   }
 }

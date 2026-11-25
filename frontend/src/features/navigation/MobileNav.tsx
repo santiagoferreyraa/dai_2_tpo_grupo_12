@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router'
 
 import { useSession } from '@/features/auth/session'
 
-import { isSectionActive, MOBILE_SECTIONS, visibleSections } from './navSections'
+import { isSectionActive, MOBILE_SECTIONS, visibleSections, type NavSection } from './navSections'
 import { NAV_GEOMETRY, notchCutPath, sectionCenter } from './notchGeometry'
 
 /**
@@ -30,7 +30,7 @@ import { NAV_GEOMETRY, notchCutPath, sectionCenter } from './notchGeometry'
  * —girar el teléfono, abrir el teclado, cambiar el zoom— sin escuchar `resize` a mano.
  */
 export default function MobileNav() {
-  const { pathname } = useLocation()
+  const { pathname, key: locationKey } = useLocation()
   const session = useSession()
   /*
     Solo las que le corresponden a quien mira. Acá el filtro pesa doble: de la CANTIDAD de
@@ -39,7 +39,31 @@ export default function MobileNav() {
   */
   const sections = visibleSections(MOBILE_SECTIONS, session?.role ?? null)
 
-  const activeIndex = sections.findIndex((section) => isSectionActive(section, pathname))
+  const routeIndex = sections.findIndex((section) => isSectionActive(section, pathname))
+
+  /*
+   * La solapa abierta, si hay una. Se guarda junto con la entrada del historial en la que se
+   * abrió (`location.key`), y eso es lo que la cierra al navegar: en cualquier otra navegación
+   * —incluso a la misma ruta— deja de corresponder y se lee como cerrada, sin un efecto que la
+   * apague a mano. La ruta sola no alcanzaba: tocar Mapa estando en el mapa no la cambia.
+   *
+   * **Por eso tocar una opción o un ícono no la cierra a mano.** Cerrarla en el toque la apaga un
+   * cuadro antes de que llegue la ruta nueva, y en ese cuadro el círculo apunta a la pantalla de
+   * antes: arranca hacia allá y después vuelve. Esperando a la navegación, el círculo baja directo
+   * a donde va.
+   */
+  const [openGroup, setOpenGroup] = useState<{ to: string; locationKey: string } | null>(null)
+  const groupIndex =
+    openGroup !== null && openGroup.locationKey === locationKey
+      ? sections.findIndex((s) => s.to === openGroup.to && s.group !== undefined)
+      : -1
+  const flapOpen = groupIndex >= 0
+
+  /*
+   * Dónde está el círculo. Con la solapa abierta, sobre la sección que la abrió, aunque la ruta
+   * sea otra: el círculo viaja hasta ahí, sube y se parte en los dos de la solapa.
+   */
+  const activeIndex = flapOpen ? groupIndex : routeIndex
 
   /*
    * Una ruta que no es ninguna de las cinco —el detalle de una estación, mañana— no tiene
@@ -47,7 +71,31 @@ export default function MobileNav() {
    * lisa y sin círculo: no decir nada es mejor que mentir.
    */
   const hasActive = activeIndex >= 0
-  const ActiveIcon = hasActive ? sections[activeIndex].Icon : null
+  const activeSection = hasActive ? sections[activeIndex] : null
+  /* En una solapa, el círculo lleva el ícono de la opción en la que se está, no el del grupo. */
+  const ActiveIcon =
+    activeSection === null
+      ? null
+      : (activeSection.group?.find((o) => isSectionActive(o, pathname))?.Icon ?? activeSection.Icon)
+
+  /* Con la solapa abierta, tocar afuera o Escape la cierran. */
+  useEffect(() => {
+    if (!flapOpen) return
+    const close = (event: PointerEvent) => {
+      if (navRef.current !== null && !navRef.current.contains(event.target as Node)) {
+        setOpenGroup(null)
+      }
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenGroup(null)
+    }
+    document.addEventListener('pointerdown', close)
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('pointerdown', close)
+      document.removeEventListener('keydown', escape)
+    }
+  }, [flapOpen])
 
   const navRef = useRef<HTMLElement>(null)
   const barRef = useRef<HTMLDivElement>(null)
@@ -132,6 +180,25 @@ export default function MobileNav() {
       */}
       <div ref={barRef} className="pointer-events-auto relative" style={{ height: barHeight }}>
         {/*
+          Las solapas van PRIMERO, antes que la barra: así la barra se pinta encima y la solapa
+          asoma desde atrás de ella, en vez de apoyarse sobre ella. Hay una por cada sección con
+          grupo, siempre montadas, para que abrir y cerrar sea una transición y no un aparecer.
+        */}
+        {barWidth > 0 &&
+          sections.map((section, index) =>
+            section.group === undefined ? null : (
+              <GroupFlap
+                key={section.to}
+                section={section}
+                open={index === groupIndex}
+                centerX={sectionCenter(index, barWidth, sections.length)}
+                barWidth={barWidth}
+                pathname={pathname}
+              />
+            ),
+          )}
+
+        {/*
           La barra, dibujada como una figura y no como una caja con fondo.
 
           El hueco se saca con una máscara de SVG: un rectángulo blanco —lo que se ve— menos el
@@ -144,7 +211,7 @@ export default function MobileNav() {
         */}
         {barWidth > 0 && (
           <svg
-            className="mobile-nav__bar absolute inset-0"
+            className="mobile-nav__bar absolute inset-0 z-10"
             width={barWidth}
             height={barHeight}
             aria-hidden="true"
@@ -187,24 +254,19 @@ export default function MobileNav() {
           el círculo dejaría de caer sobre su ícono.
         */}
         <div
-          className="relative flex h-full items-stretch"
+          className="relative z-20 flex h-full items-stretch"
           style={{ paddingLeft: trackInset, paddingRight: trackInset }}
         >
           {sections.map((section, index) => {
             const active = index === activeIndex
-            return (
-              <NavLink
-                key={section.to}
-                to={section.to}
-                end={section.end}
-                className="flex flex-1 flex-col items-center justify-center gap-1"
-              >
-                {/*
-                  El ícono de la sección activa no se esconde con `display`: se apaga. El que
-                  se ve es el mismo dibujo dentro del círculo de arriba, y dejar que este ocupe
-                  su lugar mantiene la etiqueta clavada donde está mientras el círculo viaja.
-                  Sacándolo del flujo, los textos darían un saltito en cada cambio.
-                */}
+            /*
+              El ícono de la sección activa no se esconde con `display`: se apaga. El que se ve
+              es el mismo dibujo dentro del círculo de arriba, y dejar que este ocupe su lugar
+              mantiene la etiqueta clavada donde está mientras el círculo viaja. Sacándolo del
+              flujo, los textos darían un saltito en cada cambio.
+            */
+            const content = (
+              <>
                 <section.Icon
                   className={`h-5 w-5 transition-opacity duration-200 ${
                     active ? 'opacity-0' : 'text-text-muted opacity-100'
@@ -217,6 +279,34 @@ export default function MobileNav() {
                 >
                   {section.label}
                 </span>
+              </>
+            )
+
+            /* Una sección con grupo no navega: abre y cierra su solapa. */
+            if (section.group !== undefined) {
+              const open = index === groupIndex
+              return (
+                <button
+                  key={section.to}
+                  type="button"
+                  aria-expanded={open}
+                  aria-controls={flapId(section)}
+                  onClick={() => setOpenGroup(open ? null : { to: section.to, locationKey })}
+                  className="flex flex-1 flex-col items-center justify-center gap-1"
+                >
+                  {content}
+                </button>
+              )
+            }
+
+            return (
+              <NavLink
+                key={section.to}
+                to={section.to}
+                end={section.end}
+                className="flex flex-1 flex-col items-center justify-center gap-1"
+              >
+                {content}
               </NavLink>
             )
           })}
@@ -230,12 +320,131 @@ export default function MobileNav() {
           la barra que tiene debajo. Si el círculo capturara el toque, tocar la sección activa
           no haría nada.
         */}
+        {/*
+          Con la solapa abierta, el círculo sube y se desvanece mientras de su lugar salen los dos
+          de la solapa (`mobile-nav__puck--lifted`).
+        */}
         {ActiveIcon !== null && (
-          <div className="mobile-nav__puck brand-fill text-on-primary pointer-events-none absolute flex items-center justify-center rounded-full">
+          <div
+            className={`mobile-nav__puck brand-fill text-on-primary pointer-events-none absolute z-30 flex items-center justify-center rounded-full ${
+              flapOpen ? 'mobile-nav__puck--lifted' : ''
+            }`}
+          >
             <ActiveIcon className="h-6 w-6" />
           </div>
         )}
       </div>
     </nav>
+  )
+}
+
+function flapId(section: NavSection): string {
+  return `mobile-nav-flap-${section.to.replace(/\W/g, '')}`
+}
+
+/** El ancho de la solapa: dos opciones con su círculo y su rótulo, con aire entre las dos. */
+const FLAP_WIDTH = 216
+/** Cuánto asoma la solapa por encima de la barra. El resto queda escondido detrás. */
+const FLAP_VISIBLE = 96
+/** Cuánto se mete detrás de la barra: así el borde de abajo nunca se ve. */
+const FLAP_TUCK = 32
+/** El diámetro de los dos círculos de la solapa: un poco menos que el de la barra. */
+const OPTION_SIZE = 44
+/** Dónde arranca cada círculo, desde el borde de arriba de la solapa. */
+const OPTION_TOP = 14
+
+/**
+ * La solapa de una sección con grupo: sale de atrás de la barra con sus dos opciones.
+ *
+ * **El círculo de la barra se parte en los dos de acá.** Cerrada, cada círculo está corrido hasta
+ * el lugar del círculo de la barra —abajo y al centro— y transparente; al abrirse viajan cada uno
+ * a su opción, con la misma curva que mueve el círculo entre secciones. Visto de afuera, el
+ * círculo sube a la solapa y se divide en dos.
+ *
+ * El de la opción en la que se está va en el verde de la marca, como el de la barra; el otro, en
+ * vidrio. Si no se está en ninguna de las dos, los dos van en vidrio.
+ *
+ * Va un tono más oscura que la barra para que se lea como algo que sale DE ella y no como otra
+ * barra flotando arriba.
+ */
+function GroupFlap({
+  section,
+  open,
+  centerX,
+  barWidth,
+  pathname,
+}: {
+  section: NavSection
+  open: boolean
+  centerX: number
+  barWidth: number
+  pathname: string
+}) {
+  const options = section.group ?? []
+  /* Centrada sobre su sección, sin salirse de los bordes de la barra. */
+  const left = Math.min(Math.max(centerX - FLAP_WIDTH / 2, 0), barWidth - FLAP_WIDTH)
+  /* Cuánto hay que correr cada círculo para que, cerrado, caiga sobre el de la barra. */
+  const puckOffsetX = (index: number) =>
+    centerX - (left + (FLAP_WIDTH / options.length) * (index + 0.5))
+  /*
+    Lo vertical: el centro del círculo de la barra está `notchLift + puckSize / 2` por encima de su
+    borde, y el de cada opción, `FLAP_VISIBLE - (OPTION_TOP + OPTION_SIZE / 2)`. La diferencia es
+    cuánto baja el círculo cerrado.
+  */
+  const puckOffsetY =
+    FLAP_VISIBLE -
+    (OPTION_TOP + OPTION_SIZE / 2) -
+    (NAV_GEOMETRY.notchLift + NAV_GEOMETRY.puckSize / 2)
+
+  return (
+    <div
+      id={flapId(section)}
+      aria-hidden={!open}
+      inert={!open}
+      className={`mobile-nav__flap absolute z-0 flex rounded-t-[28px] ${open ? 'mobile-nav__flap--open' : ''}`}
+      style={{
+        left,
+        width: FLAP_WIDTH,
+        bottom: NAV_GEOMETRY.barHeight - FLAP_TUCK,
+        height: FLAP_VISIBLE + FLAP_TUCK,
+        paddingBottom: FLAP_TUCK,
+      }}
+    >
+      {options.map((option, index) => {
+        const here = isSectionActive(option, pathname)
+        return (
+          <NavLink
+            key={option.to}
+            to={option.to}
+            end={option.end}
+            className="flex flex-1 flex-col items-center gap-1.5"
+            style={{ paddingTop: OPTION_TOP }}
+          >
+            <span
+              className={`mobile-nav__option grid place-items-center rounded-full ${
+                here ? 'brand-fill text-on-primary' : 'mobile-nav__option--idle text-text'
+              }`}
+              style={
+                {
+                  width: OPTION_SIZE,
+                  height: OPTION_SIZE,
+                  '--from-x': `${puckOffsetX(index)}px`,
+                  '--from-y': `${puckOffsetY}px`,
+                } as React.CSSProperties
+              }
+            >
+              <option.Icon className="h-5 w-5" />
+            </span>
+            <span
+              className={`mobile-nav__option-label text-[11px] leading-none ${
+                here ? 'text-text font-semibold' : 'text-text-muted font-medium'
+              }`}
+            >
+              {option.label}
+            </span>
+          </NavLink>
+        )
+      })}
+    </div>
   )
 }
