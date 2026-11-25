@@ -67,6 +67,15 @@ ecopedia:
     # recibe un "probá de nuevo en un momento" en vez de una pantalla colgada.
     connect-timeout: 2s
     read-timeout: 5s
+    # El circuit breaker (ECO-68): si de los últimos 10 pedidos, con al menos 5, la mitad no tuvo
+    # respuesta, se deja de llamar a la pasarela durante 30 s y se contesta "no disponible" al
+    # instante; después se prueba con 3 pedidos. Un rechazo de la tarjeta no cuenta como falla.
+    circuit-breaker:
+      sliding-window-size: 10
+      minimum-calls: 5
+      failure-rate-percent: 50
+      wait-in-open-state: 30s
+      calls-in-half-open-state: 3
   # La distribuidora corre como proceso aparte (simulation/power-grid, 8087) y RedEléctrica le habla
   # por SOAP con PowerGridWsClient. Ver ARQUITECTURA §3.1.
   power-grid:
@@ -78,6 +87,14 @@ ecopedia:
     # Los mismos que con la pasarela, y sin reintentos: ver PowerGridClientConfig.
     connect-timeout: 2s
     read-timeout: 5s
+    # El mismo circuit breaker que la pasarela. Abierto, la carga sale a potencia normal sin
+    # esperar a la distribuidora. Un nodo desconocido no cuenta como falla.
+    circuit-breaker:
+      sliding-window-size: 10
+      minimum-calls: 5
+      failure-rate-percent: 50
+      wait-in-open-state: 30s
+      calls-in-half-open-state: 3
 
   # La MISMA clave con la que Usuarios firma en ecopedia-core. Si las dos no coinciden, este
   # módulo rechaza todos los tokens y la pantalla de tarjetas queda inaccesible sin ningún
