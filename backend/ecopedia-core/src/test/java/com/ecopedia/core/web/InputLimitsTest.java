@@ -17,6 +17,8 @@ import com.ecopedia.core.user.domain.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -92,30 +94,41 @@ class InputLimitsTest {
         send("POST", "/api/stations", station("-24028726891444052", "0")).andExpect(status().isBadRequest());
     }
 
-    @Test
-    @DisplayName("La potencia de un conector llega hasta 9999,99 kW, al crearlo y al configurarlo")
-    void connectorPower() throws Exception {
+    @ParameterizedTest(name = "{0}: {1} kW sí, {2} kW no")
+    @CsvSource({"CCS2, 500, 500.01, CCS2", "CHADEMO, 400, 400.01, CHAdeMO", "TYPE_2, 43, 43.01, Tipo 2"})
+    @DisplayName("La potencia de un conector llega hasta la de la norma de su tipo, al crearlo y al configurarlo")
+    void connectorPowerByType(String type, String max, String over, String name) throws Exception {
         String path = "/api/stations/" + station.getId() + "/connectors";
-        String created = send(
-                        "POST", path, """
-                        {"connectorType": "CCS2", "maxPowerKw": 9999.99}""")
+        String expected = "Un conector %s entrega como máximo %s kW".formatted(name, max);
+        String created = send("POST", path, connector(type, max))
                 .andExpect(status().isCreated())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
 
-        send("POST", path, """
-                        {"connectorType": "CCS2", "maxPowerKw": 9223372036854775808}""")
+        send("POST", path, connector(type, over))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("La potencia máxima no puede superar 9999,99 kW"));
+                .andExpect(jsonPath("$.detail").value(expected));
 
         String id = created.replaceAll(".*\"id\":(\\d+).*", "$1");
-        send(
-                        "POST",
-                        "/api/connectors/" + id + "/configure",
-                        """
-                        {"connectorType": "CCS2", "maxPowerKw": 10000}""")
-                .andExpect(status().isBadRequest());
+        send("POST", "/api/connectors/" + id + "/configure", connector(type, over))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value(expected));
+    }
+
+    @Test
+    @DisplayName("Cambiar a un tipo de menos potencia también se valida, y un número enorme da 400, no 500")
+    void connectorTypeChangeAndHugeNumbers() throws Exception {
+        String path = "/api/stations/" + station.getId() + "/connectors";
+        send("POST", path, connector("TYPE_2", "150"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Un conector Tipo 2 entrega como máximo 43 kW"));
+        send("POST", path, connector("CCS2", "9223372036854775808")).andExpect(status().isBadRequest());
+    }
+
+    private static String connector(String type, String power) {
+        return """
+                {"connectorType": "%s", "maxPowerKw": %s}""".formatted(type, power);
     }
 
     @Test
@@ -175,9 +188,9 @@ class InputLimitsTest {
     }
 
     @Test
-    @DisplayName("El estimado pide kWh mayores a cero y hasta 10000; el costo real, nada negativo")
+    @DisplayName("El estimado pide kWh mayores a cero y hasta 250; el costo real, nada negativo")
     void estimateAndRealCost() throws Exception {
-        for (String kwh : new String[] {"-1.7976931348623157e308", "0", "10000.01"}) {
+        for (String kwh : new String[] {"-1.7976931348623157e308", "0", "250.01"}) {
             mockMvc.perform(get("/api/pricing/estimate")
                             .param("connectorId", "1")
                             .param("estimatedKwh", kwh))

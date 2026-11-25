@@ -36,8 +36,10 @@ build/
 /simulation/*/data/
 
 # --- QA ---
-# Los informes de Schemathesis (qa/ci/schemathesis.sh): CI los sube como artefacto.
+# Los informes de Schemathesis (qa/ci/schemathesis.sh): CI los sube como artefacto. Y la carpeta
+# que Schemathesis deja en el directorio desde el que se lo corre.
 /qa/schemathesis/
+/.schemathesis/
 
 # --- IDE ---
 .idea/

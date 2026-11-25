@@ -154,7 +154,7 @@ class OpenApiContractTest {
                         .path("maxPowerKw")
                         .path("maximum")
                         .asDouble())
-                .isEqualTo(9999.99);
+                .isEqualTo(500);
     }
 
     @Test
