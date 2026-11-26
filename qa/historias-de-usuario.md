@@ -21,9 +21,9 @@ Catálogo maestro de Historias de Usuario (`HU-01` a `HU-16`) del alcance de Eco
 | `HU-11` | `ECO-195` | `ECO-6` | Avisos al conductor | **Must** | `moscow-must` | Broker Artemis (outbox + DLQ `QA-28`) + `ecopedia-core` caído (degradación a `#conector`) | Aprobada (`4/4` TCs + DLQ) |
 | `HU-12` | `ECO-196` | `ECO-4` | Habilitación de una carga | **Must** | `moscow-must` | Pasarela REST (`503 PAYMENT_CHECK_UNAVAILABLE`), Distribuidora SOAP (`503`/rechazo), Cargador físico (`503 CHARGER_UNAVAILABLE`/compensación) | Aprobada (`15/15` TCs + `ECO-285`) |
 | `HU-13` | `ECO-197` | `ECO-4` | Cierre y cobro de la carga | **Must** | `moscow-must` | Cargador físico (fallback a telemetría), Tarificación/Pagos (`PENDING_SETTLEMENT` + barrido) | Aprobada (`9/9` TCs + fallback) |
-| `HU-14` | *(alta Jira)* | `ECO-5` | Gestión y cobro de deudas pendientes (`ECO-62`) | **Should** | `moscow-should` | Pasarela de pagos REST (`503`/`402 CARD_DECLINED`, bloqueo tras 3 fallos) + Broker avisos | Aprobada (`DebtApiTest`, `Newman 07`) |
-| `HU-15` | *(alta Jira)* | `ECO-2` | Asistente conversacional de búsqueda (`ECO-137`) | **Could** | `moscow-could` | API de Gemini (`503` saturado/sin clave, `504` timeout, `502` fallo) + `ecopedia-core` (`503`) | Aprobada (`agent/test/*.test.ts`) |
-| `HU-16` | *(alta Jira)* | `ECO-6` | Estadísticas de uso por telemetría (`ECO-301`) | **Should** | `moscow-should` | Tópico `telemetry.charging` en Artemis (`ecopedia-stats` durable + DLQ) + `ecopedia-core` caído | Aprobada (`AnalyticsApiTest`, `StatsTelemetryFlowTest`) |
+| `HU-14` | `ECO-311` | `ECO-5` | Gestión y cobro de deudas pendientes (`ECO-62`) | **Should** | `moscow-should` | Pasarela de pagos REST (`503`/`402 CARD_DECLINED`, bloqueo tras 3 fallos) + Broker avisos | Aprobada (`DebtApiTest`, `Newman 07`) |
+| `HU-15` | `ECO-312` | `ECO-2` | Asistente conversacional de búsqueda (`ECO-137`) | **Could** | `moscow-could` | API de Gemini (`503` saturado/sin clave, `504` timeout, `502` fallo) + `ecopedia-core` (`503`) | Aprobada (`agent/test/*.test.ts`) |
+| `HU-16` | `ECO-313` | `ECO-6` | Estadísticas de uso por telemetría (`ECO-301`) | **Should** | `moscow-should` | Tópico `telemetry.charging` en Artemis (`ecopedia-stats` durable + DLQ) + `ecopedia-core` caído | Aprobada (`AnalyticsApiTest`, `StatsTelemetryFlowTest`) |
 
 ---
 
@@ -409,7 +409,7 @@ Catálogo maestro de Historias de Usuario (`HU-01` a `HU-16`) del alcance de Eco
 
 ---
 
-### HU-14 · Gestión y cobro de deudas pendientes (`ECO-62`)
+### HU-14 · Gestión y cobro de deudas pendientes (`ECO-311` / `ECO-62`)
 
 **Prioridad MoSCoW:** Should
 **Historia:** Como conductor, quiero consultar mis deudas por cargas no cobradas y pagarlas desde mi perfil, para regularizar mi cuenta y recuperar la posibilidad de reservar o cargar.
@@ -440,7 +440,7 @@ Catálogo maestro de Historias de Usuario (`HU-01` a `HU-16`) del alcance de Eco
 
 ---
 
-### HU-15 · Asistente conversacional de búsqueda (`ECO-137`)
+### HU-15 · Asistente conversacional de búsqueda (`ECO-312` / `ECO-137`)
 
 **Prioridad MoSCoW:** Could
 **Historia:** Como conductor autenticado, quiero consultar al asistente conversacional en lenguaje natural sobre estaciones, conectores y disponibilidad, para identificar en una sola conversación dónde cargar sin navegar múltiples filtros.
@@ -471,7 +471,7 @@ Catálogo maestro de Historias de Usuario (`HU-01` a `HU-16`) del alcance de Eco
 
 ---
 
-### HU-16 · Estadísticas de uso por telemetría (`ECO-301`)
+### HU-16 · Estadísticas de uso por telemetría (`ECO-313` / `ECO-301`)
 
 **Prioridad MoSCoW:** Should
 **Historia:** Como administrador o CPO, quiero consultar un tablero consolidado de demanda, energía entregada y sesiones a partir de la telemetría en tiempo real, para monitorear el uso de la red o de mis estaciones.
@@ -513,6 +513,6 @@ Catálogo maestro de Historias de Usuario (`HU-01` a `HU-16`) del alcance de Eco
 | Porcentaje global de criterios aprobados | `≥ 95%` | **100%** sobre criterios automatizados + regularización de `TC-04`, `TC-45`, `TC-69` | Cumple |
 
 ### Regularización de subtareas `TC` abiertas en Jira
-1. **`ECO-220` (`TC-04` en `HU-01`):** Criterio `CA-01.3` alineado con la decisión registrada en [qa/README.md](README.md#L54-L55) (`DEF-06`: `400 Bad Request` con mensaje idéntico `"Credenciales inválidas"` verificado por `AuthErrorResponseTest`). Listo para pasar a `Listo` en Jira.
-2. **`ECO-261` (`TC-45` en `HU-09`):** Manejo `503 Service Unavailable` ante caída del catálogo de `core` cubierto en `BookingExceptionHandler.handleCoreDown` y `SessionClientsTest.chargingPointEdges`. Listo para pasar a `Listo` en Jira.
-3. **`ECO-285` (`TC-69` en `HU-12`):** Flujo completo desde `/charge` detrás de Caddy/Vite hacia `ecopedia-charging` resuelto y verificado en `DEF-17` y `DEF-22` (PR `#74`). Listo para pasar a `Listo` en Jira.
+1. **`ECO-220` (`TC-04` en `HU-01`):** Criterio `CA-01.3` alineado con la decisión registrada en [qa/README.md](README.md#L54-L55) (`DEF-06`: `400 Bad Request` con mensaje idéntico `"Credenciales inválidas"` verificado por `AuthErrorResponseTest`). Comentada en Jira (`riesgo-aceptado`) a la espera de confirmación final de QA para cierre.
+2. **`ECO-261` (`TC-45` en `HU-09`):** Manejo `503 Service Unavailable` ante caída del catálogo de `core` cubierto en `BookingExceptionHandler.handleCoreDown` y `SessionClientsTest.chargingPointEdges`. Transicionada a `Listo` en Jira.
+3. **`ECO-285` (`TC-69` en `HU-12`):** Flujo completo desde `/charge` detrás de Caddy/Vite hacia `ecopedia-charging` resuelto y verificado en `DEF-17` y `DEF-22` (PR `#74`). Transicionada a `Listo` en Jira.
