@@ -11,11 +11,11 @@ import java.util.Date;
  * Tokens como los que emite el login de core, firmados de verdad para que cada prueba recorra el
  * filtro que valida la firma. Ver el {@code TestTokens} de {@code ecopedia-charging}.
  */
-final class TestTokens {
+public final class TestTokens {
 
     private TestTokens() {}
 
-    static String bearer(String signingSecret, long userId, String role) {
+    public static String bearer(String signingSecret, long userId, String role) {
         Instant now = Instant.now();
         String token = Jwts.builder()
                 .subject(Long.toString(userId))

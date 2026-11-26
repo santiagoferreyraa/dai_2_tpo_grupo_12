@@ -1,4 +1,3 @@
-import AdminMobileBubble from './AdminMobileBubble'
 import MobileNav from './MobileNav'
 import TopBar from './TopBar'
 
@@ -13,7 +12,8 @@ import TopBar from './TopBar'
  *   pasaron a decir su nombre en la franja, porque tener la misma navegación dos veces en
  *   pantalla es peor que tenerla una sola vez bien.
  * - En el celular es una sola barra abajo, al alcance del pulgar, con las cinco secciones
- *   —perfil incluido— porque ahí no sobra lugar para una franja aparte.
+ *   —perfil incluido— porque ahí no sobra lugar para una franja aparte. El Backoffice del
+ *   administrador, que antes era una burbuja flotante, ahora es una sección más de esa barra.
  *
  * Cada pieza se esconde con `md:` desde su propio archivo; acá no hay ninguna decisión, solo el
  * lugar donde `App.tsx` monta una línea en vez de dos.
@@ -23,7 +23,6 @@ export default function Navbar() {
     <>
       <TopBar />
       <MobileNav />
-      <AdminMobileBubble />
     </>
   )
 }

@@ -25,4 +25,11 @@ public final class AuthenticatedUser {
         }
         return Long.valueOf(authentication.getName());
     }
+
+    /** Indica si la sesión autenticada posee el rol {@code ADMIN}. */
+    public static boolean isAdmin(Authentication authentication) {
+        return authentication != null
+                && authentication.getAuthorities().stream()
+                        .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+    }
 }
