@@ -81,7 +81,12 @@ export default function NearestStationStack({
       to={`/stations/map?station=${String(station.id)}`}
       /* `group` para que el recuadro de atrás se realce tocando cualquier parte de la pila. */
       className={`group focus-visible:outline-primary relative block ${MAP_OFFSET} rounded-3xl focus-visible:outline-2 focus-visible:outline-offset-4`}
-      aria-label={`Ver ${station.name} en el mapa, a ${formatDistance(distanceKm)}`}
+      /*
+        Sin `aria-label` (QA-21, WCAG 2.5.3 "Label in Name"): el nombre accesible sale de lo que
+        está escrito en la tarjeta —estación, dirección, distancia— más el "Ver en el mapa" del
+        `sr-only`. Así coincide con lo que se lee, que es lo que dice quien usa la app por voz.
+        Con la etiqueta escrita a mano el nombre dejaba afuera parte del texto visible.
+      */
     >
       {/* El de atrás. Va vacío: lo que lleva encima son dos textos posicionados aparte. */}
       <div
@@ -119,9 +124,20 @@ export default function NearestStationStack({
         La sombra es lo que lo despega del de atrás. Sin ella, dos superficies de vidrio pegadas se
         leen como una sola con un escalón raro, y la disposición entera deja de entenderse.
       */}
-      <div className="relative h-52 overflow-hidden rounded-2xl shadow-xl shadow-black/25">
+      {/*
+        El minimapa es una imagen adentro del enlace: `aria-hidden` e `inert` (QA-21) para que
+        sus rótulos ("150 kW") no se lean como parte del nombre del enlace y para que los
+        marcadores de Leaflet —que traen `tabindex`— no sumen paradas del Tab adentro de otro
+        control.
+      */}
+      <div
+        aria-hidden="true"
+        inert
+        className="relative h-52 overflow-hidden rounded-2xl shadow-xl shadow-black/25"
+      >
         <StationMiniMap stations={stations} focus={station} deviceLocation={deviceLocation} />
       </div>
+      <span className="sr-only">Ver en el mapa</span>
     </Link>
   )
 }

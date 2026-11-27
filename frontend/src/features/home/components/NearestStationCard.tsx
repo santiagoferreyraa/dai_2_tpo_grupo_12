@@ -116,13 +116,24 @@ export default function NearestStationCard({
         contarlo entero también.
       */
       className={`group focus-visible:outline-primary block h-full rounded-3xl focus-visible:outline-2 focus-visible:outline-offset-2 ${className}`}
-      aria-label={`Ver ${station.name} en el mapa`}
+      /*
+        Sin `aria-label` (QA-21, WCAG 2.5.3 "Label in Name"): el nombre accesible sale de lo que
+        está escrito en la tarjeta —estación, dirección, distancia— más el "Ver en el mapa" del
+        `sr-only`. Así coincide con lo que se lee, que es lo que dice quien usa la app por voz.
+        Con la etiqueta escrita a mano el nombre dejaba afuera parte del texto visible.
+      */
     >
       <Shell>
         <Title />
 
         {/* `flex-1` para que el mapa se coma el sobrante: es lo que iguala el alto con el auto. */}
-        <div className={`${MAP_MIN_HEIGHT} relative flex-1`}>
+        {/*
+          El minimapa es una imagen adentro del enlace: `aria-hidden` e `inert` (QA-21) para que
+          sus rótulos ("150 kW") no se lean como parte del nombre del enlace y para que los
+          marcadores de Leaflet —que traen `tabindex`— no sumen paradas del Tab adentro de otro
+          control.
+        */}
+        <div aria-hidden="true" inert className={`${MAP_MIN_HEIGHT} relative flex-1`}>
           <StationMiniMap stations={stations} focus={station} deviceLocation={deviceLocation} />
         </div>
 
@@ -142,6 +153,7 @@ export default function NearestStationCard({
             <span className="ml-auto shrink-0">{formatDistance(distanceKm)}</span>
           </p>
         </div>
+        <span className="sr-only">Ver en el mapa</span>
       </Shell>
     </Link>
   )

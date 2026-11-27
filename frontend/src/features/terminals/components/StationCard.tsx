@@ -58,13 +58,19 @@ export default function StationCard({
       <button
         type="button"
         onClick={onOpen}
-        aria-label={`Ver ${station.name}`}
+        /*
+          Sin `aria-label` (QA-21, WCAG 2.5.3 "Label in Name"): el nombre sale de lo que está
+          escrito adentro —estación, dirección, conectores—, así que coincide con lo que se ve. El
+          "Ver" de adelante lo agrega el `sr-only` de abajo. Con "Ver <nombre>" como etiqueta, la
+          dirección y los datos que se leen en la tarjeta quedaban fuera del nombre.
+        */
         aria-current={selected}
         className={`focus-visible:outline-st-accent block w-full rounded-2xl py-4 pr-12 pl-5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${
           /* El vidrio de las tarjetas del resto de la aplicación; elegida, con el borde verde. */
           selected ? 'glass-panel border-primary/60' : 'glass-panel hover:border-primary/60'
         }`}
       >
+        <span className="sr-only">Ver </span>
         <div className="flex items-center gap-4">
           {/*
             La miniatura aparece recién en pantalla mediana. En el celular el ancho es todo
