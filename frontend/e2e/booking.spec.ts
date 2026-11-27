@@ -37,7 +37,7 @@ test('reservar un conector y pagar la seña', async ({ page, request, driver }) 
 
   // Paso 2: el horario queda retenido; se acepta la tolerancia y se paga con la tarjeta.
   await expect(dialog.getByText('Te guardamos este horario por')).toBeVisible()
-  // El importe se escribe con un espacio duro entre el signo y el número (`Intl`): va `\s`.
+  // `\s` y no un espacio: el importe sale de `Intl`, que puede separar el signo con un espacio duro.
   const depositLine = await dialog
     .getByRole('definition')
     .filter({ hasText: 'se cobra al confirmar' })
