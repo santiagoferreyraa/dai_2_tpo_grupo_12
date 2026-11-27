@@ -4,34 +4,44 @@ import AgentBubble from './AgentBubble'
 import AgentChatPanel from './AgentChatPanel'
 import { useAgentChat } from './useAgentChat'
 
+/** Lo que dura la salida del panel; tiene que coincidir con `agent-panel-out` en `agent.css`. */
+const CLOSE_MS = 260
+
 /**
- * El asistente entero: la burbuja que está en todas las pantallas con sesión iniciada y el chat que
- * abre.
+ * El asistente: la burbuja y el chat.
  *
- * Lo monta `App.tsx` una sola vez, al lado de la navegación, y por eso vive acá la conversación:
- * el panel se desmonta cada vez que el chat se cierra, así que si el hilo estuviera adentro se
- * perdería lo hablado al cerrar sin querer. Acá arriba sobrevive a todo menos a recargar y a
- * cerrar sesión: `App.tsx` lo monta con la sesión como `key`, así que cada sesión empieza vacía.
+ * El chat tiene tres momentos y no dos: cerrado, abierto y **cerrándose**. El tercero es lo que
+ * deja que el panel se vaya con su animación —hacia la derecha en la PC— en vez de desaparecer de
+ * golpe: queda montado lo que dura la salida y recién después se desmonta. Mientras tanto la
+ * burbuja ya vuelve a aparecer en su lugar.
  *
- * Es también el único archivo de la feature que conoce a los otros dos. Ver `agentClient.ts` para
- * la costura con el backend.
+ * La conversación vive acá y no en el panel, así que cerrar el chat no la borra.
  */
 export default function AgentAssistant() {
-  const [open, setOpen] = useState(false)
+  const [phase, setPhase] = useState<'closed' | 'open' | 'closing'>('closed')
   const chat = useAgentChat()
 
   /* Al cerrar, el foco vuelve a la burbuja: sin esto cae al principio de la página. */
   const bubbleRef = useRef<HTMLButtonElement>(null)
 
   const close = useCallback(() => {
-    setOpen(false)
-    bubbleRef.current?.focus()
+    setPhase((current) => (current === 'open' ? 'closing' : current))
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    window.setTimeout(
+      () => {
+        setPhase((current) => (current === 'closing' ? 'closed' : current))
+        bubbleRef.current?.focus()
+      },
+      reduced ? 0 : CLOSE_MS,
+    )
   }, [])
 
   return (
     <>
-      <AgentBubble ref={bubbleRef} open={open} onToggle={() => (open ? close() : setOpen(true))} />
-      {open && <AgentChatPanel chat={chat} onClose={close} />}
+      <AgentBubble ref={bubbleRef} open={phase === 'open'} onToggle={() => setPhase('open')} />
+      {phase !== 'closed' && (
+        <AgentChatPanel chat={chat} onClose={close} closing={phase === 'closing'} />
+      )}
     </>
   )
 }

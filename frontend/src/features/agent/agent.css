@@ -127,11 +127,39 @@
 }
 
 /*
-  Entrada del panel: crece desde la esquina donde está la burbuja.
+  La burbuja: cómo se mueve.
 
-  El `transform-origin` lo pone el componente según el tamaño de pantalla —abajo a la derecha en
-  la ventana flotante, abajo y al centro en la hoja del celular—, así que la animación es una sola
-  y el origen cambia el gesto.
+  Al soltarla se desliza hasta su costado (`left` y `top`, con una curva que frena al llegar); al
+  abrir y cerrar el chat se desvanece y se achica (`opacity` y `scale`). Mientras se arrastra, en
+  cambio, `left` y `top` van sin transición: con retraso, la burbuja quedaría atrás del dedo.
+
+  Va acá y no como utilidades de Tailwind porque son dos juegos de transiciones que se alternan
+  según una clase, y escritas en el `className` se pisarían entre sí por orden de emisión.
+*/
+.agent-bubble {
+  transition:
+    left 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    top 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 300ms ease-out,
+    scale 300ms ease-out;
+}
+
+.agent-bubble--dragging {
+  transition:
+    opacity 300ms ease-out,
+    scale 300ms ease-out;
+}
+
+/*
+  Entrada y salida del panel.
+
+  **En el celular** crece desde abajo, como una hoja que sube. **En la PC entra deslizándose desde
+  el borde derecho de la ventana** y se va por el mismo lado (pedido del 27/11): la burbuja ya no
+  está abajo a la derecha —se arrastra a cualquier lado y se desvanece al abrir—, así que crecer
+  "desde la burbuja" dejó de tener sentido. El panel entra desde donde va a quedar.
+
+  La salida dura lo mismo que `CLOSE_MS` en `AgentAssistant`: el componente lo desmonta al
+  terminar, y si la animación fuera más larga se cortaría a la mitad.
 */
 @keyframes agent-panel-in {
   from {
@@ -144,8 +172,47 @@
   }
 }
 
+@keyframes agent-panel-out {
+  to {
+    opacity: 0;
+    transform: scale(0.92) translateY(16px);
+  }
+}
+
+@keyframes agent-panel-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(calc(100% + 2rem));
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes agent-panel-slide-out {
+  to {
+    opacity: 0;
+    transform: translateX(calc(100% + 2rem));
+  }
+}
+
 .agent-panel {
   animation: agent-panel-in 240ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.agent-panel--out {
+  animation: agent-panel-out 260ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+@media (min-width: 768px) {
+  .agent-panel {
+    animation: agent-panel-slide-in 380ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .agent-panel--out {
+    animation: agent-panel-slide-out 260ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  }
 }
 
 @keyframes agent-scrim-in {
@@ -159,6 +226,10 @@
 
 .agent-scrim {
   animation: agent-scrim-in 200ms ease-out;
+}
+
+.agent-scrim--out {
+  animation: agent-scrim-in 260ms ease-in reverse forwards;
 }
 
 /*
@@ -191,8 +262,15 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .agent-bubble,
+  .agent-bubble--dragging {
+    transition: none;
+  }
+
   .agent-panel,
+  .agent-panel--out,
   .agent-scrim,
+  .agent-scrim--out,
   .agent-typing-dot {
     animation: none;
   }
