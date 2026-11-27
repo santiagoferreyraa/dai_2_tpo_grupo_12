@@ -17,6 +17,8 @@ Todo lo que el QA necesita para correr las pruebas de los criterios de la Clase 
 | `qa/ci/start-stack.sh`, `stop-stack.sh` | QA-05/06/08 | Levanta los 4 backends y los 3 simuladores, con usuarios ADMIN y CPO de prueba |
 | `qa/jira/*.csv` | QA-03/04 | Defectos y casos para importar en Jira |
 | `.github/workflows/ci.yml` (job `api`) | QA-05, QA-25 | Newman y Schemathesis en cada PR |
+| `frontend/e2e/` y `ci.yml` (job `e2e`) | QA-20 (ECO-170) | Los 5 escenarios de punta a punta con Playwright, en cada PR |
+| `backend/*/src/test/.../*IT.java` | QA-24 (ECO-174) | Repositorios contra PostgreSQL y consumidores contra Artemis, con Testcontainers, dentro de `mvn verify` |
 | `qa/ci/schemathesis.sh` | QA-25 | Pruebas de contrato: las respuestas de los 4 módulos contra su OpenAPI (`/v3/api-docs`) |
 | `backend/*/src/test/.../web/OpenApiContractTest.java` | QA-25 | Que el contrato se publique y declare token, errores y 201/204 |
 | `backend/ecopedia-integration/.../powergrid/ws/PowerGridWsClientTest.java` | QA-25 | Respuestas SOAP fuera del contrato (XSD) rechazadas |
@@ -45,6 +47,10 @@ npx newman run qa/postman/ecopedia.postman_collection.json \
 
 # Contrato (después de Newman; necesita `pip install schemathesis==4.34.2`)
 QA_ADMIN_EMAIL=admin.qa@ecopedia.test bash qa/ci/schemathesis.sh
+
+# Punta a punta (necesita `pnpm --dir frontend exec playwright install chromium` una vez).
+# Con CI=1 no arma el front: sirve el `dist/` con `vite preview`, como en CI. Antes, `pnpm --dir frontend build`.
+CI=1 pnpm --dir frontend e2e
 
 # Carga (el número que va al informe se mide en la máquina de la demo)
 k6 run qa/k6/load-critical.js

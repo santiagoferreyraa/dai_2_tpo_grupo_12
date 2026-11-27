@@ -1,0 +1,91 @@
+package com.ecopedia.async;
+
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.when;
+
+import com.ecopedia.async.notification.domain.StationDirectory;
+import com.ecopedia.async.notification.domain.StationInfo;
+import java.nio.file.Path;
+import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.testcontainers.activemq.ArtemisContainer;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.utility.MountableFile;
+
+/**
+ * Base de las pruebas de integración de async contra contenedores (QA-24, clases *IT).
+ *
+ * <p>Sin el perfil `dev`: async arranca como en producción, contra un PostgreSQL y un Artemis de
+ * verdad, con las mismas imágenes que `docker-compose.yml`. Flyway aplica las migraciones reales y
+ * el broker arranca con el `broker.properties` del repo, igual que en el compose.
+ * `@ServiceConnection` le pasa a Spring las direcciones y credenciales de los contenedores; las
+ * demás variables que el perfil de producción exige van con valores de prueba.
+ *
+ * <p>El broker embebido de los tests unitarios queda apagado: los mensajes tienen que pasar por el
+ * del contenedor, que es el que aplica las reglas de reentrega y de mensajes muertos del archivo.
+ *
+ * <p>Los contenedores son uno para todas las clases que heredan de esta, y se levantan recién
+ * cuando Spring los pide, después de que {@link RequiresDocker} decidió que hay Docker.
+ */
+@SpringBootTest(
+        properties = {
+            "ECOPEDIA_DB_PASSWORD=la-del-contenedor",
+            "ECOPEDIA_BROKER_PASSWORD=la-del-contenedor",
+            "ECOPEDIA_JWT_SECRET=secreto-de-las-pruebas-de-integracion-con-contenedores",
+            "spring.artemis.embedded.enabled=false"
+        })
+@ExtendWith(RequiresDocker.class)
+public abstract class ContainersSupport {
+
+    @ServiceConnection
+    static final PostgreSQLContainer<?> POSTGRES = Containers.POSTGRES;
+
+    @ServiceConnection
+    static final ArtemisContainer ARTEMIS = Containers.ARTEMIS;
+
+    /**
+     * Core no corre en estas pruebas: el nombre de la estación lo da este doble.
+     *
+     * <p>Va acá y no en cada clase a propósito. Un doble distinto por clase arma otro contexto de
+     * Spring, y Spring guarda los contextos ya armados con sus consumidores andando: dos contextos
+     * escucharían la misma cola del broker real y cualquiera de los dos se llevaría el mensaje de la
+     * otra clase.
+     */
+    @MockitoBean
+    protected StationDirectory stationDirectory;
+
+    @BeforeEach
+    void coreKnowsTheStation() {
+        when(stationDirectory.findByConnector(anyLong()))
+                .thenReturn(Optional.of(new StationInfo(3L, "Palermo Soho", "Honduras 4800", "CCS2")));
+    }
+
+    /** Los contenedores, en una clase aparte para que se creen y arranquen una sola vez por JVM. */
+    static final class Containers {
+
+        /** El mismo archivo que monta el compose, desde la raíz del repo. */
+        private static final Path BROKER_PROPERTIES = Path.of("..", "..", "docker", "artemis", "broker.properties");
+
+        static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+
+        static final ArtemisContainer ARTEMIS = new ArtemisContainer("apache/activemq-artemis:2.42.0")
+                .withUser("ecopedia")
+                .withPassword("la-del-contenedor")
+                .withCopyFileToContainer(
+                        MountableFile.forHostPath(
+                                BROKER_PROPERTIES.toAbsolutePath().normalize()),
+                        "/opt/ecopedia/broker.properties")
+                .withCommand("run", "--properties=/opt/ecopedia/broker.properties");
+
+        static {
+            POSTGRES.start();
+            ARTEMIS.start();
+        }
+
+        private Containers() {}
+    }
+}

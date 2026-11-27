@@ -335,6 +335,17 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-pmd-plugin</artifactId>
             </plugin>
+            <!--
+                Las pruebas de integración contra contenedores (QA-24): las clases *IT, con PostgreSQL y
+                Artemis de verdad levantados por Testcontainers. Corren en `mvn verify`, después de los
+                tests unitarios, así que van adentro del check "Backend (Maven)". Las ejecuciones las trae
+                configuradas el padre de Spring Boot. Sin Docker, en una máquina del equipo se saltean;
+                en CI fallan (ver RequiresDocker de cada módulo).
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+            </plugin>
         </plugins>
     </build>
 

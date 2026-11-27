@@ -4,11 +4,13 @@
 # Somos cuatro: si alguien mergea algo que no compila o que no está formateado, los otros
 # tres se lo llevan puesto en su próximo rebase.
 #
-# Los cuatro jobs corren en paralelo y son independientes. `api` es el de QA-05: levanta los cuatro backends y los tres simuladores
-# y les corre la colección de Postman con Newman. `agent` es el del asistente del chat (agent/).
+# Los cinco jobs corren en paralelo y son independientes. `api` es el de QA-05: levanta los cuatro backends y los tres simuladores
+# y les corre la colección de Postman con Newman. `agent` es el del asistente del chat (agent/). `e2e`
+# es el de QA-20: los escenarios de punta a punta en un navegador.
 #
-# Ojo: el nombre de cada job es un `context` del ruleset de main. "Agent (Node)" NO está en el
-# ruleset (no bloquea el merge); si se lo quiere obligatorio, lo agrega SantiagoF en Settings.
+# Ojo: el nombre de cada job es un `context` del ruleset de main. "Agent (Node)" y "E2E (Playwright)"
+# NO están en el ruleset (no bloquean el merge); si se los quiere obligatorios, los agrega SantiagoF
+# en Settings.
 
 name: CI
 
@@ -41,6 +43,7 @@ jobs:
 
       # 'verify' compila, corre los tests y ejecuta spotless:check.
       # Si alguien no corrió "mvn spotless:apply", falla acá.
+      # También corre los *IT (QA-24): PostgreSQL y Artemis en contenedores, con el Docker del runner.
       - name: Compilar, testear y chequear formato
         run: mvn -B verify
 
@@ -212,6 +215,89 @@ jobs:
           path: |
             qa/newman/
             qa/schemathesis/
+            qa/ci/logs/
+
+      - name: Bajar los backends
+        if: always()
+        run: bash qa/ci/stop-stack.sh
+
+  # QA-20 (ECO-170): los escenarios de punta a punta con Playwright (frontend/e2e/), en un navegador
+  # contra el sistema entero: el mismo arranque que el job `api`, más el front armado y servido con
+  # `vite preview`, que reparte /api con el proxy de siempre. Lo levanta playwright.config.ts.
+  #
+  # Va aparte del job `api` y no después de Schemathesis: Schemathesis crea y borra datos al azar
+  # (y bloquea al ADMIN), y los escenarios cuentan con las 15 estaciones de la siembra tal cual.
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ECOPEDIA_BROKER_PASSWORD: qa-${{ github.run_id }}
+
+    services:
+      artemis:
+        image: apache/activemq-artemis:2.42.0
+        env:
+          ARTEMIS_USER: ecopedia
+          ARTEMIS_PASSWORD: qa-${{ github.run_id }}
+        ports:
+          - 61616:61616
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preparar JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      # Antes de setup-node, por lo mismo que en el job del front.
+      - name: Preparar pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+
+      - name: Preparar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Construir los JAR
+        run: mvn -B -Dmaven.test.skip=true -Dspotless.check.skip=true package
+
+      - name: Levantar backends y simuladores
+        run: |
+          python3 -m pip install --quiet --user --break-system-packages bcrypt
+          bash qa/ci/start-stack.sh
+
+      - name: Instalar dependencias del front y el navegador
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+
+      - name: Armar el front
+        working-directory: frontend
+        run: pnpm run build
+
+      - name: Correr los escenarios
+        working-directory: frontend
+        run: pnpm run e2e
+
+      # El informe HTML trae, de cada escenario que falló, la captura y la traza paso a paso
+      # (se abre con `pnpm exec playwright show-trace`).
+      - name: Guardar el informe y los logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
             qa/ci/logs/
 
       - name: Bajar los backends
