@@ -23,7 +23,8 @@ test('registro, login fallido y login correcto', async ({ page }) => {
   await page.getByLabel('Email').fill(driver.email)
   await page.getByLabel('Contraseña').fill(driver.password)
   await page.getByRole('button', { name: 'Entrar' }).click()
-  const profile = page.getByRole('link', { name: `Perfil de ${driver.email}` })
+  // La ficha del perfil se nombra con el nombre que muestra, no con el correo (QA-21).
+  const profile = page.getByRole('link', { name: driver.fullName })
   await expect(profile).toBeVisible()
 
   // Cierra la sesión desde el perfil.

@@ -739,14 +739,14 @@ export default function AdminPage() {
                 </div>
 
                 <div className="rounded-2xl border border-border/80 bg-surface/80 p-6 shadow-xl backdrop-blur-xl">
-                  <h3 className="text-lg font-bold text-text">Estado General del Sistema</h3>
+                  <h2 className="text-lg font-bold text-text">Estado General del Sistema</h2>
                   <p className="mt-1 text-sm text-text-muted">
                     Resumen de distribución de roles y disponibilidad de infraestructura.
                   </p>
 
                   <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div className="rounded-xl border border-border/50 bg-surface/40 p-4">
-                      <h4 className="text-sm font-semibold text-text">Distribución de Permisos</h4>
+                      <h3 className="text-sm font-semibold text-text">Distribución de Permisos</h3>
                       <ul className="mt-3 flex flex-col gap-2 text-sm">
                         <li className="flex justify-between">
                           <span className="text-text-muted">Conductores de EV:</span>
@@ -764,7 +764,7 @@ export default function AdminPage() {
                     </div>
 
                     <div className="rounded-xl border border-border/50 bg-surface/40 p-4">
-                      <h4 className="text-sm font-semibold text-text">Red de Estaciones</h4>
+                      <h3 className="text-sm font-semibold text-text">Red de Estaciones</h3>
                       <ul className="mt-3 flex flex-col gap-2 text-sm">
                         <li className="flex justify-between">
                           <span className="text-text-muted">Estaciones Activas:</span>

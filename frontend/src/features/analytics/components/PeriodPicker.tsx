@@ -11,7 +11,12 @@ interface PeriodPickerProps {
   rangeError: string | null
 }
 
-const PILL = 'rounded-full px-4 py-1.5 text-sm font-semibold transition-colors duration-200'
+/*
+  `whitespace-nowrap` (QA-21): a 768 px la fila queda angosta y "30 días" se partía en dos
+  renglones, con el botón convertido en una pastilla alta y despareja con las otras.
+*/
+const PILL =
+  'rounded-full px-4 py-1.5 text-sm font-semibold whitespace-nowrap transition-colors duration-200'
 const PILL_ON = 'brand-fill text-on-primary'
 const PILL_OFF = 'glass-panel text-text hover:text-primary'
 

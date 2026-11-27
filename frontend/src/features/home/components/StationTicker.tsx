@@ -183,8 +183,15 @@ export default function StationTicker({
           <StationChip key={station.id} station={station} />
         ))}
 
-        {/* La segunda copia, la que cierra el bucle. Ver el comentario de arriba. */}
-        <div aria-hidden="true" className="contents">
+        {/*
+          La segunda copia, la que cierra el bucle. Ver el comentario de arriba.
+
+          `inert` además de `aria-hidden` (QA-21): las copias son enlaces, y con `aria-hidden`
+          solo el lector de pantalla las salteaba pero el Tab seguía entrando en ellas —el foco
+          caía en algo que el lector dice que no existe, que es la falla `aria-hidden-focus` de
+          WCAG—. `inert` las saca también del recorrido del teclado.
+        */}
+        <div aria-hidden="true" inert className="contents">
           {stations.map((station) => (
             <StationChip key={`echo-${String(station.id)}`} station={station} />
           ))}

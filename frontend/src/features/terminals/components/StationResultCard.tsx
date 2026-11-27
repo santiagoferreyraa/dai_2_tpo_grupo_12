@@ -43,7 +43,7 @@ export default function StationResultCard({ station, expanded = false }: Station
   return (
     <article className="border-border bg-background/95 w-full border p-3 shadow-lg">
       <div className="flex items-center gap-2">
-        <h3 className="text-text min-w-0 flex-1 truncate text-sm font-semibold">{station.name}</h3>
+        <h2 className="text-text min-w-0 flex-1 truncate text-sm font-semibold">{station.name}</h2>
 
         {/*
           El punto repite lo que ya dice el color del pin, y está bien que lo repita: la ficha
@@ -53,6 +53,7 @@ export default function StationResultCard({ station, expanded = false }: Station
           className={`h-2 w-2 shrink-0 rounded-full ${
             isAvailable(station) ? DOT_AVAILABLE : DOT_UNAVAILABLE
           }`}
+          role="img"
           aria-label={isAvailable(station) ? 'Disponible' : 'Sin conectores libres'}
         />
 

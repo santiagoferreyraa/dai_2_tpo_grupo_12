@@ -70,12 +70,13 @@ export default function StationHoverCard({ station }: StationHoverCardProps) {
       </span>
 
       <div className="flex items-center gap-2">
-        <h3 className="text-text min-w-0 truncate text-base font-semibold">{station.name}</h3>
+        <h2 className="text-text min-w-0 truncate text-base font-semibold">{station.name}</h2>
 
         <span
           className={`h-2.5 w-2.5 shrink-0 rounded-full ${
             available ? DOT_AVAILABLE : DOT_UNAVAILABLE
           }`}
+          role="img"
           aria-label={available ? 'Disponible' : 'Sin conectores libres'}
         />
       </div>

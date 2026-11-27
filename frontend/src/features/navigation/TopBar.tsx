@@ -198,7 +198,17 @@ export default function TopBar() {
         adentro: ver el comentario del z-index.
       */}
 
-        <div className="relative grid grid-cols-[1fr_auto_1fr] items-center gap-6 px-6 py-4">
+        {/*
+          **Simétrica (`1fr auto 1fr`) recién desde `xl`** (QA-21). Con las cinco secciones del
+          CPO o del ADMIN el menú mide unos 450 px, y la columna de la derecha —tema, avisos y
+          perfil— unos 300: para que las dos puntas midan lo mismo hacen falta más de 1050 px.
+          Por debajo, a 768 y a 1024, la campana y la ficha del perfil quedaban del otro lado del
+          borde de la ventana, cortadas y sin forma de llegar a ellas.
+
+          Hasta `xl` la izquierda se lleva lo que sobra (`minmax(0,1fr)`) y las otras dos miden su
+          contenido: el menú deja de estar exactamente al centro, pero todo entra.
+        */}
+        <div className="relative grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 px-6 py-4 lg:gap-6 xl:grid-cols-[1fr_auto_1fr]">
           {/*
           El logo y el buscador, juntos a la izquierda.
 
@@ -221,7 +231,11 @@ export default function TopBar() {
               <span className="brand-mark brand-fill block h-9 w-9" aria-hidden="true" />
             </Link>
 
-            <SearchBox className="w-full max-w-sm" />
+            {/*
+              En tableta (`md` a `lg`) el buscador no entra: lo que queda al lado del logo son
+              unos 40 px. Ahí se busca desde el mapa, que tiene el suyo. Ver la grilla de arriba.
+            */}
+            <SearchBox className="hidden w-full max-w-sm lg:block" />
           </div>
 
           <nav
@@ -237,7 +251,7 @@ export default function TopBar() {
                   to={section.to}
                   end={section.end}
                   data-active={active ? 'true' : 'false'}
-                  className={`rounded-lg px-3.5 py-2 text-sm transition-colors ${
+                  className={`rounded-lg px-2.5 py-2 text-sm transition-colors lg:px-3.5 ${
                     active ? 'text-primary font-semibold' : 'text-text-muted hover:text-text'
                   }`}
                 >
