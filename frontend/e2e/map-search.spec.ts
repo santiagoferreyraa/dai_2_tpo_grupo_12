@@ -20,8 +20,9 @@ const WITH_CHADEMO = [
 
 test('buscar una estación por nombre y filtrar por conector', async ({ page }) => {
   await page.goto('/stations/map')
-  // La lista de estaciones: cada tarjeta lleva el nombre como título de nivel 3.
-  const cards = page.getByRole('main').getByRole('heading', { level: 3 })
+  // La lista de estaciones: cada tarjeta lleva el nombre como título de nivel 2, debajo del h1
+  // de la pantalla (QA-21: era un h3 y salteaba un nivel, la falla `heading-order` de axe).
+  const cards = page.getByRole('main').getByRole('heading', { level: 2 })
   await expect(cards).toHaveCount(15)
 
   // Por nombre: el buscador sugiere la estación y, al elegirla, la lista queda solo con ella.

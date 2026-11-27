@@ -63,7 +63,11 @@ export async function logIn(page: Page, driver: Driver): Promise<void> {
   await page.getByLabel('Email').fill(driver.email)
   await page.getByLabel('Contraseña').fill(driver.password)
   await page.getByRole('button', { name: 'Entrar' }).click()
-  await expect(page.getByRole('link', { name: `Perfil de ${driver.email}` })).toBeVisible()
+  /*
+    La ficha del perfil se llama con lo que muestra —el nombre y el rol—, no con el correo, que no se
+    ve (QA-21, WCAG 2.5.3 "Label in Name"). Por eso se la busca por el nombre completo.
+  */
+  await expect(page.getByRole('link', { name: driver.fullName })).toBeVisible()
 }
 
 /**
