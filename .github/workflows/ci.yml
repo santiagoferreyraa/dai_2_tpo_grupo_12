@@ -43,6 +43,7 @@ jobs:
 
       # 'verify' compila, corre los tests y ejecuta spotless:check.
       # Si alguien no corrió "mvn spotless:apply", falla acá.
+      # También corre los *IT (QA-24): PostgreSQL y Artemis en contenedores, con el Docker del runner.
       - name: Compilar, testear y chequear formato
         run: mvn -B verify
 
