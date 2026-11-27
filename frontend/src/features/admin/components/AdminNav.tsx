@@ -19,8 +19,10 @@ interface AdminTabsProps {
  *   cambiar de pestaña la transición animaba el borde del vidrio hacia el color del texto —casi
  *   negro— y aparecía un contorno oscuro que se desvanecía. Por lo mismo la transición nombra sus
  *   propiedades en vez de `transition-all`.
- * - **La fila tiene aire arriba y abajo adentro del scroll.** Un contenedor con `overflow-x` recorta
- *   también en vertical, y sin ese aire la sombra de las pestañas quedaba cortada en una línea recta.
+ * - **La fila tiene aire arriba y abajo adentro del scroll**, y más abajo que arriba, que es hacia
+ *   donde cae la sombra del vidrio. Un contenedor con `overflow-x` recorta también en vertical, y
+ *   con poco aire la sombra de las pestañas quedaba cortada en una línea recta. El aire se devuelve
+ *   con márgenes negativos, así la fila ocupa en la página lo mismo que las pestañas.
  *
  * Son botones y no enlaces porque las secciones no tienen dirección propia: cambian lo que muestra
  * la misma pantalla. `aria-current` le dice al lector cuál está abierta. En el celular la fila se
@@ -28,8 +30,8 @@ interface AdminTabsProps {
  */
 export default function AdminTabs({ active, onChange }: AdminTabsProps) {
   return (
-    <nav aria-label="Secciones del backoffice" className="-mx-4 -my-3 shrink-0 md:-mx-6">
-      <ul className="no-scrollbar flex items-center gap-2 overflow-x-auto px-4 py-3 md:px-6">
+    <nav aria-label="Secciones del backoffice" className="-mx-4 -mt-3 -mb-7 shrink-0 md:-mx-6">
+      <ul className="no-scrollbar flex items-center gap-2 overflow-x-auto px-4 pt-3 pb-7 md:px-6">
         {ADMIN_SECTIONS.map((section) => {
           const current = section.key === active
           return (

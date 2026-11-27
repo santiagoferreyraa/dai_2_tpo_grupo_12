@@ -157,8 +157,14 @@ export default function AdminPage() {
     }
   }
 
-  const loadUsers = async () => {
-    setLoadingUsers(true)
+  /*
+    Las tres cargas aceptan `silent`: la de cuando se entra a la sección muestra "Cargando…"; la de
+    después de una acción —cambiar un rol, el estado de un conector, dar de baja— no. Antes la
+    lista se vaciaba y se volvía a armar después de cada cambio, y se veía como si la página
+    entera se recargara, con el scroll de vuelta arriba (pedido del 27/11).
+  */
+  const loadUsers = async (silent = false) => {
+    if (!silent) setLoadingUsers(true)
     try {
       const roleQuery = selectedRole === 'ALL' ? undefined : selectedRole
       const data = await fetchUsers(roleQuery)
@@ -166,24 +172,24 @@ export default function AdminPage() {
     } catch (err) {
       setActionError(adminErrorMessage(err, 'No pudimos traer los usuarios.'))
     } finally {
-      setLoadingUsers(false)
+      if (!silent) setLoadingUsers(false)
     }
   }
 
-  const loadStations = async () => {
-    setLoadingStations(true)
+  const loadStations = async (silent = false) => {
+    if (!silent) setLoadingStations(true)
     try {
       const data = await fetchStations()
       setStations(data)
     } catch (err) {
       setActionError(adminErrorMessage(err, 'No pudimos traer las estaciones.'))
     } finally {
-      setLoadingStations(false)
+      if (!silent) setLoadingStations(false)
     }
   }
 
-  const loadConnectors = async () => {
-    setLoadingConnectors(true)
+  const loadConnectors = async (silent = false) => {
+    if (!silent) setLoadingConnectors(true)
     try {
       const stationId = connectorStationFilter === 'ALL' ? undefined : connectorStationFilter
       const data = await fetchConnectors(stationId)
@@ -191,7 +197,7 @@ export default function AdminPage() {
     } catch (err) {
       setActionError(adminErrorMessage(err, 'No pudimos traer los conectores.'))
     } finally {
-      setLoadingConnectors(false)
+      if (!silent) setLoadingConnectors(false)
     }
   }
 
@@ -264,7 +270,7 @@ export default function AdminPage() {
         setActionSuccess(`${action.user.fullName} fue dado de baja.`)
       }
       setPendingUserAction(null)
-      await loadUsers()
+      await loadUsers(true)
       await loadMetrics()
     } catch (err) {
       // La contraseña equivocada o el bloqueo se corrigen ahí mismo: el diálogo sigue abierto.
@@ -295,7 +301,7 @@ export default function AdminPage() {
     try {
       await activateUser(userId)
       setActionSuccess(`El usuario ${userId} fue reactivado exitosamente.`)
-      await loadUsers()
+      await loadUsers(true)
       await loadMetrics()
     } catch (err) {
       setActionError(adminErrorMessage(err, 'No se pudo reactivar al usuario.'))
@@ -313,7 +319,7 @@ export default function AdminPage() {
     try {
       await deactivateStation(stationId)
       setActionSuccess(`La estación ${stationId} fue dada de baja exitosamente.`)
-      await loadStations()
+      await loadStations(true)
       await loadMetrics()
     } catch (err) {
       setActionError(adminErrorMessage(err, 'No se pudo dar de baja la estación.'))
@@ -395,7 +401,7 @@ export default function AdminPage() {
           setStationDepositError(
             'La estación se guardó, pero no pudimos guardar la seña ni la hora pico. Revisalas y guardá de nuevo.',
           )
-          await loadStations()
+          await loadStations(true)
           return
         }
         setActionSuccess(`¡"${created.name}" creada exitosamente con ID ${created.id}!`)
@@ -411,7 +417,7 @@ export default function AdminPage() {
         setActionSuccess(`¡Estación ${updated.id} "${updated.name}" actualizada correctamente!`)
       }
       setStationModalOpen(null)
-      await loadStations()
+      await loadStations(true)
       await loadMetrics()
     } catch (err) {
       if (isStaleVersion(err)) {
@@ -454,8 +460,8 @@ export default function AdminPage() {
         setActionSuccess(`¡Conector ${updated.id} configurado exitosamente!`)
       }
       setConnectorModalOpen(null)
-      await loadStations()
-      await loadConnectors()
+      await loadStations(true)
+      await loadConnectors(true)
       await loadMetrics()
     } catch (err) {
       setActionError(adminErrorMessage(err, 'No se pudo guardar el conector.'))
@@ -466,14 +472,18 @@ export default function AdminPage() {
 
   // Change Operational Status of Connector
   const handleChangeConnectorStatus = async (connectorId: number, status: string) => {
+    /* El estado nuevo se ve al instante; si el backend lo rechaza, la recarga lo vuelve atrás. */
+    setConnectors((current) =>
+      current.map((c) => (c.id === connectorId ? { ...c, operationalStatus: status } : c)),
+    )
     setUpdatingConnectorStatusId(connectorId)
     setActionError(null)
     setActionSuccess(null)
     try {
       await changeConnectorStatus(connectorId, status)
       setActionSuccess(`Estado del conector ${connectorId} cambiado a ${status}.`)
-      await loadConnectors()
-      await loadStations()
+      await loadConnectors(true)
+      await loadStations(true)
     } catch (err) {
       setActionError(adminErrorMessage(err, 'No se pudo cambiar el estado del conector.'))
     } finally {
@@ -489,8 +499,8 @@ export default function AdminPage() {
     try {
       await deleteConnector(connectorId)
       setActionSuccess(`Conector ${connectorId} eliminado exitosamente.`)
-      await loadConnectors()
-      await loadStations()
+      await loadConnectors(true)
+      await loadStations(true)
       await loadMetrics()
     } catch (err) {
       setActionError(adminErrorMessage(err, 'No se pudo eliminar el conector.'))
@@ -631,8 +641,12 @@ export default function AdminPage() {
           Por eso tiene aire adentro (`pt-4`, `md:pb-6`) que se le devuelve afuera con el margen
           negativo de arriba: el contenido queda en el mismo lugar y la sombra tiene dónde caer. Al
           tablero no le cambia la cuenta: su `h-full` se mide contra el contenido, sin ese aire.
+
+          Y ese mismo aire de arriba es un desvanecido (`mask-image`): lo que sube scrolleando se
+          funde antes de llegar a las pestañas en vez de pegarse a ellas. El contenido quieto no se
+          toca, porque arranca justo donde la máscara ya es opaca.
         */}
-        <div className="-mx-4 -mt-4 min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-36 md:-mx-6 md:px-6 md:pb-6">
+        <div className="-mx-4 -mt-4 min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-36 [mask-image:linear-gradient(to_bottom,transparent,black_1rem)] md:-mx-6 md:px-6 md:pb-6">
           {/* TABLERO */}
           {activeTab === 'dashboard' &&
             (loadingMetrics && metrics === null ? (
@@ -656,7 +670,8 @@ export default function AdminPage() {
             así el título, el buscador y los filtros quedan siempre a la vista. Cada lista tiene
             aire adentro devuelto con margen negativo: sin él, el borde del scroll cortaba la sombra
             de las filas y, en Estaciones, la tarjeta de un borde al agrandarse con el mouse.
-            En el celular no: ahí scrollea la página entera, como el resto de la aplicación.
+            En el celular, el recuadro tiene un alto máximo —lo que queda entre las pestañas y la
+            barra de abajo— pero no se estira si la lista es corta; adentro scrollea igual la lista.
 
             Las listas llevan `relative` y no es decoración: los rótulos `sr-only` de cada fila son
             absolutos, y sin un ancestro posicionado adentro del scroll se ubicaban contra el
@@ -666,7 +681,7 @@ export default function AdminPage() {
           {activeTab === 'users' && (
             <Panel
               labelledBy="admin-users-title"
-              className="flex flex-col gap-5 md:h-full md:min-h-[24rem]"
+              className="flex flex-col gap-5 max-md:max-h-[calc(100svh-14.5rem)] md:h-full md:min-h-[24rem]"
             >
               <SectionHeader
                 id="admin-users-title"
@@ -707,7 +722,7 @@ export default function AdminPage() {
                   no entran en 360 y apilarlas escondería la comparación entre filas, que es para lo
                   que sirve una tabla.
                 */
-                <div className="slim-scrollbar relative -mx-2 -mb-2 min-h-0 px-2 pb-2 md:flex-1 md:overflow-auto">
+                <div className="slim-scrollbar relative -mx-2 -mb-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2 md:overflow-auto">
                   <table className="admin-table w-full border-separate border-spacing-y-2 text-left text-sm md:min-w-[46rem]">
                     <thead className="text-text-muted text-xs uppercase">
                       <tr>
@@ -775,7 +790,7 @@ export default function AdminPage() {
                             data-label="Alta"
                             className="text-text-muted px-4 py-3 text-xs whitespace-nowrap"
                           >
-                            {formatJoined(user.createdAt)}
+                            <span>{formatJoined(user.createdAt)}</span>
                           </td>
                           <td data-label="Acciones" className="px-4 py-3 text-right">
                             {/* Un ADMIN activo no tiene acciones: se da de baja por la base (02/11). */}
@@ -815,7 +830,7 @@ export default function AdminPage() {
           {activeTab === 'stations' && (
             <Panel
               labelledBy="admin-stations-title"
-              className="flex flex-col gap-5 md:h-full md:min-h-[24rem]"
+              className="flex flex-col gap-5 max-md:max-h-[calc(100svh-14.5rem)] md:h-full md:min-h-[24rem]"
             >
               <SectionHeader
                 id="admin-stations-title"
@@ -852,7 +867,7 @@ export default function AdminPage() {
                     : 'Ninguna estación coincide con la búsqueda.'}
                 </EmptyState>
               ) : (
-                <ul className="slim-scrollbar relative -m-4 grid min-h-0 grid-cols-1 content-start gap-4 p-4 md:flex-1 md:grid-cols-2 md:overflow-y-auto 2xl:grid-cols-3">
+                <ul className="slim-scrollbar relative -m-4 grid min-h-0 flex-1 grid-cols-1 content-start gap-4 overflow-y-auto p-4 md:grid-cols-2 2xl:grid-cols-3">
                   {filteredStations.map((station, index) => (
                     <li
                       key={station.id}
@@ -880,7 +895,7 @@ export default function AdminPage() {
                         )}
                       </div>
 
-                      <p className="text-text-muted flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                      <p className="text-text-muted flex flex-wrap justify-between gap-x-4 gap-y-1 text-xs">
                         <span>
                           <span className="text-text font-bold">
                             {station.connectors?.length ?? '–'}
@@ -898,7 +913,7 @@ export default function AdminPage() {
                         </span>
                       </p>
 
-                      <div className="border-border/50 mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 border-t pt-2">
+                      <div className="border-border/50 mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t pt-2">
                         <button
                           type="button"
                           onClick={() => openAddConnectorModal(station.id)}
@@ -920,7 +935,7 @@ export default function AdminPage() {
                             type="button"
                             disabled={deactivatingStationId === station.id}
                             onClick={() => handleDeactivateStation(station.id)}
-                            className={`${ACTION_DANGER} ml-auto`}
+                            className={ACTION_DANGER}
                           >
                             {deactivatingStationId === station.id
                               ? 'Dando de baja…'
@@ -939,7 +954,7 @@ export default function AdminPage() {
           {activeTab === 'connectors' && (
             <Panel
               labelledBy="admin-connectors-title"
-              className="flex flex-col gap-5 md:h-full md:min-h-[24rem]"
+              className="flex flex-col gap-5 max-md:max-h-[calc(100svh-14.5rem)] md:h-full md:min-h-[24rem]"
             >
               <SectionHeader
                 id="admin-connectors-title"
@@ -981,7 +996,7 @@ export default function AdminPage() {
               ) : filteredConnectors.length === 0 ? (
                 <EmptyState>Ningún conector coincide con la búsqueda.</EmptyState>
               ) : (
-                <div className="slim-scrollbar relative -mx-2 -mb-2 min-h-0 px-2 pb-2 md:flex-1 md:overflow-auto">
+                <div className="slim-scrollbar relative -mx-2 -mb-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2 md:overflow-auto">
                   <table className="admin-table w-full border-separate border-spacing-y-2 text-left text-sm md:min-w-[46rem]">
                     <thead className="text-text-muted text-xs uppercase">
                       <tr>
@@ -1022,7 +1037,7 @@ export default function AdminPage() {
                               data-label="Potencia máx."
                               className="text-text px-4 py-3 font-bold tabular-nums"
                             >
-                              {connector.maxPowerKw} kW
+                              <span>{connector.maxPowerKw} kW</span>
                             </td>
                             <td data-label="Estado" className="px-4 py-3">
                               <label>
@@ -1041,8 +1056,13 @@ export default function AdminPage() {
                                 </BareSelect>
                               </label>
                             </td>
-                            <td data-label="Acciones" className="px-4 py-3">
-                              <div className="flex items-center justify-end gap-1">
+                            {/*
+                              Sin rótulo en la tarjeta del celular: editar a la izquierda y borrar a
+                              la derecha se explican solos. En la tabla de escritorio van juntos a
+                              la derecha, bajo la columna Acciones.
+                            */}
+                            <td className="px-4 py-3">
+                              <div className="flex w-full items-center justify-between gap-1 md:justify-end">
                                 <button
                                   type="button"
                                   onClick={() => openEditConnectorModal(connector)}
@@ -1073,7 +1093,10 @@ export default function AdminPage() {
 
           {/* PRECIOS */}
           {activeTab === 'pricing' && (
-            <Panel labelledBy="admin-pricing-title" className="flex flex-col gap-5">
+            <Panel
+              labelledBy="admin-pricing-title"
+              className="flex flex-col gap-5 max-md:max-h-[calc(100svh-14.5rem)] md:h-full md:min-h-[24rem]"
+            >
               <SectionHeader
                 id="admin-pricing-title"
                 title="Precios de la carga"
@@ -1083,7 +1106,10 @@ export default function AdminPage() {
               {pricingSuccessMsg && <Notice tone="success">{pricingSuccessMsg}</Notice>}
               {pricingErrorMsg && <Notice tone="error">{pricingErrorMsg}</Notice>}
 
-              <form onSubmit={handleSaveRates} className="flex flex-col gap-5">
+              <form
+                onSubmit={handleSaveRates}
+                className="slim-scrollbar relative -m-2 flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-2"
+              >
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                   <RateField
                     label="Carga normal"

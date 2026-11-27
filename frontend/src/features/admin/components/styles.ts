@@ -78,6 +78,10 @@ export const ACTION_NEUTRAL = `${TEXT_ACTION} text-text focus-visible:outline-pr
  * mouse —no combinaba con nada de la aplicación—. La flecha la dibuja `BareSelect` y al pasar el
  * mouse solo se aclara, como el resto de las acciones. El color lo hereda del envoltorio, así la
  * flecha y el texto van siempre juntos.
+ *
+ * `field-sizing: content` hace que mida lo que ocupa el valor elegido y no la opción más larga de
+ * la lista: sin eso, "DISPONIBLE" quedaba con el ancho de "FUERA DE SERVICIO" y la flecha, lejos
+ * de la palabra. Donde el navegador no lo conoce, se ve como antes.
  */
 export const BARE_SELECT =
-  'focus-visible:ring-primary/50 cursor-pointer appearance-none rounded-lg bg-transparent py-1 pr-5 pl-1 text-xs font-bold tracking-wide uppercase [color:inherit] outline-none focus-visible:ring-2 disabled:cursor-default [&>option]:bg-surface [&>option]:text-text'
+  'focus-visible:ring-primary/50 cursor-pointer appearance-none [field-sizing:content] rounded-lg bg-transparent py-1 pr-5 pl-1 text-xs font-bold tracking-wide uppercase [color:inherit] outline-none focus-visible:ring-2 disabled:cursor-default [&>option]:bg-surface [&>option]:text-text'
