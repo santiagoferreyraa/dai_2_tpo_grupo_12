@@ -963,6 +963,34 @@ al azar en las bajas y los cambios de rol, y bloquean al ADMIN 15 minutos. Hay q
 contrato (`wsdl/power-grid.xsd`, el que importa el WSDL). Una respuesta que no lo cumple se trata
 como distribuidora caída: la carga sale a potencia normal y queda un ERROR en el log.
 
+### Pruebas de integración con contenedores
+
+Las clases `*IT` de los cuatro módulos corren contra un **PostgreSQL y un Artemis de verdad**,
+levantados con Testcontainers (las mismas imágenes que `docker-compose.yml`), y no contra H2 ni el
+broker embebido de los tests unitarios. El módulo arranca sin perfil, como en producción: Flyway le
+aplica las migraciones reales y el broker toma el `docker/artemis/broker.properties` del repo.
+
+| Módulo | Qué prueban |
+|--------|-------------|
+| core | Las migraciones y la siembra en PostgreSQL, las estaciones activas y el mail único |
+| charging | El cruce de reservas, la lectura de telemetría (los kWh nunca bajan, la atrasada no entra) y el tópico `telemetry.charging` de punta a punta |
+| integration | El reclamo de una deuda con ocho hilos a la vez (gana uno solo) y los reintentos vencidos |
+| async | Marcar todo leído o borrado, las franjas de Estadísticas, la cola `notifications.dispatch` y la cola de mensajes muertos tras los cinco intentos |
+
+Corren en `mvn verify` después de los tests unitarios (plugin failsafe), así que van adentro del check
+`Backend (Maven)`. **Necesitan Docker abierto.** Sin Docker, en tu máquina se saltean y el build
+sigue en verde; en CI fallan, para que no pasen en silencio sin haber probado nada.
+
+```bash
+# Todo, con los *IT
+mvn -B verify
+
+# Solo los *IT de un módulo (se saltean los tests unitarios)
+mvn -B -pl backend/ecopedia-async verify -Dtest=NoSuchTest -Dsurefire.failIfNoSpecifiedTests=false
+```
+
+La de mensajes muertos tarda unos 30 segundos: son las esperas reales entre intentos (2, 4, 8 y 16 s).
+
 ### Ediciones con ETag
 
 La edición de una estación (`PUT /api/stations/{id}`) y la del perfil (`PUT /api/users/profile`)
