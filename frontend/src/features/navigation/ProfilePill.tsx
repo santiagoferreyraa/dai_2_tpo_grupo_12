@@ -48,8 +48,12 @@ export default function ProfilePill() {
         borde izquierdo se curva hacia adentro, y con el mismo padding de la derecha el círculo
         quedaría pisando esa curva.
       */
-      className={`glass-panel hover:border-primary/60 ${HEIGHT} flex items-center gap-2.5 rounded-3xl pr-5 pl-1.5 transition-colors`}
-      aria-label={`Perfil de ${session.email}`}
+      className={`glass-panel hover:border-primary/60 ${HEIGHT} flex items-center gap-2.5 rounded-3xl pr-1.5 pl-1.5 transition-colors xl:pr-5`}
+      /*
+        Sin `aria-label` (QA-21, WCAG 2.5.3 "Label in Name"): el nombre accesible es lo que se ve
+        —el nombre y el rol—. Antes decía "Perfil de <correo>", y el correo no aparece en la ficha:
+        quien usa la app por voz dice el nombre que lee y el control no respondía.
+      */
     >
       {/*
         El avatar elegido, en el redondel de la ficha. **Es el mismo componente que dibuja el de la
@@ -67,7 +71,12 @@ export default function ProfilePill() {
       */}
       <ProfileAvatar size={36} placeholderClassName="text-background brand-fill" />
 
-      <span className="flex flex-col leading-tight">
+      {/*
+        Hasta `xl` la ficha es solo el avatar (QA-21): con el nombre a la vista no entraba en la
+        franja. El texto NO se saca, se esconde con `sr-only`: sigue siendo el nombre accesible del
+        enlace, así que el lector de pantalla lo dice igual que en escritorio.
+      */}
+      <span className="sr-only leading-tight xl:not-sr-only xl:flex xl:flex-col">
         <span className="text-text text-sm font-medium">{displayNameOf(session)}</span>
         {/*
           El rol debajo del nombre, en chico y en el verde de la marca. Es lo que explica por qué
