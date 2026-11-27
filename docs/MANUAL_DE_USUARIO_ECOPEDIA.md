@@ -195,13 +195,15 @@ Al ingresar con una cuenta con rol `CPO`, disponés de las pantallas **Mis estac
 Al ingresar con cuenta `ADMIN`, disponés del panel **Backoffice** (`/admin`) y del tablero global de **Estadísticas** (`/analytics`).
 
 ### 6.1. Panel Backoffice (`/admin`)
-1. **Métricas Globales:** total de usuarios activos y dados de baja, estaciones activas/dadas de baja y conectores por estado.
-2. **Gestión de Usuarios:**
-   * Listado con filtros y cambio de rol (`CONDUCTOR` / `CPO` / `ADMIN`) o **"Dar de Baja"** (baja lógica).
+Las secciones se eligen desde las pestañas de arriba; la abierta se ve más grande y en verde.
+
+1. **Tablero:** energía entregada en las últimas 24 h, usuarios por rol, estaciones operativas, demanda de la red, mapa de estaciones, conectores por estado (disponibles, ocupados y fuera de servicio) y precios vigentes. Tocar un pin del mapa abre esa estación en **Estaciones**.
+2. **Usuarios:**
+   * Listado con buscador, filtro por rol y cambio de rol (`CONDUCTOR` / `CPO` / `ADMIN`) o **"Dar de baja"** (baja lógica).
    * Por seguridad, toda modificación de rol o baja de usuario exige confirmar ingresando tu **contraseña de administrador**. Las cuentas que ya son `ADMIN` están protegidas contra cambios o bajas desde la interfaz web.
-3. **Gestión de Estaciones y Conectores:** podés crear, editar y dar de baja cualquier estación de la plataforma (`"Crear Estación"`, `"Dar de Baja"`).
-4. **Esquemas Tarifarios Globales de la Red:**
-   * Desde la sección **"Esquemas Tarifarios"** en `/admin` definís los valores vigentes para toda la red: tarifa de carga normal (`<= 22 kW`), tarifa de carga rápida (`> 22 kW`), multa por minuto de exceso y franja de hora pico.
+3. **Estaciones y Conectores:** podés crear, editar y dar de baja cualquier estación de la plataforma (`"Crear estación"`, `"Dar de baja"`), agregarle conectores, y desde **Conectores** cambiar su estado, editarlos o eliminarlos.
+4. **Precios de la red:**
+   * Desde la sección **"Precios"** en `/admin` definís los valores vigentes para toda la red: tarifa de carga normal (`<= 22 kW`), tarifa de carga rápida (`> 22 kW`) y multa por minuto de exceso. La franja de hora pico se muestra como referencia.
    * *(Recordá que el monto de seña y si aplica hora pico los define cada CPO en su estación desde `/stations`.)*
 
 ### 6.2. Tablero Global de Estadísticas (`/analytics`)

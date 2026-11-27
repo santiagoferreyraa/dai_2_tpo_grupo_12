@@ -84,7 +84,7 @@ export default function PasswordConfirmDialog({
         aria-modal="true"
         aria-labelledby="password-confirm-title"
         onSubmit={submit}
-        className="border-border bg-background relative w-full max-w-sm rounded-2xl border p-6 shadow-2xl"
+        className="glass-panel glass-modal analytics-rise relative w-full max-w-sm rounded-3xl p-6"
       >
         <h2 id="password-confirm-title" className="text-lg font-semibold">
           {title}
@@ -108,7 +108,7 @@ export default function PasswordConfirmDialog({
           className="border-border bg-surface/90 focus:border-primary mt-1.5 w-full rounded-lg border px-3 py-2 text-sm focus:outline-none disabled:opacity-60"
         />
         {error !== null && (
-          <p id="password-confirm-error" role="alert" className="mt-2 text-sm text-rose-400">
+          <p id="password-confirm-error" role="alert" className="text-danger mt-2 text-sm">
             {error}
           </p>
         )}

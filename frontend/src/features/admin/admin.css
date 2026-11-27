@@ -1,0 +1,274 @@
+/*
+  Backoffice del ADMIN: las animaciones propias del tablero.
+
+  Lo demás —el vidrio, la entrada escalonada de los paneles (`analytics-rise`) y el crecer de las
+  barras (`analytics-bar`)— es lo mismo que usa Estadísticas, y se reutiliza tal cual: el
+  backoffice tiene que leerse como parte de la misma aplicación, no como un panel aparte.
+*/
+
+/*
+  Los colores del backoffice, uno por tema.
+
+  **Los de texto son más oscuros en el tema claro que en el oscuro, y no por gusto:** el verde de
+  la marca, el ámbar de "ocupado" y el rojo de los estados, escritos en letra chica sobre el
+  vidrio claro, no llegan al 4.5 de contraste que pide WCAG. Acá cada estado tiene su tinta, que sí
+  llega en los dos temas; los puntos y los arcos, que no son texto, siguen usando los tokens de
+  `terminals.css`.
+
+  Los roles de la dona: en el oscuro, verde, blanco y gris —lo que ya se veía bien—; en el claro,
+  el negro y el gris se leían como "apagado", así que van el verde de la marca, un turquesa y un
+  rosado sin brillo, tres tonos que conviven con el verde sin pelearse.
+*/
+:root {
+  /* El verde de los textos de estado: el punto medio del degradado de la marca. */
+  --admin-ok: color-mix(in srgb, var(--brand-from) 50%, var(--brand-to));
+  --admin-warn: #f0b45a;
+  --admin-off: var(--color-danger);
+
+  --admin-role-cpo: var(--color-text);
+  --admin-role-admin: color-mix(in srgb, var(--color-text-muted) 60%, transparent);
+
+  --admin-type-ccs2: #5eead4;
+  --admin-type-chademo: #c4b5fd;
+  --admin-type-type2: #fcd34d;
+}
+
+[data-theme="light"] {
+  /*
+    El verde de la marca a mitad de su degradado, liso (pedido del 27/11): claro, pero un tono
+    más oscuro que la punta clara, que encandilaba. Sobre el vidrio claro sigue sin llegar al AA de
+    WCAG para texto chico, y es a sabiendas: por eso va siempre en mayúsculas y negrita, y la
+    palabra dice el estado sola.
+  */
+  --admin-ok: color-mix(in srgb, var(--brand-from) 50%, var(--brand-to));
+  --admin-warn: #9a5b00;
+  --admin-off: #b91c1c;
+
+  --admin-role-cpo: #0f9b8e;
+  --admin-role-admin: #d0607a;
+
+  --admin-type-ccs2: #0f766e;
+  --admin-type-chademo: #6d28d9;
+  --admin-type-type2: #a16207;
+}
+
+/*
+  Los arcos de la dona: cada tramo se dibuja desde cero hasta su largo.
+
+  El largo final lo pone el `stroke-dasharray` en línea; la animación solo dice de dónde arranca,
+  así que el navegador interpola hasta el valor del elemento. `--arc-length` es la circunferencia,
+  para que el hueco del arranque cubra la vuelta entera.
+*/
+.admin-arc {
+  animation: admin-arc-in 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--arc-delay, 0ms);
+}
+
+@keyframes admin-arc-in {
+  from {
+    stroke-dasharray: 0 var(--arc-length, 400);
+  }
+}
+
+/*
+  Las rayitas del medidor de conectores: aparecen una detrás de otra, de izquierda a derecha, como
+  la aguja de un tablero que se enciende.
+*/
+.admin-tick {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: admin-tick-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--tick-delay, 0ms);
+}
+
+@keyframes admin-tick-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+/* Las barritas de las tarjetas: crecen desde el piso, una detrás de otra, como las de Estadísticas. */
+.admin-bar {
+  transform-origin: bottom;
+  animation: admin-bar-in 650ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--bar-delay, 0ms);
+}
+
+@keyframes admin-bar-in {
+  from {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+}
+
+/* La barra de proporción (activas / dadas de baja) se llena desde la izquierda. */
+.admin-fill {
+  transform-origin: left;
+  animation: admin-fill-in 800ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--fill-delay, 0ms);
+}
+
+@keyframes admin-fill-in {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/*
+  Las filas de las tablas como pastillas de vidrio: el fondo va en cada celda y las puntas se
+  redondean en la primera y la última, porque una fila de tabla no admite borde redondeado propio.
+*/
+.admin-row > td {
+  background-color: color-mix(in srgb, var(--color-surface) 25%, transparent);
+  border-block: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent);
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease;
+}
+
+.admin-row > td:first-child {
+  border-left: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent);
+  border-start-start-radius: 1rem;
+  border-end-start-radius: 1rem;
+}
+
+.admin-row > td:last-child {
+  border-right: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent);
+  border-start-end-radius: 1rem;
+  border-end-end-radius: 1rem;
+}
+
+.admin-row:hover > td {
+  background-color: color-mix(in srgb, var(--color-surface) 45%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+}
+
+/*
+  En el celular cada fila pasa a ser una tarjeta de dos columnas, en vez de una tabla que se
+  arrastra de costado: con cinco o seis columnas en 360 px solo se veía la primera, y el resto
+  —el rol, el estado, las acciones— quedaba escondido fuera del panel. La primera celda (quién o
+  qué es) ocupa el ancho entero; las demás llevan su rótulo arriba, sacado de `data-label`, porque
+  el encabezado de la tabla ya no está a la vista. Para el lector sigue siendo una tabla: los
+  `display` no le quitan los roles a `table`, `tr` y `td` en los navegadores actuales.
+*/
+@media (max-width: 767px) {
+  .admin-table,
+  .admin-table > tbody {
+    display: block;
+  }
+
+  .admin-table > thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .admin-table .admin-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1rem 1.5rem;
+    margin-bottom: 0.75rem;
+    padding: 1.125rem 1.25rem;
+    border-radius: 1rem;
+    background-color: color-mix(in srgb, var(--color-surface) 25%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent);
+  }
+
+  .admin-table .admin-row > td {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+    padding: 0;
+    background: none;
+    border: 0;
+    text-align: left;
+  }
+
+  .admin-table .admin-row > td:first-child {
+    grid-column: 1 / -1;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+  }
+
+  /*
+    La columna de la derecha va contra el borde derecho de la tarjeta, rótulo y valor: alineadas
+    las dos a la izquierda, todo quedaba amontonado en la mitad izquierda y sobraba aire a la
+    derecha. Las celdas 3, 5… son las de la derecha (la 1 ocupa el ancho entero).
+  */
+  .admin-table .admin-row > td:nth-child(odd):not(:first-child) {
+    align-items: flex-end;
+    text-align: right;
+  }
+
+  /* Si la última queda sola en la columna izquierda (Conectores: las acciones), ocupa el ancho y se
+     va a la derecha, que es donde se busca un botón. */
+  .admin-table .admin-row > td:last-child:nth-child(even) {
+    grid-column: 1 / -1;
+    align-items: flex-end;
+  }
+
+  /*
+    El valor de cada celda, en un renglón del mismo alto para todas. Un valor en letra de 14 px (el
+    nombre de la estación) y otro de 12 px (el tipo) traían cada uno su alto de renglón, y el chico
+    quedaba más arriba que el grande en la misma fila de la tarjeta. Con el mismo alto, los dos
+    quedan centrados en la misma línea.
+  */
+  .admin-table .admin-row > td:not(:first-child) > * {
+    line-height: 1.5rem;
+    min-height: 1.5rem;
+  }
+
+  /*
+    Los botones de las celdas ("Dar de baja", "Reactivar") traen relleno arriba y abajo, que en la
+    tabla de escritorio agranda el blanco para el mouse. En la tarjeta los dejaba 4 px más altos que
+    el valor de al lado y la palabra quedaba más abajo que la fecha de alta. Sin ese relleno el
+    botón mide lo mismo que el renglón: 24 px, el mínimo de WCAG para un blanco táctil.
+  */
+  .admin-table .admin-row > td:not(:first-child) > button {
+    padding-block: 0;
+  }
+
+  .admin-table .admin-row > td[data-label]::before {
+    content: attr(data-label);
+    color: var(--color-text-muted);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+}
+
+/*
+  Las tarjetas de Estaciones crecen un poco al pasar el mouse, de a poco.
+
+  La transición va acá y no como utilidad: la tarjeta es `.glass-inset`, que trae su propia
+  `transition` (fondo y borde) y, al estar fuera de las capas de Tailwind, pisaba la de la utilidad.
+  Sin `scale` en la lista, la tarjeta saltaba de tamaño de golpe. Se repiten fondo y borde para no
+  perder lo que el vidrio ya animaba.
+*/
+.admin-station-card {
+  transition:
+    scale 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 300ms ease,
+    border-color 300ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-station-card {
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-arc,
+  .admin-bar,
+  .admin-tick,
+  .admin-fill {
+    animation: none;
+  }
+}

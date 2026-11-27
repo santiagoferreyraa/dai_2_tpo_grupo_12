@@ -397,10 +397,12 @@ export default function StationsPage() {
           El listado scrollea por su cuenta: con muchas estaciones, el operador no tiene que bajar
           toda la pantalla para llegar a la que busca, y el resumen y los filtros siguen a mano.
           En el celular tiene un alto máximo; en pantalla ancha ocupa lo que queda de la columna.
-          El `p-1` con `-m-1` le da aire al anillo de la estación elegida, que si no se recorta
-          contra el borde del scroll.
+          El aire de adentro (`px-3 py-2`, devuelto afuera con `-mx-3`) es para la estación
+          elegida, que se agranda un 1,5 % y suma un anillo de 2 px: en una tarjeta de 700 px eso
+          son unos 7 px por lado. Con los 4 px de antes la tarjeta de cada borde se cortaba contra
+          el scroll; con 12 entra entera y las tarjetas siguen alineadas con el resto.
         */}
-        <ul className="slim-scrollbar -mx-1 mt-3 flex max-h-[60svh] flex-col gap-3 overflow-y-auto overscroll-contain p-1 lg:min-h-0 lg:max-h-none lg:flex-1 lg:pb-6">
+        <ul className="slim-scrollbar -mx-3 mt-2 flex max-h-[60svh] flex-col gap-3 overflow-y-auto overscroll-contain px-3 py-2 lg:min-h-0 lg:max-h-none lg:flex-1 lg:pb-6">
           {visible.map((station) => (
             <StationCard
               key={station.id}

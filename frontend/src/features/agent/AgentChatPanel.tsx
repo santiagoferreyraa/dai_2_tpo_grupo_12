@@ -34,9 +34,11 @@ const COMPOSER_MAX_HEIGHT_PX = 120
 interface AgentChatPanelProps {
   chat: AgentChat
   onClose: () => void
+  /** El panel se está yendo: corre la animación de salida antes de desmontarse. */
+  closing?: boolean
 }
 
-export default function AgentChatPanel({ chat, onClose }: AgentChatPanelProps) {
+export default function AgentChatPanel({ chat, onClose, closing = false }: AgentChatPanelProps) {
   const session = useSession()
   const isWide = useMediaQuery('(min-width: 768px)')
 
@@ -116,7 +118,9 @@ export default function AgentChatPanel({ chat, onClose }: AgentChatPanelProps) {
       <div
         aria-hidden="true"
         onClick={onClose}
-        className="agent-scrim fixed inset-0 z-[1155] bg-black/50 backdrop-blur-sm md:hidden"
+        className={`agent-scrim fixed inset-0 z-[1155] bg-black/50 backdrop-blur-sm md:hidden ${
+          closing ? 'agent-scrim--out' : ''
+        }`}
       />
 
       {/*
@@ -144,9 +148,14 @@ export default function AgentChatPanel({ chat, onClose }: AgentChatPanelProps) {
         /* Modal solo donde de verdad lo es: en el celular tapa todo, en pantalla ancha no. */
         aria-modal={isWide ? undefined : true}
         aria-label="Chat con EcoBot"
-        className={`agent-panel glass-panel fixed inset-x-3 top-16 bottom-3 z-[1160] flex origin-bottom flex-col overflow-hidden rounded-3xl p-2.5 md:inset-auto md:right-6 md:bottom-28 md:h-[min(32rem,calc(100vh-11rem))] md:w-96 md:origin-bottom-right ${
+        /*
+          En la PC el panel ya no se apoya sobre la burbuja —la burbuja se desvanece al abrirlo y
+          puede estar en cualquier lado—: va contra el borde derecho de la ventana, abajo, y entra
+          deslizándose desde ahí (`agent.css`). En el celular sigue siendo la hoja casi entera.
+        */
+        className={`agent-panel glass-panel fixed inset-x-3 top-16 bottom-3 z-[1160] flex origin-bottom flex-col overflow-hidden rounded-3xl p-2.5 md:inset-auto md:right-6 md:bottom-6 md:h-[min(36rem,calc(100vh-8rem))] md:w-96 ${
           isWide ? '' : 'glass-modal'
-        }`}
+        } ${closing ? 'agent-panel--out' : ''}`}
       >
         {/*
           La hoja: todo el chat en una sola pieza de vidrio, apoyada sobre el marco. `overflow-hidden`
