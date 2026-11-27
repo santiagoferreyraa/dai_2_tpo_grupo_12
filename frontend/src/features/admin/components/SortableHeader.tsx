@@ -20,11 +20,11 @@ export default function SortableHeader({ direction, onSort, children }: Sortable
   const ariaSort = direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'
 
   return (
-    <th className="py-3 px-4" aria-sort={ariaSort}>
+    <th className="px-4 py-1 font-semibold" aria-sort={ariaSort}>
       <button
         type="button"
         onClick={onSort}
-        className={`inline-flex items-center gap-1 uppercase hover:text-text ${
+        className={`hover:text-text focus-visible:outline-primary inline-flex cursor-pointer items-center gap-1 rounded uppercase focus-visible:outline-2 ${
           direction ? 'text-text' : ''
         }`}
       >

@@ -19,6 +19,8 @@
 @import "./features/charging/charging.css";
 /* El tablero de Estadísticas: la silueta con pestaña, los pines amarillos y la entrada del gráfico. */
 @import "./features/analytics/analytics.css";
+/* El backoffice del ADMIN: la dona, el medidor de conectores y las filas de vidrio de las tablas. */
+@import "./features/admin/admin.css";
 
 /*
   Tema de la aplicación (RNF07 y RNF08).

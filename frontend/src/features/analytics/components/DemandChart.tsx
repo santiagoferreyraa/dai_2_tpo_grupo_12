@@ -18,6 +18,12 @@ interface DemandChartProps {
   to: Date
   /** Cambia cuando cambia lo que se mira: es lo que vuelve a disparar la entrada de las barras. */
   animationKey: string
+  /**
+   * Un color liso para todas las barras, pico incluido. Sin él, las barras van en el verde de la
+   * marca y el pico en su degradado, como en Estadísticas; el backoffice pasa el verde de sus
+   * otras barras para que todo el tablero hable el mismo verde.
+   */
+  barColor?: string
 }
 
 /** El ancho que se le estima a cada carácter de un rótulo del eje, a 11 px. */
@@ -91,7 +97,13 @@ function barRange(bar: Bar, bucketMinutes: number): string {
  * Se dibuja en píxeles medidos y no con un `viewBox` estirado: estirado, el texto de los ejes se
  * deforma con el ancho del panel.
  */
-export default function DemandChart({ series, from, to, animationKey }: DemandChartProps) {
+export default function DemandChart({
+  series,
+  from,
+  to,
+  animationKey,
+  barColor,
+}: DemandChartProps) {
   const [ref, { width, height }] = useElementSize<HTMLDivElement>()
   const [hovered, setHovered] = useState<number | null>(null)
 
@@ -186,7 +198,7 @@ export default function DemandChart({ series, from, to, animationKey }: DemandCh
                   width={Math.max(1, slotWidth - gap)}
                   height={h}
                   rx={Math.min(3, (slotWidth - gap) / 2)}
-                  fill={isPeak ? 'url(#analytics-brand)' : 'var(--color-primary)'}
+                  fill={barColor ?? (isPeak ? 'url(#analytics-brand)' : 'var(--color-primary)')}
                   fillOpacity={isPeak ? 1 : hovered === i ? 0.85 : 0.45}
                 />
               )
