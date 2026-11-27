@@ -20,6 +20,38 @@ interface DemandChartProps {
   animationKey: string
 }
 
+/** El ancho que se le estima a cada carácter de un rótulo del eje, a 11 px. */
+const AXIS_CHAR_WIDTH = 6.5
+/** El aire mínimo entre dos rótulos del eje. */
+const AXIS_LABEL_GAP = 6
+
+/**
+ * Dónde y cómo se escribe cada rótulo del eje de abajo, salteando los que se pisarían.
+ *
+ * Las marcas pegadas a una punta se alinean hacia adentro, o el texto se corta. Pero la de la
+ * izquierda, alineada hacia la derecha, avanza sobre la siguiente: a 360 px "16:00" y "20:00"
+ * quedaban encimados (QA-21). Se recorre de izquierda a derecha y una marca que se superpone con
+ * la última dibujada se saltea: el eje pierde un rótulo, que es mejor que dos ilegibles.
+ */
+function axisLabels(
+  ticks: { at: Date; label: string }[],
+  xOf: (d: Date) => number,
+  width: number,
+): { at: Date; label: string; x: number; anchor: 'start' | 'middle' | 'end' }[] {
+  const placed: { at: Date; label: string; x: number; anchor: 'start' | 'middle' | 'end' }[] = []
+  let lastRight = -Infinity
+  for (const tick of ticks) {
+    const x = xOf(tick.at)
+    const anchor = x < AXIS_LEFT + 24 ? 'start' : x > width - 24 ? 'end' : 'middle'
+    const w = tick.label.length * AXIS_CHAR_WIDTH
+    const left = anchor === 'start' ? x : anchor === 'end' ? x - w : x - w / 2
+    if (left < lastRight + AXIS_LABEL_GAP) continue
+    placed.push({ ...tick, x, anchor })
+    lastRight = left + w
+  }
+  return placed
+}
+
 /** Las marcas del eje de abajo, según cuánto tiempo abarca el gráfico. */
 function ticksOf(from: Date, to: Date): { at: Date; label: string }[] {
   const span = to.getTime() - from.getTime()
@@ -161,19 +193,12 @@ export default function DemandChart({ series, from, to, animationKey }: DemandCh
             })}
           </g>
 
-          {ticksOf(from, to).map((tick) => (
+          {axisLabels(ticksOf(from, to), xOf, width).map((tick) => (
             <text
               key={tick.at.getTime()}
-              x={xOf(tick.at)}
+              x={tick.x}
               y={height - 4}
-              /* Las marcas pegadas a una punta se alinean hacia adentro, o el texto se corta. */
-              textAnchor={
-                xOf(tick.at) < AXIS_LEFT + 24
-                  ? 'start'
-                  : xOf(tick.at) > width - 24
-                    ? 'end'
-                    : 'middle'
-              }
+              textAnchor={tick.anchor}
               className="fill-text-muted text-[11px]"
             >
               {tick.label}
