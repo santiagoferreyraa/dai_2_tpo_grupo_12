@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Lo que dejan las pruebas de punta a punta (Playwright)
+/test-results/
+/playwright-report/
+/blob-report/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

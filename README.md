@@ -1127,6 +1127,7 @@ está en `config/spotbugs-exclude.xml` y `config/pmd-ruleset.xml`; los hallazgos
 | `pnpm format` | Formatea todo con Prettier |
 | `pnpm format:check` | Falla si algo quedó sin formatear (es lo que corre CI) |
 | `pnpm preview` | Sirve el build de producción localmente |
+| `pnpm e2e` | Los escenarios de punta a punta con Playwright (ver abajo) |
 
 Se corren desde `frontend/`, o desde la raíz con `pnpm --dir frontend <comando>`.
 
@@ -1140,6 +1141,32 @@ El orden de las reglas en `vite.config.ts` importa: Vite se queda con la primera
 
 **Alias de imports:** `@/` apunta a `frontend/src/`, así que se importa `@/components/Map` en
 vez de `../../components/Map`.
+
+#### Las pruebas de punta a punta
+
+Cinco escenarios con Playwright en `frontend/e2e/`, que manejan un Chromium contra el sistema
+entero: registro y login, búsqueda en el mapa, alta de tarjeta, reserva con checkout y acceso
+denegado. Corren en CI en el job `E2E (Playwright)`.
+
+```bash
+# Una sola vez: el navegador de Playwright
+pnpm --dir frontend exec playwright install chromium
+
+# Con `pnpm dev` levantado (los escenarios no levantan los backends)
+pnpm --dir frontend e2e
+
+# Contra otro sistema, por ejemplo el de Docker
+E2E_BASE_URL=http://localhost pnpm --dir frontend e2e
+```
+
+- **Cada escenario registra su propio conductor**, así que se pueden repetir contra la misma base.
+  Lo que sí necesitan son las 15 estaciones de la siembra tal como vienen (el de búsqueda cuenta las
+  que tienen conector CHADEMO).
+- **No salen a internet:** los mosaicos del mapa, las fuentes, la ruta y la búsqueda de direcciones
+  se cortan, para que un servicio de terceros caído no haga fallar un escenario.
+- Cuando uno falla, en `frontend/test-results/` queda la captura y la traza paso a paso
+  (`pnpm --dir frontend exec playwright show-trace <ruta del trace.zip>`). En CI van en el artefacto
+  `e2e`.
 
 ---
 
