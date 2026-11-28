@@ -329,7 +329,7 @@ public class PaymentServiceImpl implements PaymentService {
             card = usable.get();
         }
 
-        if (hasOutstandingDebt(driverId)) {
+        if (debtExists(driverId)) {
             return PaymentValidationResult.rejected(
                     "El conductor posee cobros pendientes de pago", ValidationErrorCode.DRIVER_HAS_DEBT);
         }
@@ -346,6 +346,16 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional(readOnly = true)
     public boolean hasOutstandingDebt(Long driverId) {
+        return debtExists(driverId);
+    }
+
+    /*
+     * La consulta, sin @Transactional propio. validatePaymentMethod corre sin transacción
+     * (NOT_SUPPORTED) y antes llamaba a hasOutstandingDebt desde esta misma clase: una llamada
+     * interna no pasa por el proxy de Spring, así que su readOnly se ignoraba en silencio
+     * (SonarCloud S2229). Ahora los dos llaman a esto y cada uno queda con la transacción que declara.
+     */
+    private boolean debtExists(Long driverId) {
         // Pendiente o vencida: las dos bloquean (ECO-62).
         return pendingPaymentRepository.existsByDriverIdAndStatusIn(driverId, PendingPaymentStatus.OPEN);
     }
