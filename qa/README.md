@@ -8,6 +8,7 @@ Todo lo que el QA necesita para correr las pruebas de los criterios de la Clase 
 | --- | --- | --- |
 | `qa/historias-de-usuario.md` | QA-19 (ECO-169) | Catálogo maestro `HU-01` a `HU-16` con prioridad MoSCoW, criterios Gherkin y trazabilidad |
 | `docs/MANUAL_DE_USUARIO_ECOPEDIA.md` | QA-10 (ECO-160) | Manual de usuario (Conductor, CPO, Administrador) contrastado contra la app (`MAN-01`..`MAN-20`) |
+| `qa/registro-de-defectos.md` | QA-04 (ECO-154, G9) | Registro consolidado de defectos (`DEF-01`..`DEF-30` y `DEF-DOC-01`..`05`) y dictamen G9 |
 | `backend/*/src/test/.../security/ApiAttackTest.java` | QA-07 | JWT hostil, mass assignment e inyección, en los 4 módulos |
 | `backend/*/src/test/.../security/HostileTokens.java` | QA-07 | Tokens vencidos, alterados, `alg=none` y de otro emisor |
 | `backend/ecopedia-core/.../admin/AdminErrorResponseTest.java` | QA-04 | Regresión de DEF-05 (corregido el 02/11) |
