@@ -6,17 +6,16 @@ import static org.mockito.Mockito.*;
 import com.ecopedia.core.admin.domain.AdminDashboard;
 import com.ecopedia.core.admin.service.AdminServiceImpl;
 import com.ecopedia.core.terminal.domain.Connector;
-import com.ecopedia.core.terminal.domain.ConnectorRepository;
 import com.ecopedia.core.terminal.domain.OperationalStatus;
 import com.ecopedia.core.terminal.domain.Station;
-import com.ecopedia.core.terminal.domain.StationRepository;
 import com.ecopedia.core.terminal.domain.TerminalService;
 import com.ecopedia.core.user.domain.Role;
 import com.ecopedia.core.user.domain.User;
-import com.ecopedia.core.user.domain.UserRepository;
 import com.ecopedia.core.user.domain.UserService;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -25,15 +24,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
 class AdminServiceTest {
-
-    @Mock
-    private UserRepository userRepository;
-
-    @Mock
-    private StationRepository stationRepository;
-
-    @Mock
-    private ConnectorRepository connectorRepository;
 
     @Mock
     private UserService userService;
@@ -94,9 +84,9 @@ class AdminServiceTest {
         outOfServiceConnector.setId(102L);
         outOfServiceConnector.setOperationalStatus(OperationalStatus.OUT_OF_SERVICE);
 
-        when(userRepository.findAll()).thenReturn(List.of(mockConductor, mockAdmin, inactiveCpo));
-        when(stationRepository.findAll()).thenReturn(List.of(mockStation, inactiveStation));
-        when(connectorRepository.findAll())
+        when(userService.listUsers(null)).thenReturn(List.of(mockConductor, mockAdmin, inactiveCpo));
+        when(terminalService.getStationsIncludingInactive()).thenReturn(List.of(mockStation, inactiveStation));
+        when(terminalService.getAllConnectors())
                 .thenReturn(List.of(mockConnector, occupiedConnector, outOfServiceConnector));
 
         AdminDashboard summary = adminService.getDashboardSummary();
@@ -118,15 +108,18 @@ class AdminServiceTest {
         assertEquals(1, summary.connectorsSummary().outOfService());
     }
 
+    /**
+     * RNF09: el backoffice lee Usuarios y Terminales por sus interfaces públicas. Si vuelve a pedir
+     * un repositorio de otro componente en el constructor, este test lo ve.
+     */
     @Test
-    void testActivateUser() {
-        adminService.activateUser(5L);
-        verify(userService, times(1)).activateUser(5L);
-    }
+    @DisplayName("El backoffice no depende de ningún repositorio de otro componente (RNF09)")
+    void dependsOnlyOnComponentInterfaces() {
+        List<String> dependencies = Arrays.stream(AdminServiceImpl.class.getConstructors())
+                .flatMap(constructor -> Arrays.stream(constructor.getParameterTypes()))
+                .map(Class::getSimpleName)
+                .toList();
 
-    @Test
-    void testDeactivateStation() {
-        adminService.deactivateStation(10L);
-        verify(terminalService, times(1)).deactivateStation(10L);
+        assertEquals(List.of("UserService", "TerminalService"), dependencies);
     }
 }
