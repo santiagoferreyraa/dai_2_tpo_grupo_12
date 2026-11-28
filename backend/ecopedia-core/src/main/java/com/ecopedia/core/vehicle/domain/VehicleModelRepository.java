@@ -14,6 +14,8 @@ public interface VehicleModelRepository {
 
     Optional<VehicleModel> findById(Long modelId);
 
+    List<VehicleModel> findAllById(Iterable<Long> modelIds);
+
     /** El catálogo ofrecible, ordenado como se muestra: por marca y dentro de ella por modelo. */
     List<VehicleModel> findByActiveTrueOrderByBrandAscNameAsc();
 }

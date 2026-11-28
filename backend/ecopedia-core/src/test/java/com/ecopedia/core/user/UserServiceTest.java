@@ -193,17 +193,20 @@ class UserServiceTest {
     @Test
     void testUpdateProfileWithNameVehicleAndClearingVehicle() {
         VehicleModel model = new VehicleModel();
+        model.setId(15L);
         when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
         when(vehicleService.getModel(15L)).thenReturn(model);
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         User updated = userService.updateProfile(1L, new ProfileData("Juan Actualizado", 15L));
         assertEquals("Juan Actualizado", updated.getFullName());
-        assertSame(model, updated.getVehicleModel());
+        // Se guarda solo el id del catálogo (RNF09), después de que VehicleService lo validó.
+        assertEquals(15L, updated.getVehicleModelId());
+        verify(vehicleService).getModel(15L);
 
         User clearedVehicle = userService.updateProfile(1L, new ProfileData("   ", null));
         assertEquals("Juan Actualizado", clearedVehicle.getFullName());
-        assertNull(clearedVehicle.getVehicleModel());
+        assertNull(clearedVehicle.getVehicleModelId());
 
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
         assertThrows(ResourceNotFoundException.class, () -> userService.getProfile(99L));

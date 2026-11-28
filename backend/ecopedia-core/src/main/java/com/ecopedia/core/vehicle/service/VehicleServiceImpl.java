@@ -4,7 +4,13 @@ import com.ecopedia.core.vehicle.domain.VehicleModel;
 import com.ecopedia.core.vehicle.domain.VehicleModelNotFoundException;
 import com.ecopedia.core.vehicle.domain.VehicleModelRepository;
 import com.ecopedia.core.vehicle.domain.VehicleService;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,5 +42,17 @@ public class VehicleServiceImpl implements VehicleService {
                 .findById(modelId)
                 .filter(VehicleModel::isActive)
                 .orElseThrow(() -> new VehicleModelNotFoundException(modelId));
+    }
+
+    @Override
+    public Optional<VehicleModel> findModel(Long modelId) {
+        return modelRepository.findById(modelId);
+    }
+
+    @Override
+    public Map<Long, VehicleModel> findModels(Collection<Long> modelIds) {
+        if (modelIds.isEmpty()) return Map.of();
+        return modelRepository.findAllById(Set.copyOf(modelIds)).stream()
+                .collect(Collectors.toMap(VehicleModel::getId, Function.identity()));
     }
 }

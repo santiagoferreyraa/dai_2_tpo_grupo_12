@@ -207,4 +207,70 @@ class VehicleSelectionTest {
             modelRepository.save(model);
         }
     }
+
+    /**
+     * Elegir un modelo dado de baja no se puede (arriba), pero quien ya lo tenía no lo pierde: por
+     * eso el perfil resuelve la ficha con {@code findModel} y no con {@code getModel}, que filtra.
+     */
+    @Test
+    @DisplayName("Un modelo que se da de baja después de elegido sigue en el perfil de quien lo tenía")
+    void keepsAModelDiscontinuedAfterBeingChosen() throws Exception {
+        User driver = givenDriver();
+        VehicleModel model = anyModel();
+        mockMvc.perform(put("/api/users/profile")
+                        .header(HttpHeaders.AUTHORIZATION, bearerFor(driver))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(profileBody(model.getId())))
+                .andExpect(status().isOk());
+        model.setActive(false);
+        modelRepository.save(model);
+
+        try {
+            mockMvc.perform(get("/api/users/profile").header(HttpHeaders.AUTHORIZATION, bearerFor(driver)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.vehicle.id").value(model.getId()));
+        } finally {
+            model.setActive(true);
+            modelRepository.save(model);
+        }
+    }
+
+    @Test
+    @DisplayName("La lista de usuarios del ADMIN trae el auto de cada uno, y null para quien no tiene")
+    void theAdminListCarriesEachVehicle() throws Exception {
+        User withCar = givenDriver();
+        User withoutCar = userService.register(
+                new RegistrationData("sin-auto@ecopedia.test", "unaClave123", "Sin Auto", Role.CONDUCTOR));
+        VehicleModel model = anyModel();
+        mockMvc.perform(put("/api/users/profile")
+                        .header(HttpHeaders.AUTHORIZATION, bearerFor(withCar))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(profileBody(model.getId())))
+                .andExpect(status().isOk());
+
+        User adminUser = userService.register(
+                new RegistrationData("admin-autos@ecopedia.test", "unaClave123", "Admin Autos", Role.CONDUCTOR));
+        adminUser.setRole(Role.ADMIN);
+        userRepository.saveAndFlush(adminUser);
+        String admin = bearerFor(adminUser);
+        mockMvc.perform(get("/api/users").param("role", "CONDUCTOR").header(HttpHeaders.AUTHORIZATION, admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == %d)].vehicle.id", withCar.getId())
+                        .value(model.getId().intValue()))
+                .andExpect(jsonPath("$[?(@.id == %d)].vehicle.id", withoutCar.getId())
+                        .isEmpty());
+    }
+
+    /**
+     * RNF09: Usuarios guarda el id del auto y le pide la ficha a {@code VehicleService}; no mapea la
+     * entidad de otro componente. Un {@code @ManyToOne} hacia {@code VehicleModel} rompe este test.
+     */
+    @Test
+    @DisplayName("User no mapea ninguna entidad de Vehículos (RNF09)")
+    void userDoesNotMapTheVehicleEntity() {
+        boolean mapsVehicleModel = java.util.Arrays.stream(User.class.getDeclaredFields())
+                .anyMatch(field -> field.getType().equals(VehicleModel.class));
+
+        assertTrue(!mapsVehicleModel, "User tiene un campo de tipo VehicleModel");
+    }
 }
