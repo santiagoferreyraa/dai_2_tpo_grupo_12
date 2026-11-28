@@ -15,3 +15,7 @@
 # ci.yml de la rama del #46: es el nombre del proyecto en SonarCloud (organización_repositorio),
 # que es público. La clave real, SONAR_TOKEN, va en los secretos de GitHub.
 8bfb5d15633f30ec69b1400296f62d472d9db7ba:.github/workflows/ci.yml:generic-api-key:155
+
+# La misma línea del #105 (sonar.projectKey), en el commit de su rama y en el squash de main.
+1ce28aea75aa4d7238eb73a8daec55a027351962:.github/workflows/ci.yml:generic-api-key:183
+6b53d05bfde635ab04f613efeb9a183283d55e9e:.github/workflows/ci.yml:generic-api-key:183
