@@ -8,6 +8,7 @@ package com.ecopedia.integration.payment.domain;
  * le confirmaría a quien prueba ids que la tarjeta existe (SEC-06). El motivo va al log.
  */
 public class NoUsablePaymentMethodException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     public NoUsablePaymentMethodException(String message) {
         super(message);

@@ -3,7 +3,6 @@ package com.ecopedia.core.admin.web;
 import com.ecopedia.core.admin.domain.AdminDashboard;
 import com.ecopedia.core.admin.domain.AdminService;
 import com.ecopedia.core.admin.web.dto.AdminDashboardResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -32,23 +31,9 @@ public class AdminController {
     }
 
     /*
-     * La baja de usuarios ya no está acá (02/11): duplicaba DELETE /api/users/{id}, no la llamaba
-     * nadie y, sin la contraseña del ADMIN, era una forma de saltearse esa confirmación.
+     * Las bajas y la reactivación ya no están acá: duplicaban las rutas de cada componente y no las
+     * llamaba nadie. La baja de usuarios se sacó el 02/11 (salteaba la contraseña del ADMIN); la
+     * reactivación de usuarios y la baja de estaciones, el 28/11. Se usan POST /api/users/{id}/activate
+     * y DELETE /api/stations/{id}.
      */
-
-    /** Alta/Reactivación lógica administrativa de un usuario. */
-    @PostMapping("/users/{id}/activate")
-    @ApiResponse(responseCode = "204", description = "Hecho, sin cuerpo.")
-    public ResponseEntity<Void> activateUser(@PathVariable Long id) {
-        adminService.activateUser(id);
-        return ResponseEntity.noContent().build();
-    }
-
-    /** Baja lógica administrativa de una estación de carga. */
-    @DeleteMapping("/stations/{id}")
-    @ApiResponse(responseCode = "204", description = "Hecho, sin cuerpo.")
-    public ResponseEntity<Void> deactivateStation(@PathVariable Long id) {
-        adminService.deactivateStation(id);
-        return ResponseEntity.noContent().build();
-    }
 }

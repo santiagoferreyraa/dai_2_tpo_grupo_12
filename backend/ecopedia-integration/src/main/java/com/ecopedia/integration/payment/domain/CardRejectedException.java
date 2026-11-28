@@ -10,6 +10,7 @@ package com.ecopedia.integration.payment.domain;
  * inválido" —el circuit breaker, que no los cuenta como falla de la pasarela— siga igual.
  */
 public class CardRejectedException extends IllegalArgumentException {
+    private static final long serialVersionUID = 1L;
 
     /** El número no es válido: incompleto, con letras o con el dígito verificador mal. */
     public static final String CARD_NUMBER_INVALID = "CARD_NUMBER_INVALID";
@@ -37,6 +38,11 @@ public class CardRejectedException extends IllegalArgumentException {
 
     public CardRejectedException(String code, String message) {
         super(message);
+        this.code = code;
+    }
+
+    public CardRejectedException(String code, String message, Throwable cause) {
+        super(message, cause);
         this.code = code;
     }
 

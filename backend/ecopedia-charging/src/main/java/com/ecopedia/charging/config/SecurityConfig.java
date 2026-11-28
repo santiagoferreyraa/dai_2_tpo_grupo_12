@@ -7,6 +7,7 @@ import com.ecopedia.charging.web.ApiProblems;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -66,7 +67,24 @@ public class SecurityConfig {
                                 PathPatternRequestMatcher.withDefaults().matcher("/api/**"),
                                 new StaticHeadersWriter("Content-Security-Policy", API_CONTENT_SECURITY_POLICY))))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(requests -> requests.anyRequest().permitAll())
+                /*
+                 * Las lecturas quedan abiertas y quien decide es la anotación de cada método, como
+                 * siempre. Las escrituras, en cambio, piden sesión ya acá: así un anónimo recibe 401
+                 * antes de que se lea el cuerpo, y no un 400 que le cuente qué campos se esperan
+                 * (la validación del @RequestBody corre antes que el @PreAuthorize).
+                 * Las únicas escrituras sin sesión son las de /internal/**, que tienen su propia
+                 * clave de servicio (InternalTokenFilter).
+                 */
+                .authorizeHttpRequests(requests -> requests.requestMatchers(HttpMethod.GET, "/**")
+                        .permitAll()
+                        .requestMatchers(HttpMethod.HEAD, "/**")
+                        .permitAll()
+                        .requestMatchers(HttpMethod.OPTIONS, "/**")
+                        .permitAll()
+                        .requestMatchers("/internal/**", "/h2-console/**", "/error")
+                        .permitAll()
+                        .anyRequest()
+                        .authenticated())
                 // Con sesión y sin el rol, un 404 como el de una ruta que no existe; el 403 va
                 // al log. Ver NotFoundAccessDeniedHandler.
                 // Sin sesión válida, 401 (UnauthorizedEntryPoint). Con sesión y sin el rol, un 404

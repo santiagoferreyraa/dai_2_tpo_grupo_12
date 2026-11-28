@@ -706,6 +706,10 @@
                 "value": "application/json"
               },
               {
+                "key": "Authorization",
+                "value": "Bearer {{driverToken}}"
+              },
+              {
                 "key": "Content-Type",
                 "value": "application/json"
               }
@@ -762,6 +766,46 @@
           ],
           "request": {
             "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{coreUrl}}/api/stations",
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Alta de estación sin token y con cuerpo inválido: 401, sin decir qué campos espera → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 401', () => pm.response.to.have.status(401));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));",
+                  "pm.test(\"pm.expect(pm.response.text()).to.not.include('name')\", () => { pm.expect(pm.response.text()).to.not.include('name'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
             "header": [
               {
                 "key": "Accept",
@@ -2410,7 +2454,7 @@
           }
         },
         {
-          "name": "Backoffice: reactivación de usuario → 204",
+          "name": "Backoffice: la reactivación copiada ya no existe → 404",
           "event": [
             {
               "listen": "test",
@@ -2419,7 +2463,8 @@
                 "exec": [
                   "let json = {};",
                   "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
-                  "pm.test('responde 204', () => pm.response.to.have.status(204));"
+                  "pm.test('responde 404', () => pm.response.to.have.status(404));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));"
                 ]
               }
             }
@@ -2440,7 +2485,7 @@
           }
         },
         {
-          "name": "Backoffice: reactivación con token de conductor → 404",
+          "name": "Backoffice: la baja de estación copiada ya no existe → 404",
           "event": [
             {
               "listen": "test",
@@ -2456,7 +2501,68 @@
             }
           ],
           "request": {
-            "method": "POST",
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{coreUrl}}/api/admin/stations/15"
+          }
+        },
+        {
+          "name": "Baja de estación por el ADMIN → 204",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{coreUrl}}/api/stations/15"
+          }
+        },
+        {
+          "name": "Baja de estación con token de conductor → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
+                  "pm.test('responde 404', () => pm.response.to.have.status(404));",
+                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
             "header": [
               {
                 "key": "Accept",
@@ -2467,68 +2573,7 @@
                 "value": "Bearer {{driverToken}}"
               }
             ],
-            "url": "{{coreUrl}}/api/admin/users/{{otherId}}/activate"
-          }
-        },
-        {
-          "name": "Backoffice: baja de estación → 204",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "let json = {};",
-                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
-                  "pm.test('responde 204', () => pm.response.to.have.status(204));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
-              }
-            ],
-            "url": "{{coreUrl}}/api/admin/stations/15"
-          }
-        },
-        {
-          "name": "Backoffice: baja de estación con token de CPO → 404",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "let json = {};",
-                  "try { json = pm.response.json(); } catch (e) { /* 204 o cuerpo que no es JSON */ }",
-                  "pm.test('responde 404', () => pm.response.to.have.status(404));",
-                  "pm.test('sin stack trace en el cuerpo', () => pm.expect(pm.response.text()).to.not.match(/(at [a-z]+\\.[\\w.$]+\\(|Exception:|\\.java:\\d+)/));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{cpoToken}}"
-              }
-            ],
-            "url": "{{coreUrl}}/api/admin/stations/15"
+            "url": "{{coreUrl}}/api/stations/15"
           }
         }
       ]

@@ -50,6 +50,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class AuthExceptionHandler {
 
+    /** La extensión de Problem Details con el código estable del rechazo. */
+    private static final String CODE_PROPERTY = "code";
+
     /**
      * Usuario inexistente: el mismo 404 que una ruta que no existe (DEF-07). El id va al log, no a
      * la respuesta.
@@ -76,14 +79,14 @@ public class AuthExceptionHandler {
     @ExceptionHandler(EmailAlreadyRegisteredException.class)
     public ProblemDetail handleEmailTaken(EmailAlreadyRegisteredException exception) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
-        problem.setProperty("code", EmailAlreadyRegisteredException.CODE);
+        problem.setProperty(CODE_PROPERTY, EmailAlreadyRegisteredException.CODE);
         return problem;
     }
 
     @ExceptionHandler(CurrentPasswordIncorrectException.class)
     public ProblemDetail handleWrongCurrentPassword(CurrentPasswordIncorrectException exception) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
-        problem.setProperty("code", CurrentPasswordIncorrectException.CODE);
+        problem.setProperty(CODE_PROPERTY, CurrentPasswordIncorrectException.CODE);
         return problem;
     }
 
@@ -118,7 +121,7 @@ public class AuthExceptionHandler {
     @ExceptionHandler(AdminAccountProtectedException.class)
     public ProblemDetail handleProtectedAdmin(AdminAccountProtectedException exception) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
-        problem.setProperty("code", AdminAccountProtectedException.CODE);
+        problem.setProperty(CODE_PROPERTY, AdminAccountProtectedException.CODE);
         return problem;
     }
 
@@ -130,7 +133,7 @@ public class AuthExceptionHandler {
     @ExceptionHandler(AdminPasswordRejectedException.class)
     public ProblemDetail handleRejectedPassword(AdminPasswordRejectedException exception) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
-        problem.setProperty("code", AdminPasswordRejectedException.CODE);
+        problem.setProperty(CODE_PROPERTY, AdminPasswordRejectedException.CODE);
         return problem;
     }
 

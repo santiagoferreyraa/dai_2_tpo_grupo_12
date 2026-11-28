@@ -211,7 +211,7 @@ Catálogo maestro de Historias de Usuario (`HU-01` a `HU-16`) del alcance de Eco
 
 ##### CA-07.2 · Camino alternativo — Reactivación de usuario y baja de estación desde backoffice
 - **Dado** que el usuario `U2` fue dado de baja y existe la estación `15`
-- **Cuando** `ADMIN` ejecuta `POST /api/users/{U2}/activate` o `DELETE /api/admin/stations/15`
+- **Cuando** `ADMIN` ejecuta `POST /api/users/{U2}/activate` o `DELETE /api/stations/15`
 - **Entonces** el servicio responde `204 No Content`, reactivando a `U2` o desactivando la estación según corresponda.
 
 ##### CA-07.3 · Error / validación — Contraseña incorrecta, protección de cuentas ADMIN e IDs inexistentes

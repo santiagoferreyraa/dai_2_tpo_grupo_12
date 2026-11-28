@@ -116,6 +116,15 @@ public class BookingServiceImpl implements BookingService {
     private final Map<UUID, Hold> holds = new ConcurrentHashMap<>();
 
     /**
+     * Las que vencieron hace poco, para que el checkout pueda decirle a su dueño 410 ("se te venció
+     * el tiempo") y no 404 ("no existe"). Se olvidan después de {@link #EXPIRED_MEMORY}: no es
+     * historial, es la memoria justa para contestar bien a quien vuelve de pagar tarde.
+     */
+    private final Map<UUID, Hold> recentlyExpired = new ConcurrentHashMap<>();
+
+    static final Duration EXPIRED_MEMORY = Duration.ofHours(1);
+
+    /**
      * Candado para "revisar si el slot está libre y comprometerlo".
      *
      * <p>El mapa ya tolera accesos concurrentes, pero eso no alcanza: son DOS pasos, y si dos
@@ -219,6 +228,7 @@ public class BookingServiceImpl implements BookingService {
         int pending = holds.size();
         expirations.shutdownNow();
         holds.clear();
+        recentlyExpired.clear();
         log.info(
                 "BookingService destruido por el contenedor (@PreDestroy): se liberaron {} retenciones sin confirmar",
                 pending);
@@ -458,6 +468,9 @@ public class BookingServiceImpl implements BookingService {
     private void expire(UUID holdId) {
         Hold expired = holds.remove(holdId);
         if (expired != null) {
+            Instant forgetBefore = clock.instant().minus(EXPIRED_MEMORY);
+            recentlyExpired.values().removeIf(old -> old.expiresAt().isBefore(forgetBefore));
+            recentlyExpired.put(holdId, expired);
             log.info(
                     "Venció la retención {} del conector {}: el slot vuelve a estar libre",
                     holdId,
@@ -473,10 +486,7 @@ public class BookingServiceImpl implements BookingService {
     @Override
     public Optional<Hold> findHold(UUID holdId) {
         Hold hold = holds.get(holdId);
-        if (hold == null || hold.isExpiredAt(clock.instant())) {
-            return Optional.empty();
-        }
-        return Optional.of(hold);
+        return Optional.ofNullable(hold != null ? hold : recentlyExpired.get(holdId));
     }
 
     @Override
@@ -681,7 +691,7 @@ public class BookingServiceImpl implements BookingService {
                     saved.getDriverId(),
                     saved.getConnectorId(),
                     saved.getDepositAmount());
-            eventPublisher.publish(BookingEvent.noShow(saved, now));
+            eventPublisher.publish(BookingEvent.noShow(saved, now, noShowGrace));
         }
         return marked;
     }

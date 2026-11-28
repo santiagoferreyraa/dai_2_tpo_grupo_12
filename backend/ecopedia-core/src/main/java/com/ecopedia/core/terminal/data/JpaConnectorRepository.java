@@ -2,6 +2,7 @@ package com.ecopedia.core.terminal.data;
 
 import com.ecopedia.core.terminal.domain.Connector;
 import com.ecopedia.core.terminal.domain.ConnectorRepository;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,6 +13,9 @@ public interface JpaConnectorRepository extends JpaRepository<Connector, Long>, 
 
     @Override
     List<Connector> findByStationId(Long stationId);
+
+    @Override
+    List<Connector> findByStationIdIn(Collection<Long> stationIds);
 
     @Override
     Optional<Connector> findByAccessCode(String accessCode);

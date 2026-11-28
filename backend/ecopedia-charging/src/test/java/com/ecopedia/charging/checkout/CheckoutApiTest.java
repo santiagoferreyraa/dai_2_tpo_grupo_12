@@ -196,6 +196,15 @@ class CheckoutApiTest {
     }
 
     @Test
+    @DisplayName("Sin token y con un cuerpo inválido, 401 antes de validar el cuerpo, no un 400")
+    void rejectsAnonymousBeforeReadingTheBody() throws Exception {
+        mockMvc.perform(post("/api/checkout/booking")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     @DisplayName("POST /api/checkout/booking responde 404 si el rol no es CONDUCTOR (ej. CPO)")
     void rejectsNonDriver() throws Exception {
         CheckoutBookingHttpRequest request = new CheckoutBookingHttpRequest(UUID.randomUUID(), 1L, true);

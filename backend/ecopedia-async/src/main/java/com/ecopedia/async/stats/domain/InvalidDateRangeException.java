@@ -2,6 +2,7 @@ package com.ecopedia.async.stats.domain;
 
 /** Rango de fechas inválido en la consulta de estadísticas: invertido o demasiado largo. */
 public class InvalidDateRangeException extends IllegalArgumentException {
+    private static final long serialVersionUID = 1L;
 
     public static final String CODE = "INVALID_DATE_RANGE";
 

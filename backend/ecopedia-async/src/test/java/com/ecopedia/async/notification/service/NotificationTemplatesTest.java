@@ -43,11 +43,29 @@ class NotificationTemplatesTest {
                 amount == null ? null : REFUNDABLE_UNTIL);
     }
 
+    /** Un no-show con la tolerancia que viajó en el evento (o sin ella, como un mensaje viejo). */
+    private static NotificationToDispatch noShow(String amount, String lastFour, Integer graceMinutes) {
+        return new NotificationToDispatch(
+                "booking-1-BOOKING_NO_SHOW",
+                NotificationType.BOOKING_NO_SHOW,
+                5L,
+                1L,
+                12L,
+                START,
+                END,
+                amount == null ? null : new BigDecimal(amount),
+                null,
+                lastFour,
+                amount == null ? null : REFUNDABLE_UNTIL,
+                null,
+                graceMinutes);
+    }
+
     @Test
     @DisplayName(
             "No-show con seña: dice que pasó la tolerancia, que la seña no se devuelve y que puede volver a reservar")
     void noShowWithDeposit() {
-        NotificationToDispatch noShow = event(NotificationType.BOOKING_NO_SHOW, "8000.00", null, "4242");
+        NotificationToDispatch noShow = noShow("8000.00", "4242", 15);
 
         assertThat(TEMPLATES.title(noShow)).isEqualTo("No te presentaste a tu reserva");
         assertThat(TEMPLATES.body(noShow, PALERMO))
@@ -104,11 +122,19 @@ class NotificationTemplatesTest {
     @Test
     @DisplayName("No-show sin seña: no habla de una seña que no hubo")
     void noShowWithoutDeposit() {
-        NotificationToDispatch noShow = event(NotificationType.BOOKING_NO_SHOW, null, null, null);
+        // 20 y no 15: el número sale del evento, no de un texto escrito en el aviso.
+        NotificationToDispatch noShow = noShow(null, null, 20);
 
         assertThat(TEMPLATES.body(noShow, PALERMO))
                 .isEqualTo("No llegaste a tu reserva en Estación Palermo del domingo 1/11 de 18:00 a 19:00. "
-                        + "Pasaron los 15 minutos de tolerancia, así que la cancelamos. Ya podés hacer otra reserva.");
+                        + "Pasaron los 20 minutos de tolerancia, así que la cancelamos. Ya podés hacer otra reserva.");
+    }
+
+    @Test
+    @DisplayName("No-show de un mensaje sin la tolerancia (anterior al 28/11 o del outbox): lo dice sin el número")
+    void noShowWithoutTheGraceInTheEvent() {
+        assertThat(TEMPLATES.body(noShow(null, null, null), PALERMO))
+                .contains("Pasó el tiempo de tolerancia, así que la cancelamos.");
     }
 
     @Test

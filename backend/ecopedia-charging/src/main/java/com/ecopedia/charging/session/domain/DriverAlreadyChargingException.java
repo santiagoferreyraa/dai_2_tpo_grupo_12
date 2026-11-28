@@ -5,6 +5,7 @@ package com.ecopedia.charging.session.domain;
  * conector: la segunda carga tendría que esperar a que termine la primera.
  */
 public class DriverAlreadyChargingException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     private final String activeSessionId;
 

@@ -32,6 +32,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class LoginAttempts {
 
+    /** El mínimo de los dos valores: con cero el bloqueo quedaría apagado sin que nadie se entere. */
+    private static final int MINIMUM_SETTING = 1;
+
     static final int DEFAULT_MAX_FAILURES = 5;
 
     static final Duration DEFAULT_LOCK = Duration.ofMinutes(15);
@@ -62,7 +65,7 @@ public class LoginAttempts {
     LoginAttempts(int maxFailures, Duration lock, Clock clock) {
         // Un cero o un negativo en el .env apagaría el bloqueo sin que nadie se entere: mejor que
         // core no arranque y el error diga cuál de los dos valores está mal.
-        if (maxFailures < 1) {
+        if (maxFailures < MINIMUM_SETTING) {
             throw new IllegalArgumentException("ecopedia.login.max-failures tiene que ser al menos 1");
         }
         if (lock.isNegative() || lock.isZero()) {

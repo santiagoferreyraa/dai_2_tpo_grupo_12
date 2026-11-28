@@ -16,4 +16,8 @@ public class StaleVersionException extends RuntimeException {
     public StaleVersionException(String message) {
         super(message);
     }
+
+    public StaleVersionException(String message, Throwable cause) {
+        super(message, cause);
+    }
 }

@@ -252,8 +252,8 @@
                     <version>${spotbugs-plugin.version}</version>
                     <configuration>
                         <effort>Max</effort>
-                        <!-- Falla con prioridad media o alta; las de prioridad baja son opiniones de estilo. -->
-                        <threshold>Medium</threshold>
+                        <!-- Falla con cualquier hallazgo, también los de prioridad baja (28/11): ninguno pasa sin mirarse. -->
+                        <threshold>Low</threshold>
                         <excludeFilterFile>${maven.multiModuleProjectDirectory}/config/spotbugs-exclude.xml</excludeFilterFile>
                     </configuration>
                     <executions>
@@ -276,8 +276,8 @@
                             <ruleset>${maven.multiModuleProjectDirectory}/config/pmd-ruleset.xml</ruleset>
                         </rulesets>
                         <targetJdk>${java.version}</targetJdk>
-                        <!-- Falla con prioridad 1 o 2; el resto queda en target/pmd.xml. -->
-                        <failurePriority>2</failurePriority>
+                        <!-- Falla con cualquier violación, de prioridad 1 a 5 (28/11): ninguna pasa sin mirarse. -->
+                        <failurePriority>5</failurePriority>
                         <printFailingErrors>true</printFailingErrors>
                         <linkXRef>false</linkXRef>
                         <!-- Las clases que genera JAXB desde el XSD de la distribuidora. -->

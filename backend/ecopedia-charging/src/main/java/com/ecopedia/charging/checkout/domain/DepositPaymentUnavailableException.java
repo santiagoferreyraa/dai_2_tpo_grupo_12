@@ -5,6 +5,7 @@ package com.ecopedia.charging.checkout.domain;
  * reintento con la misma clave lo averigua sin cobrar dos veces.
  */
 public class DepositPaymentUnavailableException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     public DepositPaymentUnavailableException(String message, Throwable cause) {
         super(message, cause);

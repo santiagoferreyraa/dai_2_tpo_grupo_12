@@ -7,6 +7,7 @@ package com.ecopedia.charging.booking.domain;
  * distinguir "elegí mal" de "probá de nuevo en un rato".
  */
 public class ConnectorCatalogUnavailableException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     public ConnectorCatalogUnavailableException(String message, Throwable cause) {
         super(message, cause);

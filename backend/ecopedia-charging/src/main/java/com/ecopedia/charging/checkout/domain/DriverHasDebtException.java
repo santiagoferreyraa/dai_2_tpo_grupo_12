@@ -6,8 +6,13 @@ package com.ecopedia.charging.checkout.domain;
  * de pago.
  */
 public class DriverHasDebtException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     public DriverHasDebtException(Long driverId) {
         super("El conductor " + driverId + " tiene un pago pendiente de una carga anterior");
+    }
+
+    public DriverHasDebtException(Long driverId, Throwable cause) {
+        super("El conductor " + driverId + " tiene un pago pendiente de una carga anterior", cause);
     }
 }

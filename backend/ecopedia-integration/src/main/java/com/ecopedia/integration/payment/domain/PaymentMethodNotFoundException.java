@@ -5,6 +5,7 @@ package com.ecopedia.integration.payment.domain;
  * son la misma (SEC-06). La API la contesta con el 404 de cualquier ruta inexistente.
  */
 public class PaymentMethodNotFoundException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     public PaymentMethodNotFoundException(Long cardId) {
         super("No se encontró la tarjeta con ID: " + cardId);

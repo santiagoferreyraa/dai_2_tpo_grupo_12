@@ -1,5 +1,6 @@
 package com.ecopedia.core.terminal.domain;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -14,6 +15,9 @@ public interface ConnectorRepository {
     Optional<Connector> findById(Long connectorId);
 
     List<Connector> findByStationId(Long stationId);
+
+    /** Los conectores de varias estaciones en una sola consulta, en vez de una por estación. */
+    List<Connector> findByStationIdIn(Collection<Long> stationIds);
 
     List<Connector> findAll();
 

@@ -6,6 +6,7 @@ package com.ecopedia.charging.session.domain;
  * @see #getCode() {@code UNKNOWN_NODE}, {@code INVALID_DEMAND} o {@code INVALID_REQUEST}
  */
 public class GridRequestRejectedException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     public static final String UNKNOWN_NODE = "UNKNOWN_NODE";
 

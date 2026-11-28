@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -44,10 +45,10 @@ public class IntegrationPowerGridDirectory implements PowerGridDirectory {
                     .body(GridFeasibility.class);
         } catch (RestClientResponseException response) {
             int status = response.getStatusCode().value();
-            if (status == 422) {
+            if (response.getStatusCode().isSameCodeAs(HttpStatus.UNPROCESSABLE_ENTITY)) {
                 throw new GridRequestRejectedException(codeOf(response));
             }
-            if (status == 401) {
+            if (response.getStatusCode().isSameCodeAs(HttpStatus.UNAUTHORIZED)) {
                 log.error("ecopedia-integration rechazó la clave de servicio: revisar ECOPEDIA_INTERNAL_TOKEN");
             }
             throw new GridUnavailableException("RedEléctrica contestó " + status, response);
@@ -60,7 +61,7 @@ public class IntegrationPowerGridDirectory implements PowerGridDirectory {
         try {
             ErrorBody error = response.getResponseBodyAs(ErrorBody.class);
             if (error != null && error.code() != null) return error.code();
-        } catch (RuntimeException unreadable) {
+        } catch (RuntimeException ignored) {
             // Un cuerpo que no es el esperado se trata como un rechazo sin código.
         }
         return "UNKNOWN";

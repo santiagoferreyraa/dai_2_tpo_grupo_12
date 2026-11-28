@@ -15,6 +15,8 @@ import java.util.Optional;
  * {@code 4111 1111 1111 1111}—, y todos pasan el dígito verificador, así que el formulario de
  * Ecopedia no tiene que saber que existen. La lista para la demo está en el README.
  */
+// "Test" es de tarjetas de prueba, no de un test de JUnit: es el catálogo que acepta la pasarela.
+@SuppressWarnings("PMD.TestClassWithoutTestCases")
 public final class TestCardCatalog {
 
     public record TestCard(CardBrand brand, CardBehavior behavior) {}

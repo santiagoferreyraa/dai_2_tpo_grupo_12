@@ -73,7 +73,8 @@ class PendingNotificationTest {
                 BigDecimal.TEN,
                 null,
                 "4242",
-                start.minusSeconds(5 * 3600));
+                start.minusSeconds(5 * 3600),
+                null);
     }
 
     private void brokerDown() {

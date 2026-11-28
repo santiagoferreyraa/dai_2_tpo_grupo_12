@@ -1,6 +1,7 @@
 package com.ecopedia.charging.booking.domain;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 
 /**
@@ -35,7 +36,8 @@ public record BookingEvent(
         BigDecimal depositAmount,
         Boolean depositRefunded,
         String cardLastFour,
-        Instant depositRefundableUntil) {
+        Instant depositRefundableUntil,
+        Integer noShowGraceMinutes) {
 
     public static BookingEvent confirmed(Booking booking, Instant occurredAt) {
         return of(BookingEventType.BOOKING_CONFIRMED, booking, occurredAt, null);
@@ -58,8 +60,26 @@ public record BookingEvent(
         return of(BookingEventType.BOOKING_ACTIVATION_FAILED, booking, occurredAt, refunded);
     }
 
-    public static BookingEvent noShow(Booking booking, Instant occurredAt) {
-        return of(BookingEventType.BOOKING_NO_SHOW, booking, occurredAt, null);
+    /**
+     * @param grace la tolerancia que se cumplió ({@code ecopedia.booking.no-show-grace}): viaja en el
+     *     evento para que el aviso diga cuántos minutos fueron sin tenerlos escritos aparte.
+     */
+    public static BookingEvent noShow(Booking booking, Instant occurredAt, Duration grace) {
+        BookingEvent event = of(BookingEventType.BOOKING_NO_SHOW, booking, occurredAt, null);
+        return new BookingEvent(
+                event.eventId(),
+                event.type(),
+                event.bookingId(),
+                event.driverId(),
+                event.connectorId(),
+                event.windowStart(),
+                event.windowEnd(),
+                event.occurredAt(),
+                event.depositAmount(),
+                event.depositRefunded(),
+                event.cardLastFour(),
+                event.depositRefundableUntil(),
+                (int) grace.toMinutes());
     }
 
     private static BookingEvent of(BookingEventType type, Booking booking, Instant occurredAt, Boolean refunded) {
@@ -75,6 +95,7 @@ public record BookingEvent(
                 booking.getDepositAmount(),
                 refunded,
                 booking.getDepositCardLastFour(),
-                booking.getDepositRefundableUntil());
+                booking.getDepositRefundableUntil(),
+                null);
     }
 }

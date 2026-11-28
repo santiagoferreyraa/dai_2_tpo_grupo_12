@@ -9,6 +9,7 @@ package com.ecopedia.integration.powergrid.domain;
  * pantalla (directriz 7).
  */
 public class PowerGridUnavailableException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     public PowerGridUnavailableException(String message, Throwable cause) {
         super(message, cause);

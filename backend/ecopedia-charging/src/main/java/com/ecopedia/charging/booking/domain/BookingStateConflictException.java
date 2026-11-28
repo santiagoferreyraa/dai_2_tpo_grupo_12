@@ -13,6 +13,7 @@ package com.ecopedia.charging.booking.domain;
  * llame, también lo que se sume con SesionesDeCarga.
  */
 public class BookingStateConflictException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     public static final String CODE = "BOOKING_STATE_CONFLICT";
 

@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.ResourceAccessException;
@@ -44,6 +45,9 @@ public class PaymentGatewayRestClient implements PaymentGatewayPort {
     private static final Logger log = LoggerFactory.getLogger(PaymentGatewayRestClient.class);
 
     static final String IDEMPOTENCY_HEADER = "X-Idempotency-Key";
+
+    /** Un 2xx sin cuerpo no es una respuesta válida: se trata igual que si no hubiera contestado. */
+    private static final String EMPTY_BODY = "La pasarela contestó sin cuerpo";
 
     /**
      * El {@code code} de Ecopedia y el mensaje para el log según el código con que la pasarela
@@ -98,15 +102,15 @@ public class PaymentGatewayRestClient implements PaymentGatewayPort {
                     .body(CardTokenBody.class);
             if (token == null) {
                 // Un 2xx sin cuerpo no es una respuesta válida: se trata igual que si no hubiera contestado.
-                throw new ResourceAccessException("La pasarela contestó sin cuerpo");
+                throw new ResourceAccessException(EMPTY_BODY);
             }
             return new TokenizedCard(brandOf(token.paymentMethodId()), token.lastFourDigits(), token.id());
         } catch (RestClientResponseException rejected) {
-            if (rejected.getStatusCode().value() == 400) {
+            if (rejected.getStatusCode().isSameCodeAs(HttpStatus.BAD_REQUEST)) {
                 String code = codeOf(rejected);
                 log.info("La pasarela rechazó la tarjeta: {}", code);
                 Rejection rejection = TOKENIZE_REJECTIONS.getOrDefault(code, UNKNOWN_REJECTION);
-                throw new CardRejectedException(rejection.code(), rejection.message());
+                throw new CardRejectedException(rejection.code(), rejection.message(), rejected);
             }
             throw unavailable("tokenizar", rejected);
         } catch (ResourceAccessException noAnswer) {
@@ -128,7 +132,7 @@ public class PaymentGatewayRestClient implements PaymentGatewayPort {
                     .body(PaymentBody.class);
             if (payment == null) {
                 // Un 2xx sin cuerpo no es una respuesta válida: se trata igual que si no hubiera contestado.
-                throw new ResourceAccessException("La pasarela contestó sin cuerpo");
+                throw new ResourceAccessException(EMPTY_BODY);
             }
             return new GatewayCharge(payment.id(), "approved".equals(payment.status()), payment.statusDetail());
         } catch (RestClientResponseException rejected) {
@@ -157,14 +161,14 @@ public class PaymentGatewayRestClient implements PaymentGatewayPort {
                     .body(RefundBody.class);
             if (refund == null) {
                 // Un 2xx sin cuerpo no es una respuesta válida: se trata igual que si no hubiera contestado.
-                throw new ResourceAccessException("La pasarela contestó sin cuerpo");
+                throw new ResourceAccessException(EMPTY_BODY);
             }
             return new GatewayRefund(refund.id(), refund.paymentId(), refund.amount());
         } catch (RestClientResponseException rejected) {
             if (rejected.getStatusCode().is4xxClientError() && !isAuthProblem(rejected.getStatusCode())) {
                 String code = codeOf(rejected);
                 log.warn("La pasarela no aceptó el reintegro {} del cobro {}: {}", idempotencyKey, paymentId, code);
-                throw new IllegalArgumentException("La pasarela no aceptó el reintegro: " + code);
+                throw new IllegalArgumentException("La pasarela no aceptó el reintegro: " + code, rejected);
             }
             throw unavailable("reintegrar", rejected);
         } catch (ResourceAccessException noAnswer) {
@@ -182,7 +186,7 @@ public class PaymentGatewayRestClient implements PaymentGatewayPort {
                     .body(ValidationBody.class);
             if (validation == null) {
                 // Un 2xx sin cuerpo no es una respuesta válida: se trata igual que si no hubiera contestado.
-                throw new ResourceAccessException("La pasarela contestó sin cuerpo");
+                throw new ResourceAccessException(EMPTY_BODY);
             }
             return new CardValidation("approved".equals(validation.status()), validation.statusDetail());
         } catch (RestClientResponseException rejected) {
@@ -222,7 +226,7 @@ public class PaymentGatewayRestClient implements PaymentGatewayPort {
             if (error != null && error.cause() != null && !error.cause().isEmpty()) {
                 return error.cause().get(0).code();
             }
-        } catch (RuntimeException unreadable) {
+        } catch (RuntimeException ignored) {
             // Un cuerpo que no es el esperado se trata como un rechazo sin código.
         }
         return "unknown";

@@ -1,5 +1,7 @@
 package com.ecopedia.simulation.paymentgateway.domain;
 
+import java.util.Locale;
+
 /** Los estados de un cobro, con los nombres que usa Mercado Pago en su API. */
 public enum PaymentStatus {
     APPROVED,
@@ -8,6 +10,6 @@ public enum PaymentStatus {
     REFUNDED;
 
     public String apiValue() {
-        return name().toLowerCase();
+        return name().toLowerCase(Locale.ROOT);
     }
 }

@@ -24,6 +24,9 @@ import org.springframework.dao.OptimisticLockingFailureException;
  */
 public final class EntityTags {
 
+    /** El {@code If-Match: *} de RFC 9110: "cualquier versión", o sea sin condición. */
+    private static final String ANY_VERSION = "*";
+
     /** Lo que dice el contrato OpenAPI de la cabecera. */
     public static final String HEADER_DESCRIPTION =
             "Versión del recurso. Mandarla en If-Match al guardar: si cambió en el medio, 412.";
@@ -48,7 +51,8 @@ public final class EntityTags {
             if (!condition.isConditional()) {
                 throw concurrent;
             }
-            throw new StaleVersionException("Otra escritura guardó en el medio: " + concurrent.getMessage());
+            throw new StaleVersionException(
+                    "Otra escritura guardó en el medio: " + concurrent.getMessage(), concurrent);
         }
     }
 
@@ -69,7 +73,7 @@ public final class EntityTags {
         Set<Long> versions = new HashSet<>();
         for (String raw : header.split(",")) {
             String tag = raw.trim();
-            if ("*".equals(tag)) {
+            if (ANY_VERSION.equals(tag)) {
                 return VersionCondition.any();
             }
             parse(tag, versions);

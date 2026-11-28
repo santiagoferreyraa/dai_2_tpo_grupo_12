@@ -100,10 +100,16 @@ FOLDERS = [
     ("03 · Core · Catálogo y búsqueda (público)", [
         case("Catálogo de vehículos", "GET", f"{CORE}/api/vehicle-models", 200,
              check=["pm.expect(json).to.be.an('array').that.is.not.empty"]),
-        case("Catálogo de vehículos con un método que no existe", "POST", f"{CORE}/api/vehicle-models", 405, body={}),
+        # Con sesión: sin ella, toda escritura recibe 401 de la cadena de seguridad antes del 405 (28/11).
+        case("Catálogo de vehículos con un método que no existe", "POST", f"{CORE}/api/vehicle-models", 405,
+             token="driver", body={}),
         case("Listado de estaciones", "GET", f"{CORE}/api/stations", 200,
              check=["pm.expect(json.length).to.be.at.least(15)"]),
-        case("Listado de estaciones con un método que no existe", "PATCH", f"{CORE}/api/stations", 405, body={}),
+        case("Listado de estaciones con un método que no existe", "PATCH", f"{CORE}/api/stations", 405,
+             token="driver", body={}),
+        case("Alta de estación sin token y con cuerpo inválido: 401, sin decir qué campos espera", "POST",
+             f"{CORE}/api/stations", 401, body={},
+             check=["pm.expect(pm.response.text()).to.not.include('name')"]),
         case("Estación por id", "GET", f"{CORE}/api/stations/1", 200,
              check=["pm.expect(json.id).to.eql(1)", "pm.expect(json.connectors).to.be.an('array')"]),
         case("Estación inexistente", "GET", f"{CORE}/api/stations/999999", 404),
@@ -221,12 +227,14 @@ FOLDERS = [
         # La baja del backoffice se sacó el 02/11: no pedía la contraseña.
         case("Backoffice: la baja sin contraseña ya no existe", "DELETE", f"{CORE}/api/admin/users/{{{{otherId}}}}", 404,
              token="admin"),
-        case("Backoffice: reactivación de usuario", "POST", f"{CORE}/api/admin/users/{{{{otherId}}}}/activate", 204,
+        # Las otras dos copias del backoffice se sacaron el 28/11: la reactivación y la baja de estación
+        # se hacen por las rutas de cada componente.
+        case("Backoffice: la reactivación copiada ya no existe", "POST",
+             f"{CORE}/api/admin/users/{{{{otherId}}}}/activate", 404, token="admin"),
+        case("Backoffice: la baja de estación copiada ya no existe", "DELETE", f"{CORE}/api/admin/stations/15", 404,
              token="admin"),
-        case("Backoffice: reactivación con token de conductor", "POST", f"{CORE}/api/admin/users/{{{{otherId}}}}/activate",
-             404, token="driver"),
-        case("Backoffice: baja de estación", "DELETE", f"{CORE}/api/admin/stations/15", 204, token="admin"),
-        case("Backoffice: baja de estación con token de CPO", "DELETE", f"{CORE}/api/admin/stations/15", 404, token="cpo"),
+        case("Baja de estación por el ADMIN", "DELETE", f"{CORE}/api/stations/15", 204, token="admin"),
+        case("Baja de estación con token de conductor", "DELETE", f"{CORE}/api/stations/15", 404, token="driver"),
     ]),
     ("07 · Pagos · Medios de pago", [
         case("Alta de tarjeta", "POST", f"{INTEGRATION}/api/payment-methods", 201, token="driver",

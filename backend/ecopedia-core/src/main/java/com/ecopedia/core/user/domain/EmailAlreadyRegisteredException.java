@@ -8,6 +8,7 @@ package com.ecopedia.core.user.domain;
  * lo demás, un pedido inválido (400).
  */
 public class EmailAlreadyRegisteredException extends IllegalArgumentException {
+    private static final long serialVersionUID = 1L;
 
     /** El {@code code} estable de la respuesta. */
     public static final String CODE = "EMAIL_ALREADY_REGISTERED";

@@ -5,6 +5,7 @@ package com.ecopedia.integration.payment.domain;
  * mensaje distinto para "es de otro" confirmaría que ese id existe (SEC-06). El motivo va al log.
  */
 public class DebtNotFoundException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     public DebtNotFoundException(Long debtId) {
         super("Deuda " + debtId + " no encontrada");
