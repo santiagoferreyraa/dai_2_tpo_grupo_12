@@ -1,6 +1,9 @@
 package com.ecopedia.core.vehicle.domain;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 /**
  * Interfaz pública del componente {@code Vehiculos} (stateless).
@@ -22,4 +25,16 @@ public interface VehicleService {
      * @throws VehicleModelNotFoundException si el id no existe o el modelo está dado de baja
      */
     VehicleModel getModel(Long modelId);
+
+    /**
+     * Un modelo por id aunque esté dado de baja, para mostrar el auto que el conductor ya eligió.
+     *
+     * <p>No filtra los dados de baja, a propósito: que un modelo deje de ofrecerse no le borra el
+     * auto del perfil a quien ya lo tenía. Usuarios guarda solo el id (RNF09) y resuelve la ficha
+     * con esto.
+     */
+    Optional<VehicleModel> findModel(Long modelId);
+
+    /** Los modelos de esos ids, también los dados de baja, por id: para armar muchos perfiles de una vez. */
+    Map<Long, VehicleModel> findModels(Collection<Long> modelIds);
 }

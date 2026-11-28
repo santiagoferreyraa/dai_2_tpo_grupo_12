@@ -15,9 +15,11 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
 
     private final UserService userService;
+    private final UserProfileAssembler profiles;
 
-    public AuthController(UserService userService) {
+    public AuthController(UserService userService, UserProfileAssembler profiles) {
         this.userService = userService;
+        this.profiles = profiles;
     }
 
     /** RF01 / ECO-24: Registro de usuarios. */
@@ -25,7 +27,7 @@ public class AuthController {
     @ApiResponse(responseCode = "201", description = "Creado.")
     public ResponseEntity<UserProfileResponse> register(@Valid @RequestBody RegisterRequest request) {
         User registered = userService.register(request.toDomainData());
-        return ResponseEntity.status(HttpStatus.CREATED).body(UserProfileResponse.fromDomain(registered));
+        return ResponseEntity.status(HttpStatus.CREATED).body(profiles.toResponse(registered));
     }
 
     /** RF01 / ECO-24: Autenticación y obtención de token JWT. */

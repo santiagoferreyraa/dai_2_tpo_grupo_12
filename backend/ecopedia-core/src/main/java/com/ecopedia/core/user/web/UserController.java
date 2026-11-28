@@ -27,9 +27,11 @@ import org.springframework.web.bind.annotation.*;
 public class UserController {
 
     private final UserService userService;
+    private final UserProfileAssembler profiles;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, UserProfileAssembler profiles) {
         this.userService = userService;
+        this.profiles = profiles;
     }
 
     /**
@@ -57,7 +59,7 @@ public class UserController {
                             schema = @Schema(type = "string")))
     public ResponseEntity<UserProfileResponse> getMyProfile(Authentication authentication) {
         User user = userService.getProfileByEmail(authentication.getName());
-        return ResponseEntity.ok().eTag(EntityTags.of(user.getVersion())).body(UserProfileResponse.fromDomain(user));
+        return ResponseEntity.ok().eTag(EntityTags.of(user.getVersion())).body(profiles.toResponse(user));
     }
 
     /**
@@ -94,9 +96,7 @@ public class UserController {
         VersionCondition condition = EntityTags.ifMatch(ifMatch);
         User updated = EntityTags.write(
                 condition, () -> userService.updateProfile(user.getId(), request.toDomainData(), condition));
-        return ResponseEntity.ok()
-                .eTag(EntityTags.of(updated.getVersion()))
-                .body(UserProfileResponse.fromDomain(updated));
+        return ResponseEntity.ok().eTag(EntityTags.of(updated.getVersion())).body(profiles.toResponse(updated));
     }
 
     /**
@@ -125,7 +125,7 @@ public class UserController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserProfileResponse> getUserById(@PathVariable Long id) {
         User user = userService.getProfile(id);
-        return ResponseEntity.ok(UserProfileResponse.fromDomain(user));
+        return ResponseEntity.ok(profiles.toResponse(user));
     }
 
     /** Listar usuarios (Solo ADMIN - ECO-25 / ECO-27). */
@@ -133,8 +133,7 @@ public class UserController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<UserProfileResponse>> listUsers(@RequestParam(required = false) Role role) {
         List<User> users = userService.listUsers(role);
-        return ResponseEntity.ok(
-                users.stream().map(UserProfileResponse::fromDomain).toList());
+        return ResponseEntity.ok(profiles.toResponses(users));
     }
 
     /**
@@ -149,7 +148,7 @@ public class UserController {
             Authentication authentication, @PathVariable Long id, @Valid @RequestBody UpdateRoleRequest request) {
         User updated = userService.updateRole(
                 id, request.role(), new AdminConfirmation(authentication.getName(), request.password()));
-        return ResponseEntity.ok(UserProfileResponse.fromDomain(updated));
+        return ResponseEntity.ok(profiles.toResponse(updated));
     }
 
     /**
