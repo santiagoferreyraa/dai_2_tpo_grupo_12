@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.ecopedia.integration.payment.data.JpaPaymentMethodRepository;
 import com.ecopedia.integration.payment.domain.CardBrand;
+import com.ecopedia.integration.payment.domain.CardRejectedException;
 import com.ecopedia.integration.payment.domain.PaymentGatewayPort;
 import com.ecopedia.integration.payment.domain.PaymentGatewayUnavailableException;
 import com.ecopedia.integration.payment.domain.TokenizedCard;
@@ -234,10 +235,11 @@ class PaymentMethodApiTest {
     }
 
     @Test
-    @DisplayName("Un número mal copiado devuelve 400 con el motivo, no un 500")
+    @DisplayName("Un número mal copiado devuelve 400 con su code, no un 500")
     void explainsARejectedCard() throws Exception {
         when(paymentGateway.tokenize(argThat(card -> card.number().endsWith("2"))))
-                .thenThrow(new IllegalArgumentException(
+                .thenThrow(new CardRejectedException(
+                        CardRejectedException.CARD_NUMBER_INVALID,
                         "El número de tarjeta no es válido. Revisá que esté bien copiado"));
         String typo =
                 """
@@ -246,7 +248,19 @@ class PaymentMethodApiTest {
 
         mockMvc.perform(registerAs(1L, "CONDUCTOR", typo))
                 .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("CARD_NUMBER_INVALID"))
                 .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("no es válido")));
+    }
+
+    @Test
+    @DisplayName("La misma tarjeta dos veces devuelve 400 con CARD_ALREADY_REGISTERED")
+    void rejectsADuplicateWithItsCode() throws Exception {
+        when(paymentGateway.tokenize(any())).thenAnswer(call -> new TokenizedCard(CardBrand.VISA, "1111", "tok_same"));
+        mockMvc.perform(registerAs(1L, "CONDUCTOR", VALID_CARD)).andExpect(status().isCreated());
+
+        mockMvc.perform(registerAs(1L, "CONDUCTOR", VALID_CARD))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("CARD_ALREADY_REGISTERED"));
     }
 
     @Test

@@ -71,7 +71,7 @@ export default function CancelBookingDialog({ booking, onClose }: CancelBookingD
           que esto último pasó justo en el mismo instante. Hasta QA-26 (02/11) los dos primeros
           llegaban como 400, y el 400 se sigue aceptando para no depender del orden de los
           despliegues. En todos la lista se refresca para que la reserva pase al historial.
-          Un 404, que ya no existe.
+          Un 404, que ya no existe: el texto dice qué hacer, no eso (Manuel, 02/11).
         */
         if (reason instanceof ApiError && (reason.status === 400 || reason.status === 409)) {
           refreshMyBookings()
@@ -79,13 +79,13 @@ export default function CancelBookingDialog({ booking, onClose }: CancelBookingD
             Date.now() >= graceDeadline(booking.start).getTime() &&
               Date.now() < booking.end.getTime()
               ? 'Pasó la tolerancia y la reserva se cerró porque no te presentaste.'
-              : 'Esta reserva ya terminó, así que no hay nada que cancelar.',
+              : 'Esta reserva ya no se puede cancelar.',
           )
           return
         }
         if (reason instanceof ApiError && reason.status === 404) {
           refreshMyBookings()
-          setError('Esta reserva ya no existe.')
+          setError('Recargá la lista y probá de nuevo.')
           return
         }
         if (reason instanceof ApiError && reason.status === 0) {

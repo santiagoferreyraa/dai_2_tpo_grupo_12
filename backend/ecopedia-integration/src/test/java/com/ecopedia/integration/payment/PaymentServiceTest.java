@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import com.ecopedia.integration.payment.domain.CardBrand;
 import com.ecopedia.integration.payment.domain.CardData;
+import com.ecopedia.integration.payment.domain.CardRejectedException;
 import com.ecopedia.integration.payment.domain.CardValidation;
 import com.ecopedia.integration.payment.domain.ConsumptionChargeRequest;
 import com.ecopedia.integration.payment.domain.ConsumptionChargeResult;
@@ -164,9 +165,10 @@ class PaymentServiceTest {
                 .thenReturn(List.of(existing(DRIVER, CardBrand.VISA, "1111", 9, 2029)));
         when(paymentGateway.tokenize(any(CardData.class))).thenReturn(tokenized());
 
-        var rejected = assertThrows(IllegalArgumentException.class, () -> paymentService.registerCard(DRIVER, input));
+        var rejected = assertThrows(CardRejectedException.class, () -> paymentService.registerCard(DRIVER, input));
 
         assertTrue(rejected.getMessage().contains("ya está registrada"));
+        assertEquals(CardRejectedException.CARD_ALREADY_REGISTERED, rejected.getCode());
         verify(paymentMethodRepository, never()).save(any(PaymentMethod.class));
     }
 
@@ -193,8 +195,9 @@ class PaymentServiceTest {
         when(paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(DRIVER))
                 .thenReturn(ten);
 
-        assertThrows(IllegalArgumentException.class, () -> paymentService.registerCard(DRIVER, input));
+        var rejected = assertThrows(CardRejectedException.class, () -> paymentService.registerCard(DRIVER, input));
 
+        assertEquals(CardRejectedException.CARD_LIMIT_REACHED, rejected.getCode());
         // Ni siquiera se gasta una llamada a la pasarela.
         verify(paymentGateway, never()).tokenize(any(CardData.class));
     }

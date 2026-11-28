@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 
-import { ApiError } from '@/lib/api'
+import { errorMessage } from '@/lib/errorMessage'
 
 import AuthLayout from './components/AuthLayout'
 import FormField from './components/FormField'
@@ -78,7 +78,13 @@ export default function RegisterPage() {
         state: { notice: 'Tu cuenta se creó. Entrá con tu email y contraseña.' },
       })
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : 'No se pudo crear la cuenta')
+      setError(
+        errorMessage(cause, 'No se pudo crear la cuenta.', {
+          byCode: {
+            EMAIL_ALREADY_REGISTERED: 'Ya hay una cuenta con ese email. Iniciá sesión o usá otro.',
+          },
+        }),
+      )
     } finally {
       setSending(false)
     }

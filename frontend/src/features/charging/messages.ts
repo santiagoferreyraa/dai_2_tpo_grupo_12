@@ -54,7 +54,9 @@ export function activationErrorMessage(error: unknown): string {
     case 'DRIVER_ALREADY_BOOKED':
       return 'Tenés una reserva en otro conector a esta hora. Usala o cancelala antes de cargar acá.'
     case 'PAYMENT_METHOD_INVALID':
-      return 'No pudimos validar tu tarjeta, o tenés un saldo pendiente. Revisá tus medios de pago en el perfil.'
+      return 'No pudimos validar tu tarjeta. Revisá tus medios de pago en el perfil.'
+    case 'DRIVER_HAS_DEBT':
+      return 'Tenés un pago pendiente. Pagalo desde Medios de pago, en tu perfil, y probá de nuevo.'
     case 'PAYMENT_CHECK_UNAVAILABLE':
       return 'No pudimos validar tu tarjeta en este momento. Probá de nuevo en unos minutos.'
     case 'CONNECTOR_NOT_BOOKABLE':

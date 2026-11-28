@@ -2,6 +2,7 @@ package com.ecopedia.integration.payment.gateway;
 
 import com.ecopedia.integration.payment.domain.CardBrand;
 import com.ecopedia.integration.payment.domain.CardData;
+import com.ecopedia.integration.payment.domain.CardRejectedException;
 import com.ecopedia.integration.payment.domain.CardValidation;
 import com.ecopedia.integration.payment.domain.GatewayCharge;
 import com.ecopedia.integration.payment.domain.GatewayRefund;
@@ -30,8 +31,9 @@ import org.springframework.web.client.RestClientResponseException;
  * que validaba y tokenizaba sin salir del contenedor, y {@code PaymentServiceImpl} no se enteró.
  *
  * <p><b>Traduce también los errores.</b> La pasarela contesta con un {@code code} estable y un
- * mensaje en inglés pensado para el log; al conductor le llega una frase en castellano que dice qué
- * hacer, elegida acá según el código (directriz 7). Todo lo que no sea una respuesta —la pasarela
+ * mensaje en inglés pensado para el log; acá se pasa a un {@code code} de Ecopedia
+ * ({@link CardRejectedException}), y el front elige con él las palabras que ve el conductor
+ * (directiva 6). Todo lo que no sea una respuesta —la pasarela
  * caída, lenta o rechazando la clave de acceso— es {@link PaymentGatewayUnavailableException}.
  *
  * <p>No es un bean propio: {@code PaymentGatewayClientConfig} lo envuelve en
@@ -43,17 +45,38 @@ public class PaymentGatewayRestClient implements PaymentGatewayPort {
 
     static final String IDEMPOTENCY_HEADER = "X-Idempotency-Key";
 
-    /** Lo que se le dice al conductor según el código con que la pasarela rechazó la tarjeta. */
-    private static final Map<String, String> TOKENIZE_REJECTIONS = Map.of(
-            "invalid_card_number", "El número de tarjeta no es válido. Revisá que esté completo y tenga solo dígitos",
-            "invalid_check_digit", "El número de tarjeta no es válido. Revisá que esté bien copiado",
-            "invalid_expiration_month", "El mes de vencimiento tiene que estar entre 1 y 12",
-            "card_expired", "La tarjeta está vencida",
-            "invalid_cardholder_name", "Falta el nombre del titular como figura en la tarjeta",
+    /**
+     * El {@code code} de Ecopedia y el mensaje para el log según el código con que la pasarela
+     * rechazó la tarjeta. Las palabras que ve el conductor las elige el front por el {@code code}.
+     */
+    private static final Map<String, Rejection> TOKENIZE_REJECTIONS = Map.of(
+            "invalid_card_number",
+            new Rejection(
+                    CardRejectedException.CARD_NUMBER_INVALID,
+                    "El número de tarjeta no es válido. Revisá que esté completo y tenga solo dígitos"),
+            "invalid_check_digit",
+            new Rejection(
+                    CardRejectedException.CARD_NUMBER_INVALID,
+                    "El número de tarjeta no es válido. Revisá que esté bien copiado"),
+            "invalid_expiration_month",
+            new Rejection(
+                    CardRejectedException.CARD_EXPIRY_INVALID, "El mes de vencimiento tiene que estar entre 1 y 12"),
+            "card_expired",
+            new Rejection(CardRejectedException.CARD_EXPIRED, "La tarjeta está vencida"),
+            "invalid_cardholder_name",
+            new Rejection(
+                    CardRejectedException.CARDHOLDER_NAME_MISSING,
+                    "Falta el nombre del titular como figura en la tarjeta"),
             "not_a_test_card",
-                    "Por ser un entorno de prueba, solo se aceptan tarjetas de prueba. Probá con la 4242 4242 4242 4242");
+            new Rejection(
+                    CardRejectedException.TEST_CARD_REQUIRED,
+                    "Por ser un entorno de prueba, solo se aceptan tarjetas de prueba. Probá con la 4242 4242 4242 4242"));
 
-    private static final String UNKNOWN_REJECTION = "La tarjeta fue rechazada. Revisá los datos o probá con otra";
+    private static final Rejection UNKNOWN_REJECTION = new Rejection(
+            CardRejectedException.CARD_REJECTED, "La tarjeta fue rechazada. Revisá los datos o probá con otra");
+
+    /** Un rechazo de la pasarela ya traducido: el {@code code} de Ecopedia y el mensaje para el log. */
+    private record Rejection(String code, String message) {}
 
     private final RestClient restClient;
 
@@ -82,7 +105,8 @@ public class PaymentGatewayRestClient implements PaymentGatewayPort {
             if (rejected.getStatusCode().value() == 400) {
                 String code = codeOf(rejected);
                 log.info("La pasarela rechazó la tarjeta: {}", code);
-                throw new IllegalArgumentException(TOKENIZE_REJECTIONS.getOrDefault(code, UNKNOWN_REJECTION));
+                Rejection rejection = TOKENIZE_REJECTIONS.getOrDefault(code, UNKNOWN_REJECTION);
+                throw new CardRejectedException(rejection.code(), rejection.message());
             }
             throw unavailable("tokenizar", rejected);
         } catch (ResourceAccessException noAnswer) {

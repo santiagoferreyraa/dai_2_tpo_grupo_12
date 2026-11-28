@@ -50,6 +50,7 @@ import type { ConnectorFilters } from './format'
 import { COUNTRY_RADIUS_KM, DEFAULT_CENTER } from './mapConfig'
 import { useDepartureOrigin } from './useDepartureOrigin'
 import { useRoute } from './useRoute'
+import { errorMessage } from '@/lib/errorMessage'
 import { useMediaQuery } from '@/lib/useMediaQuery'
 import { useSuggestionNav } from './useSuggestionNav'
 import type { ConnectorSummary, StationResult } from './types'
@@ -247,9 +248,7 @@ export default function StationsMapPage() {
       .then((rows) => setAllStations(rows))
       .catch((error: unknown) => {
         if (controller.signal.aborted) return
-        setLoadError(
-          error instanceof Error ? error.message : 'No se pudieron cargar las estaciones',
-        )
+        setLoadError(errorMessage(error, 'No pudimos cargar las estaciones.'))
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)

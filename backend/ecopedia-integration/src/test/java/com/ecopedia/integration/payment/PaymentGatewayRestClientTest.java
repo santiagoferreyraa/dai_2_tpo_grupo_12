@@ -14,6 +14,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.ecopedia.integration.payment.domain.CardBrand;
 import com.ecopedia.integration.payment.domain.CardData;
+import com.ecopedia.integration.payment.domain.CardRejectedException;
 import com.ecopedia.integration.payment.domain.CardValidation;
 import com.ecopedia.integration.payment.domain.GatewayCharge;
 import com.ecopedia.integration.payment.domain.GatewayRefund;
@@ -90,15 +91,17 @@ class PaymentGatewayRestClientTest {
     }
 
     @Test
-    @DisplayName("Traduce el código del rechazo a una frase para el conductor")
+    @DisplayName("Traduce el código del rechazo al code de Ecopedia, con una frase para el log")
     void translatesRejections() {
         gateway.expect(requestTo("http://gateway.test/v1/card_tokens"))
                 .andRespond(
                         withBadRequest().contentType(MediaType.APPLICATION_JSON).body(error("invalid_check_digit")));
 
         assertThatThrownBy(() -> client.tokenize(CARD))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("El número de tarjeta no es válido. Revisá que esté bien copiado");
+                .isInstanceOf(CardRejectedException.class)
+                .hasMessage("El número de tarjeta no es válido. Revisá que esté bien copiado")
+                .extracting("code")
+                .isEqualTo(CardRejectedException.CARD_NUMBER_INVALID);
     }
 
     @Test
@@ -109,8 +112,10 @@ class PaymentGatewayRestClientTest {
                         withBadRequest().contentType(MediaType.APPLICATION_JSON).body(error("not_a_test_card")));
 
         assertThatThrownBy(() -> client.tokenize(CARD))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("4242 4242 4242 4242");
+                .isInstanceOf(CardRejectedException.class)
+                .hasMessageContaining("4242 4242 4242 4242")
+                .extracting("code")
+                .isEqualTo(CardRejectedException.TEST_CARD_REQUIRED);
     }
 
     @Test
@@ -121,8 +126,10 @@ class PaymentGatewayRestClientTest {
                         withBadRequest().contentType(MediaType.APPLICATION_JSON).body(error("something_new")));
 
         assertThatThrownBy(() -> client.tokenize(CARD))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("La tarjeta fue rechazada. Revisá los datos o probá con otra");
+                .isInstanceOf(CardRejectedException.class)
+                .hasMessage("La tarjeta fue rechazada. Revisá los datos o probá con otra")
+                .extracting("code")
+                .isEqualTo(CardRejectedException.CARD_REJECTED);
     }
 
     @Test

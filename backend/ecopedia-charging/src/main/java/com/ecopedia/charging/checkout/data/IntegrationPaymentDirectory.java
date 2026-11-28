@@ -1,6 +1,7 @@
 package com.ecopedia.charging.checkout.data;
 
 import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
+import com.ecopedia.charging.checkout.domain.DriverHasDebtException;
 import com.ecopedia.charging.checkout.domain.PaymentDirectory;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
@@ -140,7 +141,8 @@ public class IntegrationPaymentDirectory implements PaymentDirectory {
             if (ex.getStatusCode().value() == 422) {
                 String code = extractCode(ex);
                 if ("DRIVER_HAS_DEBT".equals(code)) {
-                    throw new PaymentMethodInvalidException("El conductor arrastra deuda pendiente de regularizar");
+                    // Aparte de la tarjeta inválida: el front le dice que pague la deuda, no que revise la tarjeta.
+                    throw new DriverHasDebtException(driverId);
                 } else if ("CARD_DECLINED".equals(code)) {
                     throw new PaymentMethodInvalidException("La tarjeta fue rechazada por la pasarela de pagos");
                 } else if ("CARD_EXPIRED".equals(code)) {

@@ -2,6 +2,8 @@ import { useState, type FormEvent } from 'react'
 
 import { describePeak, useNetworkRates, useStationPricing } from '@/features/pricing/usePricing'
 import type { StationPricingInput } from '@/features/pricing/types'
+import { ApiError } from '@/lib/api'
+import { errorMessage } from '@/lib/errorMessage'
 
 import { formatCoordinate, parseDecimal } from '../format'
 import { normalizeGridNode, toGridNodeId, validateGridNode } from '../gridNode'
@@ -152,7 +154,17 @@ export default function StationFormSheet({
     try {
       await onSubmit(input, pricingToSave())
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : 'No se pudo guardar la estación')
+      /*
+        Un `Error` a secas trae una frase escrita por la pantalla (la versión vieja, la seña que no
+        se guardó: ver `StationsPage`); un `ApiError`, el `detail` del backend, que no se muestra.
+      */
+      setFailure(
+        error instanceof Error && !(error instanceof ApiError)
+          ? error.message
+          : errorMessage(error, 'No se pudo guardar la estación.', {
+              byStatus: { 400: 'Revisá los datos de la estación.' },
+            }),
+      )
     } finally {
       setSaving(false)
     }

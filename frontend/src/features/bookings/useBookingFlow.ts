@@ -326,8 +326,12 @@ function holdErrorMessage(reason: unknown): string {
   if (busy !== null) return busy
   if (reason.status === 409)
     return 'Ese horario ya no está disponible en este conector. Probá con otro.'
-  if (reason.status === 404) return 'Este conector ya no existe. Elegí otro desde el mapa.'
-  if (reason.status === 400) return reason.message
+  /* Sin pistas sobre el estado real (Manuel, 02/11): qué hacer, no qué le pasó al conector. */
+  if (reason.status === 404)
+    return 'No pudimos reservar en este conector. Elegí otro desde el mapa.'
+  /* El `detail` del 400 es para el log (directiva 6): el día o la duración que el backend no acepta. */
+  if (reason.status === 400)
+    return 'No se pudo reservar ese horario. Revisá el día y la duración que elegiste.'
   return commonErrorMessage(reason.status) ?? 'No se pudo reservar. Probá de nuevo.'
 }
 
@@ -383,7 +387,7 @@ function confirmErrorMessage(reason: unknown): BookingFlowError {
     return plain('Se venció el tiempo para confirmar. Elegí el horario de nuevo.')
   }
   if (reason.status === 409) {
-    return plain('Mientras confirmabas, alguien reservó ese horario. Elegí otro.')
+    return plain('Ese horario ya no está disponible. Elegí otro.')
   }
   const common = commonErrorMessage(reason.status)
   return common === null ? retry : plain(common)

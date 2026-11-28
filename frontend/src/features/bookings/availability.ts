@@ -50,10 +50,15 @@ export function useAvailability(connectorId: number, refreshKey: unknown): Avail
       (free) => setState({ status: 'ready', free }),
       (reason: unknown) => {
         if (controller.signal.aborted) return
-        if (reason instanceof ApiError && reason.status === 409) {
-          setState({ status: 'unbookable', message: 'Este conector está fuera de servicio.' })
-        } else if (reason instanceof ApiError && reason.status === 404) {
-          setState({ status: 'unbookable', message: 'Este conector ya no existe.' })
+        /*
+          Fuera de servicio (409) o inexistente (404): la misma frase para los dos, que dice qué
+          hacer y no qué le pasó al conector (Manuel, 02/11).
+        */
+        if (reason instanceof ApiError && (reason.status === 409 || reason.status === 404)) {
+          setState({
+            status: 'unbookable',
+            message: 'Este conector no se puede reservar ahora. Elegí otro desde el mapa.',
+          })
         } else {
           setState({ status: 'unknown' })
         }

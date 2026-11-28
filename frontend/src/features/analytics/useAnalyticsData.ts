@@ -84,7 +84,11 @@ export function useAnalyticsData(period: Period): AnalyticsData {
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return
-        const rangeError = error instanceof ApiError && error.status === 400 ? error.message : null
+        // El 400 es el rango que el backend no acepta; su `detail` no se muestra (directiva 6).
+        const rangeError =
+          error instanceof ApiError && error.status === 400
+            ? 'Revisá el rango de fechas y probá de nuevo.'
+            : null
         setDashboardResult({ period, attempt, response: null, rangeError })
       })
     return () => controller.abort()

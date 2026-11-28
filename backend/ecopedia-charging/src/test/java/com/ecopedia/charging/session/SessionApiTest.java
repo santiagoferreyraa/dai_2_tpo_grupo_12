@@ -16,6 +16,7 @@ import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
 import com.ecopedia.charging.booking.domain.DriverAlreadyBookedException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
 import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
+import com.ecopedia.charging.checkout.domain.DriverHasDebtException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import com.ecopedia.charging.session.domain.ActivationRequest;
@@ -114,7 +115,7 @@ class SessionApiTest {
     }
 
     @Test
-    @DisplayName("Tarjeta inválida o con deuda responde 422 Unprocessable Entity con code PAYMENT_METHOD_INVALID")
+    @DisplayName("Tarjeta inválida responde 422 Unprocessable Entity con code PAYMENT_METHOD_INVALID")
     void paymentInvalidReturnsUnprocessableEntity() throws Exception {
         when(activationService.activate(any(ActivationRequest.class), any()))
                 .thenThrow(new PaymentMethodInvalidException("Tarjeta rechazada"));
@@ -127,6 +128,22 @@ class SessionApiTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.code").value("PAYMENT_METHOD_INVALID"));
+    }
+
+    @Test
+    @DisplayName("Con deuda de una carga anterior responde 409 con code DRIVER_HAS_DEBT, como el checkout")
+    void debtReturnsConflictWithItsOwnCode() throws Exception {
+        when(activationService.activate(any(ActivationRequest.class), any()))
+                .thenThrow(new DriverHasDebtException(DRIVER_ID));
+
+        ActivationHttpRequest request = new ActivationHttpRequest(CONNECTOR_ID, null, 80, "123456");
+
+        mockMvc.perform(post("/api/sessions/activation")
+                        .header(HttpHeaders.AUTHORIZATION, TestTokens.bearer(jwtSecret, DRIVER_ID, "CONDUCTOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DRIVER_HAS_DEBT"));
     }
 
     @Test

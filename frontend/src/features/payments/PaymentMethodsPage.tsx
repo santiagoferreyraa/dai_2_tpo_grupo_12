@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import BottomSheet from '@/components/BottomSheet'
 import ConfirmDialog from '@/components/ConfirmDialog'
-import { ApiError } from '@/lib/api'
+import { errorMessage } from '@/lib/errorMessage'
 import { useMediaQuery } from '@/lib/useMediaQuery'
 
 import CardForm from './components/CardForm'
@@ -12,6 +12,22 @@ import PaymentMethodRow from './components/PaymentMethodRow'
 import { listCards, registerCard, removeCard } from './data/paymentMethodsRepository'
 import { describeCard } from './format'
 import type { PaymentMethod, RegisterCardInput } from './types'
+
+/**
+ * Lo que se le dice al conductor según el `code` con que Pagos rechazó el alta (ver
+ * `CardRejectedException`). El de las tarjetas de prueba nombra cuál usar: sin eso, en la demo
+ * nadie sabe qué número cargar.
+ */
+const CARD_REJECTIONS: Readonly<Record<string, string>> = {
+  CARD_NUMBER_INVALID: 'El número de tarjeta no es válido. Revisá que esté bien copiado.',
+  CARD_EXPIRY_INVALID: 'Revisá el mes de vencimiento de la tarjeta.',
+  CARD_EXPIRED: 'La tarjeta está vencida. Probá con otra.',
+  CARDHOLDER_NAME_MISSING: 'Completá el nombre del titular como figura en la tarjeta.',
+  TEST_CARD_REQUIRED: 'Solo se aceptan tarjetas de prueba. Probá con la 4242 4242 4242 4242.',
+  CARD_ALREADY_REGISTERED: 'Esa tarjeta ya está en tus medios de pago.',
+  CARD_LIMIT_REACHED: 'Llegaste al máximo de tarjetas. Eliminá alguna para agregar otra.',
+  CARD_REJECTED: 'La tarjeta fue rechazada. Revisá los datos o probá con otra.',
+}
 
 /**
  * Los medios de pago del conductor (RF02, ECO-26).
@@ -79,9 +95,7 @@ export default function PaymentMethodsPage() {
       .catch((cause: unknown) => {
         // Una petición cancelada por desmontaje no es un error que mostrar: la pantalla ya no está.
         if (controller.signal.aborted) return
-        setLoadError(
-          cause instanceof ApiError ? cause.message : 'No se pudieron cargar tus tarjetas',
-        )
+        setLoadError(errorMessage(cause, 'No pudimos cargar tus tarjetas.'))
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)
@@ -98,9 +112,10 @@ export default function PaymentMethodsPage() {
       setAdding(false)
       reload()
     } catch (cause) {
-      // El mensaje viene del backend —"La tarjeta está vencida", "Ese número no es válido"— y se
-      // muestra tal cual: es más preciso que cualquier texto genérico que pusiéramos acá.
-      setFormError(cause instanceof ApiError ? cause.message : 'No se pudo guardar la tarjeta')
+      // El backend manda un `code` por cada rechazo y acá se eligen las palabras (directiva 6).
+      setFormError(
+        errorMessage(cause, 'No se pudo guardar la tarjeta.', { byCode: CARD_REJECTIONS }),
+      )
     } finally {
       setSending(false)
     }
@@ -129,7 +144,7 @@ export default function PaymentMethodsPage() {
        * con el mensaje adentro invita a reintentar la misma llamada que acaba de fallar.
        */
       setPendingRemoval(null)
-      setLoadError(cause instanceof ApiError ? cause.message : 'No se pudo eliminar la tarjeta')
+      setLoadError(errorMessage(cause, 'No se pudo eliminar la tarjeta.'))
     } finally {
       setRemovingId(null)
     }

@@ -9,6 +9,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.ecopedia.charging.checkout.domain.ConsumptionPaymentStatus;
+import com.ecopedia.charging.checkout.domain.DriverHasDebtException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import java.io.IOException;
@@ -104,7 +105,7 @@ class IntegrationPaymentDirectoryTest {
     }
 
     @Test
-    @DisplayName("Validación para carga: conductor con deuda lanza PaymentMethodInvalidException")
+    @DisplayName("Validación para carga: conductor con deuda lanza DriverHasDebtException, no la de tarjeta inválida")
     void validateForCharging_driverWithDebt() {
         RestClient.Builder builder = RestClient.builder().baseUrl("http://integration");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -119,8 +120,7 @@ class IntegrationPaymentDirectoryTest {
         IntegrationPaymentDirectory directory = new IntegrationPaymentDirectory(client, client);
 
         assertThatThrownBy(() -> directory.validatePaymentMethodForCharging(10L, null))
-                .isInstanceOf(PaymentMethodInvalidException.class)
-                .hasMessageContaining("deuda");
+                .isInstanceOf(DriverHasDebtException.class);
         server.verify();
     }
 

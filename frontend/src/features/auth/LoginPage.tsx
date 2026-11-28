@@ -2,6 +2,7 @@ import { type FormEvent, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 
 import { ApiError } from '@/lib/api'
+import { errorMessage } from '@/lib/errorMessage'
 
 import AuthLayout from './components/AuthLayout'
 import FormField from './components/FormField'
@@ -124,11 +125,15 @@ export default function LoginPage() {
  * desconocido qué direcciones están registradas. Acá se reemplaza por la frase que usa
  * cualquier login, porque "Credenciales inválidas" es vocabulario del sistema y no del que
  * está intentando entrar. Una cuenta dada de baja también recibe ese mensaje, por lo mismo.
- * Cualquier otro motivo —el bloqueo por intentos fallidos, por ejemplo— se muestra tal cual
- * viene: es información que el usuario necesita y que no tiene cómo deducir.
+ * El bloqueo por intentos fallidos (429) tiene su frase, porque es información que el usuario
+ * necesita y no tiene cómo deducir; cualquier otro motivo, la genérica de `errorMessage`, nunca el
+ * texto del backend (directiva 6).
  */
 function readLoginError(cause: unknown): string {
-  if (!(cause instanceof ApiError)) return 'No se pudo iniciar sesión'
-  if (cause.message === INVALID_CREDENTIALS) return 'El email o la contraseña no son correctos.'
-  return cause.message
+  if (cause instanceof ApiError && cause.message === INVALID_CREDENTIALS) {
+    return 'El email o la contraseña no son correctos.'
+  }
+  return errorMessage(cause, 'No se pudo iniciar sesión.', {
+    byStatus: { 429: 'Hubo demasiados intentos. Esperá unos minutos y probá de nuevo.' },
+  })
 }

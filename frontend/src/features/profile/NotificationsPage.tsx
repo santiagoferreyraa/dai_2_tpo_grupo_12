@@ -6,7 +6,7 @@ import {
   useNotifications,
 } from '@/features/notifications/data/notificationsStore'
 import NotificationList from '@/features/notifications/NotificationList'
-import { ApiError } from '@/lib/api'
+import { errorMessage } from '@/lib/errorMessage'
 
 import ProfileCard from './components/ProfileCard'
 
@@ -54,7 +54,7 @@ export default function NotificationsPage() {
        * Ver `removeAllNotifications`.
        */
       setConfirming(false)
-      setEmptyError(cause instanceof ApiError ? cause.message : 'No pudimos borrar tus avisos.')
+      setEmptyError(errorMessage(cause, 'No pudimos borrar tus avisos.'))
     } finally {
       setEmptying(false)
     }

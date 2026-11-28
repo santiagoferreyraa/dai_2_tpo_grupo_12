@@ -1,4 +1,4 @@
-import { api } from '@/lib/api'
+import { ApiError, api } from '@/lib/api'
 import type { ChatMessage } from './types'
 
 /**
@@ -48,22 +48,45 @@ interface AgentResponseBody {
 export async function askAgent(request: AgentRequest, signal?: AbortSignal): Promise<AgentReply> {
   if (!BACKEND_READY) return stubReply(request, signal)
 
-  const body = await api.post<AgentResponseBody>(
-    ENDPOINT,
-    {
-      message: request.message,
-      history: request.history.map(({ role, text, signature }) => ({ role, text, signature })),
-    },
-    { signal },
-  )
+  let body: AgentResponseBody
+  try {
+    body = await api.post<AgentResponseBody>(
+      ENDPOINT,
+      {
+        message: request.message,
+        history: request.history.map(({ role, text, signature }) => ({ role, text, signature })),
+      },
+      { signal },
+    )
+  } catch (cause) {
+    throw new Error(agentErrorText(cause), { cause })
+  }
 
   /*
    * El texto va SIN recortar: el sello se calculó sobre el texto exacto que mandó el agente, y un
    * espacio de menos lo invalidaría. El agente ya lo manda sin espacios de más.
    */
   const text = body.text ?? body.reply ?? body.message ?? ''
-  if (text.trim() === '') throw new Error('El agente contestó vacío')
+  if (text.trim() === '') throw new Error(UNAVAILABLE)
   return { text, signature: body.signature }
+}
+
+const UNAVAILABLE = 'El asistente no está disponible ahora. Probá de nuevo en un momento.'
+
+/**
+ * Lo que ve el conductor cuando la pregunta falla.
+ *
+ * El agente escribe sus rechazos para el conductor, en castellano y diciendo qué hacer (`message`
+ * en `agent/src/server.ts`: el límite de preguntas, la clave inválida), y esos se muestran. Lo que
+ * no viene de él —el agente caído, con el 502 de Caddy o del proxy de Vite, sin conexión— no tiene
+ * ese cuerpo y lleva una frase propia, nunca el "Error 502" (directiva 6).
+ */
+function agentErrorText(cause: unknown): string {
+  if (cause instanceof ApiError && typeof cause.detail === 'object' && cause.detail !== null) {
+    const message = (cause.detail as { message?: unknown }).message
+    if (typeof message === 'string' && message.trim() !== '') return message
+  }
+  return UNAVAILABLE
 }
 
 /*

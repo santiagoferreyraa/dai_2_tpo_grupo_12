@@ -14,8 +14,8 @@ import UnderlineField from '@/components/UnderlineField'
 import { useVehicleModels } from '@/features/vehicles/catalog'
 import VehicleDialog from '@/features/vehicles/components/VehicleDialog'
 import { vehicleLabelOf } from '@/features/vehicles/vehicle'
-import { ApiError } from '@/lib/api'
 import { STALE_VERSION_MESSAGE, isStaleVersion } from '@/lib/entityTag'
+import { errorMessage } from '@/lib/errorMessage'
 
 import { AVATAR_IDS, avatarSrc, chooseAvatar, useAvatarId } from './avatars'
 import ProfileCard from './components/ProfileCard'
@@ -147,7 +147,7 @@ export default function EditProfilePage() {
       applyProfile(await updateMyProfile(savedName, vehicleModelId, session?.profileVersion))
     } catch (cause: unknown) {
       if (isStaleVersion(cause)) setFailure(STALE_VERSION_MESSAGE)
-      else setFailure(cause instanceof ApiError ? cause.message : 'No se pudo guardar el vehículo')
+      else setFailure(errorMessage(cause, 'No se pudo guardar el vehículo.'))
     }
   }
 
@@ -204,8 +204,12 @@ export default function EditProfilePage() {
         */
         setFailure(changingPassword ? STALE_AFTER_PASSWORD_MESSAGE : STALE_VERSION_MESSAGE)
       } else {
-        /* El mensaje viene del backend —"La contraseña actual no es correcta"— y se muestra tal cual. */
-        setFailure(cause instanceof ApiError ? cause.message : 'No se pudieron guardar los cambios')
+        /* La contraseña actual equivocada llega con su `code`, y acá se eligen las palabras. */
+        setFailure(
+          errorMessage(cause, 'No se pudieron guardar los cambios.', {
+            byCode: { CURRENT_PASSWORD_INCORRECT: 'La contraseña actual no es correcta.' },
+          }),
+        )
       }
       setSaving(false)
     }
