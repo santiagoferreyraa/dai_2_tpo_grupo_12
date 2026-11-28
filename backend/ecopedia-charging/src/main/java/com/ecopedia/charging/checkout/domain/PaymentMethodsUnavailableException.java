@@ -8,6 +8,7 @@ package com.ecopedia.charging.checkout.domain;
  * conductor no tiene nada que corregir: le alcanza con reintentar en un momento.
  */
 public class PaymentMethodsUnavailableException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     public PaymentMethodsUnavailableException(Throwable cause) {
         super("No se pudo verificar el medio de pago del conductor", cause);

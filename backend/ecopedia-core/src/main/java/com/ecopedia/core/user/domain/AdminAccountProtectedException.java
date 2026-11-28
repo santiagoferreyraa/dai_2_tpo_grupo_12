@@ -6,6 +6,7 @@ package com.ecopedia.core.user.domain;
  * así que de paso nadie se saca el rol a sí mismo ni deja la plataforma sin administradores.
  */
 public class AdminAccountProtectedException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     /** El {@code code} estable de la respuesta, para que el front elija sus palabras. */
     public static final String CODE = "ADMIN_PROTECTED";

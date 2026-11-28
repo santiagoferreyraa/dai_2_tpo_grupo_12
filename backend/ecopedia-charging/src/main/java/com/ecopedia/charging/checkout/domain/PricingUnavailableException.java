@@ -7,6 +7,7 @@ package com.ecopedia.charging.checkout.domain;
  * de verdad, eso regalaba reservas sin seña con solo tener core caído. Ahora no se confirma.
  */
 public class PricingUnavailableException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     public PricingUnavailableException(Throwable cause) {
         super("No se pudo calcular la seña: Tarificación no contestó", cause);

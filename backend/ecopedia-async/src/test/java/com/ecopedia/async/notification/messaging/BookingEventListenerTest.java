@@ -63,6 +63,7 @@ class BookingEventListenerTest {
                 BigDecimal.ZERO,
                 null,
                 null,
+                null,
                 null);
 
         Message retryMessage = mock(Message.class);

@@ -7,6 +7,7 @@ import java.time.Duration;
  * intentos fallidos. Trae cuánto falta para poder volver a probar.
  */
 public class TooManyLoginAttemptsException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     private final Duration retryAfter;
 

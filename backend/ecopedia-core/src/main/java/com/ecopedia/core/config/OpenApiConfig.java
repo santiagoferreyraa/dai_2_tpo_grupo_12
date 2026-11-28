@@ -15,7 +15,6 @@ import io.swagger.v3.oas.models.responses.ApiResponses;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -56,16 +55,14 @@ public class OpenApiConfig {
     static final String PROBLEM_MEDIA_TYPE = "application/problem+json";
 
     /** Los errores que puede devolver cualquier operación de este módulo, además del 401. */
-    private static final Map<String, String> ERRORS = errors();
+    /** Un error que puede devolver cualquier operación del módulo, en el orden del contrato. */
+    private record KnownError(String status, String description) {}
 
-    private static Map<String, String> errors() {
-        Map<String, String> errors = new LinkedHashMap<>();
-        errors.put("400", "La solicitud no es válida.");
-        errors.put("404", "No se encontró el recurso pedido, o la operación no es para este rol.");
-        errors.put("409", "El pedido choca con el estado actual.");
-        errors.put("429", "Demasiados intentos fallidos: esperar antes de volver a probar.");
-        return errors;
-    }
+    private static final List<KnownError> ERRORS = List.of(
+            new KnownError("400", "La solicitud no es válida."),
+            new KnownError("404", "No se encontró el recurso pedido, o la operación no es para este rol."),
+            new KnownError("409", "El pedido choca con el estado actual."),
+            new KnownError("429", "Demasiados intentos fallidos: esperar antes de volver a probar."));
 
     @Bean
     public OpenAPI ecopediaOpenApi() {
@@ -94,7 +91,7 @@ public class OpenApiConfig {
             if (acceptsIfMatch(handlerMethod)) {
                 addProblem(operation, "412", "El If-Match no es la versión guardada: alguien lo cambió en el medio.");
             }
-            ERRORS.forEach((status, description) -> addProblem(operation, status, description));
+            ERRORS.forEach(error -> addProblem(operation, error.status(), error.description()));
             return operation;
         };
     }
@@ -141,6 +138,8 @@ public class OpenApiConfig {
                 || AnnotatedElementUtils.hasAnnotation(handlerMethod.getBeanType(), PreAuthorize.class);
     }
 
+    // ApiResponses es una clase de swagger-models sin interfaz propia: no hay otro tipo que usar.
+    @SuppressWarnings("PMD.LooseCoupling")
     private static void addProblem(Operation operation, String status, String description) {
         ApiResponses responses = operation.getResponses();
         if (responses == null) {

@@ -22,5 +22,12 @@ public interface StationRepository {
 
     List<Station> findAllActive();
 
+    /**
+     * Las activas dentro de un recuadro de latitud y longitud, con sus fotos: la primera pasada de
+     * la búsqueda, que resuelve la base con el índice {@code idx_stations_location}. El recuadro
+     * contiene al círculo del radio; las esquinas las recorta el servicio.
+     */
+    List<Station> findActiveWithin(double minLatitude, double maxLatitude, double minLongitude, double maxLongitude);
+
     List<Station> findAll();
 }

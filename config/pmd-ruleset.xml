@@ -5,11 +5,10 @@
     Cuatro categorías enteras: las que buscan errores, problemas de seguridad, de concurrencia y
     malas prácticas. Quedan afuera las de estilo, diseño y documentación, que son opiniones.
 
-    "mvn verify" falla con una violación de prioridad 1 o 2 (failurePriority en el pom padre). Las
-    de prioridad 3 a 5 no frenan el build pero quedan en target/pmd.xml de cada módulo: al 10/11/2026
-    eran unas 130, casi todas MissingSerialVersionUID en excepciones que nunca se serializan,
-    AvoidLiteralsInIfCondition y DoNotUseThreads (que es para servidores Java EE y acá los hilos son
-    a propósito: el vencimiento de las retenciones y los simuladores).
+    "mvn verify" falla con cualquier violación, de prioridad 1 a 5 (failurePriority en el pom padre,
+    desde el 28/11/2026). Las reglas que no aplican a este código están excluidas acá abajo, cada una
+    con su motivo; las excepciones puntuales van con @SuppressWarnings en el lugar, también con su
+    motivo al lado.
 -->
 <ruleset name="Ecopedia"
          xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
@@ -18,9 +17,62 @@
 
     <description>Reglas de PMD de Ecopedia.</description>
 
-    <rule ref="category/java/errorprone.xml"/>
+    <rule ref="category/java/errorprone.xml">
+        <!--
+            Pide que ningún campo se llame como un método. Choca con el estilo de los records, que
+            Java mismo usa: un enum o una excepción con el campo "code" y el accesor "code()"
+            (DriverAlreadyBookedException, ConnectorType, CardBrand...). Renombrarlos cambiaría la API
+            para cumplir una regla que no encuentra ningún error.
+        -->
+        <exclude name="AvoidFieldNameMatchingMethodName"/>
+        <!--
+            Pide no asignar null. En las entidades JPA, null es el valor de una columna opcional que
+            se vacía a propósito: la carga que terminó deja el conector sin sesión (ConnectorState),
+            el aviso borrado limpia su texto (Notification), la deuda pagada deja de tener próximo
+            reintento (PendingPayment). Un valor especial en su lugar sería peor que el null.
+        -->
+        <exclude name="NullAssignment"/>
+        <!-- Se configura abajo, para que no cuente las anotaciones. -->
+        <exclude name="AvoidDuplicateLiterals"/>
+    </rule>
+
+    <!--
+        Los textos repetidos adentro de anotaciones ("hasRole('CONDUCTOR')", "204") son la forma de
+        leer cada endpoint de un vistazo: sacarlos a una constante obliga a ir a buscarla. Fuera de
+        las anotaciones, la regla sigue valiendo.
+    -->
+    <rule ref="category/java/errorprone.xml/AvoidDuplicateLiterals">
+        <properties>
+            <property name="skipAnnotations" value="true"/>
+        </properties>
+    </rule>
+
     <rule ref="category/java/security.xml"/>
-    <rule ref="category/java/multithreading.xml"/>
+
+    <rule ref="category/java/multithreading.xml">
+        <!--
+            "Una aplicación J2EE no debería crear hilos": es para servidores Java EE, que administran
+            los hilos ellos. Spring Boot no lo es, y los hilos de acá son a propósito: el reloj que
+            vence las retenciones de Reservas (el estado del componente stateful) y la pausa de los
+            simuladores para mostrar un timeout.
+        -->
+        <exclude name="DoNotUseThreads"/>
+        <!--
+            Piden ReentrantLock en vez de synchronized. El motivo de fondo es que synchronized fija el
+            hilo virtual a su hilo portador, y Ecopedia no usa hilos virtuales (spring.threads.virtual
+            está apagado). Con hilos de plataforma, synchronized es igual de correcto y más simple de
+            leer: el candado de Reservas y el del simulador de cargadores.
+        -->
+        <exclude name="AvoidSynchronizedAtMethodLevel"/>
+        <exclude name="AvoidSynchronizedStatement"/>
+        <!--
+            Pide ConcurrentHashMap en todo mapa. Solo tiene sentido en un mapa que comparten varios
+            hilos sin otro candado; los que marca acá son variables locales de un método (agrupar
+            franjas en Estadísticas, los conectores de la búsqueda) o un mapa que ya protege un
+            synchronized (el simulador de cargadores). El de las retenciones ya es concurrente.
+        -->
+        <exclude name="UseConcurrentHashMap"/>
+    </rule>
 
     <rule ref="category/java/bestpractices.xml">
         <!--

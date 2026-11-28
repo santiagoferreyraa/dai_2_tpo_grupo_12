@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ecopedia.core.security.JwtTokenProvider;
 import com.ecopedia.core.terminal.data.JpaConnectorRepository;
 import com.ecopedia.core.terminal.data.JpaStationRepository;
 import com.ecopedia.core.terminal.domain.Connector;
@@ -12,6 +13,11 @@ import com.ecopedia.core.terminal.domain.ConnectorType;
 import com.ecopedia.core.terminal.domain.Station;
 import com.ecopedia.core.terminal.domain.StationData;
 import com.ecopedia.core.terminal.domain.TerminalService;
+import com.ecopedia.core.user.data.JpaUserRepository;
+import com.ecopedia.core.user.domain.RegistrationData;
+import com.ecopedia.core.user.domain.Role;
+import com.ecopedia.core.user.domain.User;
+import com.ecopedia.core.user.domain.UserService;
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -20,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -57,6 +64,15 @@ class TerminalApiTest {
     @Autowired
     private JpaConnectorRepository connectorRepository;
 
+    @Autowired
+    private JpaUserRepository userRepository;
+
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private JwtTokenProvider tokenProvider;
+
     /*
      * El perfil 'dev' usa H2 con DB_CLOSE_DELAY=-1, así que la base sobrevive a cada prueba
      * dentro de la misma JVM. Sin esta limpieza, una prueba vería las estaciones de la anterior.
@@ -66,6 +82,19 @@ class TerminalApiTest {
     void cleanUp() {
         connectorRepository.deleteAll();
         stationRepository.deleteAll();
+        userRepository.deleteAll();
+    }
+
+    /*
+     * Las validaciones de potencia se prueban con sesión de ADMIN: sin token, la cadena de seguridad
+     * contesta 401 antes de leer el cuerpo (28/11), y el 400 de la validación no llega a verse.
+     */
+    private String adminBearer() {
+        User admin = userRepository
+                .findByEmail("admin-terminales@ecopedia.test")
+                .orElseGet(() -> userService.register(new RegistrationData(
+                        "admin-terminales@ecopedia.test", "unaClave123", "Admin terminales", Role.ADMIN)));
+        return "Bearer " + tokenProvider.generateToken(admin.getId(), admin.getEmail(), Role.ADMIN);
     }
 
     private Station givenStation(String name, List<String> photoUrls) {
@@ -120,6 +149,7 @@ class TerminalApiTest {
         Station station = givenStation("YPF Constitución", List.of());
 
         mockMvc.perform(post("/api/stations/{id}/connectors", station.getId())
+                        .header(HttpHeaders.AUTHORIZATION, adminBearer())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"connectorType\":\"CCS2\",\"maxPowerKw\":0}"))
                 .andExpect(status().isBadRequest());
@@ -131,6 +161,7 @@ class TerminalApiTest {
         Station station = givenStation("YPF Constitución", List.of());
 
         mockMvc.perform(post("/api/stations/{id}/connectors", station.getId())
+                        .header(HttpHeaders.AUTHORIZATION, adminBearer())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"connectorType\":\"CCS2\",\"maxPowerKw\":-50}"))
                 .andExpect(status().isBadRequest());
@@ -144,6 +175,7 @@ class TerminalApiTest {
         Connector connector = terminalService.addConnector(station.getId(), ConnectorType.CCS2, new BigDecimal("50"));
 
         mockMvc.perform(post("/api/connectors/{id}/configure", connector.getId())
+                        .header(HttpHeaders.AUTHORIZATION, adminBearer())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"connectorType\":\"CCS2\",\"maxPowerKw\":0}"))
                 .andExpect(status().isBadRequest());

@@ -10,6 +10,7 @@ package com.ecopedia.core.vehicle.domain;
  * distinguirlo sin tocar esta clase.
  */
 public class VehicleModelNotFoundException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     public VehicleModelNotFoundException(Long modelId) {
         super("No existe un modelo de vehículo con ID: " + modelId);

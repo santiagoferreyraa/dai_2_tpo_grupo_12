@@ -58,9 +58,10 @@ class AdminErrorResponseTest {
     /* La baja de usuarios del backoffice se sacó el 02/11: la de /api/users pide la contraseña. */
 
     @Test
-    @DisplayName("DEF-05 · Dar de baja desde el backoffice una estación inexistente responde 404, no 500")
+    @DisplayName("DEF-05 · Que el ADMIN dé de baja una estación inexistente responde 404, no 500")
     void deactivatingAnUnknownStationIsNotFound() throws Exception {
-        mockMvc.perform(delete("/api/admin/stations/999999").header(HttpHeaders.AUTHORIZATION, adminBearer()))
+        // Por DELETE /api/stations/{id}: la copia de /api/admin/stations se sacó el 28/11.
+        mockMvc.perform(delete("/api/stations/999999").header(HttpHeaders.AUTHORIZATION, adminBearer()))
                 .andExpect(status().isNotFound());
     }
 }

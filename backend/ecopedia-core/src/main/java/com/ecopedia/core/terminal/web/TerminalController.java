@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -149,10 +150,13 @@ public class TerminalController {
     @GetMapping("/stations")
     public ResponseEntity<List<StationResponse>> getAllStations() {
         List<Station> stations = terminalService.getAllStations();
+        // Los conectores de todas en una sola consulta, no una por estación.
+        Map<Long, List<Connector>> connectors = terminalService.getConnectorsByStations(
+                stations.stream().map(Station::getId).toList());
         return ResponseEntity.ok(stations.stream()
                 .map(s -> StationResponse.fromDomain(
                         s,
-                        terminalService.getConnectorsByStation(s.getId()).stream()
+                        connectors.getOrDefault(s.getId(), List.of()).stream()
                                 .map(ConnectorResponse::fromDomain)
                                 .toList()))
                 .toList());

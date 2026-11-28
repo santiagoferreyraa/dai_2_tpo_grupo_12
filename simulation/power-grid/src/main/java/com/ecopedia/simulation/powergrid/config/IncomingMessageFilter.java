@@ -82,10 +82,11 @@ public class IncomingMessageFilter extends OncePerRequestFilter {
     private static Optional<byte[]> readUpTo(InputStream in, int limit) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         byte[] buffer = new byte[4096];
-        int n;
-        while ((n = in.read(buffer)) != -1) {
+        int n = in.read(buffer);
+        while (n != -1) {
             if (out.size() + n > limit) return Optional.empty();
             out.write(buffer, 0, n);
+            n = in.read(buffer);
         }
         return Optional.of(out.toByteArray());
     }
@@ -110,7 +111,7 @@ public class IncomingMessageFilter extends OncePerRequestFilter {
 
         BufferedRequest(HttpServletRequest request, byte[] body) {
             super(request);
-            this.body = body;
+            this.body = body.clone();
         }
 
         @Override

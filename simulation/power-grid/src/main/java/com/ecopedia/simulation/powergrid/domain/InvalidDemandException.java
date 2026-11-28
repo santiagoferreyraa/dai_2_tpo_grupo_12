@@ -7,6 +7,7 @@ import java.math.BigDecimal;
  * {@code InvalidDemandFault}.
  */
 public class InvalidDemandException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     private final BigDecimal requestedPowerKw;
 

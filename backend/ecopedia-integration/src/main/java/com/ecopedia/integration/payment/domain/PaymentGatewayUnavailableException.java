@@ -8,6 +8,7 @@ package com.ecopedia.integration.payment.domain;
  * mensaje está escrito para el conductor, porque es lo que termina viendo (directriz 7).
  */
 public class PaymentGatewayUnavailableException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     public PaymentGatewayUnavailableException(Throwable cause) {
         super("No pudimos comunicarnos con el procesador de pagos. Probá de nuevo en un momento.", cause);

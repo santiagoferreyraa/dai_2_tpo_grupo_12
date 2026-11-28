@@ -26,7 +26,8 @@ public record NotificationToDispatch(
         Boolean depositRefunded,
         String cardLastFour,
         Instant depositRefundableUntil,
-        DebtFacts debt) {
+        DebtFacts debt,
+        Integer noShowGraceMinutes) {
 
     /** Un aviso de una reserva. */
     public NotificationToDispatch(
@@ -53,6 +54,7 @@ public record NotificationToDispatch(
                 depositRefunded,
                 cardLastFour,
                 depositRefundableUntil,
+                null,
                 null);
     }
 
@@ -60,7 +62,7 @@ public record NotificationToDispatch(
     public static NotificationToDispatch ofDebt(
             String eventId, NotificationType type, Long recipientId, DebtFacts debt) {
         return new NotificationToDispatch(
-                eventId, type, recipientId, null, null, null, null, null, null, null, null, debt);
+                eventId, type, recipientId, null, null, null, null, null, null, null, null, debt, null);
     }
 
     /** Un aviso de una reserva sin seña. */

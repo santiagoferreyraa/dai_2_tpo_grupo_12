@@ -26,6 +26,11 @@ import java.util.Locale;
  */
 class NotificationTemplates {
 
+    /** El conector entre dónde y cuándo: "Tu reserva en X del lunes 1/12 de 18:00 a 19:00". */
+    private static final String OF_DAY = " del ";
+
+    private static final long SECONDS_PER_MINUTE = 60;
+
     private static final Locale SPANISH = Locale.forLanguageTag("es-AR");
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("EEEE d/MM", SPANISH);
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm", SPANISH);
@@ -76,19 +81,19 @@ class NotificationTemplates {
         return switch (request.type()) {
             case BOOKING_CONFIRMED -> "Tu reserva " + where + " está confirmada para el " + when + ".";
             case BOOKING_CANCELLED ->
-                "Cancelaste tu reserva " + where + " del " + when + ". " + cancelledDeposit(request);
+                "Cancelaste tu reserva " + where + OF_DAY + when + ". " + cancelledDeposit(request);
             case BOOKING_NO_SHOW ->
-                "No llegaste a tu reserva " + where + " del " + when
-                        + ". Pasaron los 15 minutos de tolerancia, así que la cancelamos"
+                "No llegaste a tu reserva " + where + OF_DAY + when
+                        + ". " + graceElapsed(request) + ", así que la cancelamos"
                         + (request.hasDeposit() ? " y la seña no se devuelve" : "")
                         + ". Ya podés hacer otra reserva.";
             case BOOKING_CANCELLED_FOR_DEBT ->
-                "Anulamos tu reserva " + where + " del " + when + " porque no pudimos cobrar tu última carga."
+                "Anulamos tu reserva " + where + OF_DAY + when + " porque no pudimos cobrar tu última carga."
                         + (request.hasDeposit() ? " Te reintegramos la seña." : "")
                         + " Pagá el saldo desde Medios de pago para volver a reservar.";
             // Dice qué hacer, no qué falló por detrás (Manuel, 02/11 y 25/11).
             case BOOKING_ACTIVATION_FAILED ->
-                "No pudimos iniciar la carga de tu reserva " + where + " del " + when + "."
+                "No pudimos iniciar la carga de tu reserva " + where + OF_DAY + when + "."
                         + (request.hasDeposit() ? " Te reintegramos la seña." : "")
                         + " Podés reservar otro horario o elegir otra estación.";
             case DEBT_RECORDED, DEBT_RETRY_FAILED, DEBT_DEFAULTED, DEBT_SETTLED ->
@@ -143,10 +148,10 @@ class NotificationTemplates {
             return "más tarde";
         }
         long seconds = Duration.between(debt.occurredAt(), debt.nextAttemptAt()).toSeconds();
-        if (seconds < 60) {
+        if (seconds < SECONDS_PER_MINUTE) {
             return "en menos de un minuto";
         }
-        long minutes = Math.round(seconds / 60.0);
+        long minutes = Math.round(seconds / (double) SECONDS_PER_MINUTE);
         return minutes == 1 ? "en 1 minuto" : "en " + minutes + " minutos";
     }
 
@@ -159,6 +164,17 @@ class NotificationTemplates {
             return "Te reintegramos la seña.";
         }
         return "Como faltaban menos de " + noticeHours(request) + " para el inicio, la seña no se devuelve.";
+    }
+
+    /**
+     * "Pasaron los 15 minutos de tolerancia", con los minutos que viajaron en el evento, para no
+     * tenerlos escritos acá aparte de {@code ecopedia.booking.no-show-grace}. Un mensaje que no los
+     * trae (anterior al 28/11, o guardado en el outbox) dice lo mismo sin el número.
+     */
+    private static String graceElapsed(NotificationToDispatch request) {
+        Integer minutes = request.noShowGraceMinutes();
+        if (minutes == null) return "Pasó el tiempo de tolerancia";
+        return minutes == 1 ? "Pasó el minuto de tolerancia" : "Pasaron los " + minutes + " minutos de tolerancia";
     }
 
     /** "5 horas", calculado del plazo que viajó en el evento. */

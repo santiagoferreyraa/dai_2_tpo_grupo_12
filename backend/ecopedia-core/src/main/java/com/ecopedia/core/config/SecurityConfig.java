@@ -7,6 +7,7 @@ import com.ecopedia.core.web.ApiProblems;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -64,12 +65,26 @@ public class SecurityConfig {
                 // Sin sesión de servidor, igual que los otros tres artefactos: la identidad
                 // viaja entera en el token y no queda nada guardado entre llamadas.
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(requests -> requests.requestMatchers("/api/auth/**")
+                /*
+                 * Las lecturas quedan abiertas y quien decide es la anotación de cada método, como
+                 * siempre. Las escrituras, en cambio, piden sesión ya acá: así un anónimo recibe 401
+                 * antes de que se lea el cuerpo, y no un 400 que le cuente qué campos se esperan
+                 * (la validación del @RequestBody corre antes que el @PreAuthorize).
+                 * Las únicas escrituras sin sesión son las de /internal/**, que tienen su propia
+                 * clave de servicio (InternalTokenFilter) y el registro y el login.
+                 */
+                .authorizeHttpRequests(requests -> requests.requestMatchers(HttpMethod.GET, "/**")
                         .permitAll()
-                        .requestMatchers("/h2-console/**")
+                        .requestMatchers(HttpMethod.HEAD, "/**")
+                        .permitAll()
+                        .requestMatchers(HttpMethod.OPTIONS, "/**")
+                        .permitAll()
+                        .requestMatchers("/api/auth/**")
+                        .permitAll()
+                        .requestMatchers("/internal/**", "/h2-console/**", "/error")
                         .permitAll()
                         .anyRequest()
-                        .permitAll())
+                        .authenticated())
                 // Sin sesión válida, 401 (UnauthorizedEntryPoint). Con sesión y sin el rol, un 404
                 // como el de una ruta que no existe; el 403 va al log (NotFoundAccessDeniedHandler).
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(unauthorizedEntryPoint)

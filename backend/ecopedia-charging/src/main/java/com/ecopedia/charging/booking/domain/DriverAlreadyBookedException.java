@@ -15,6 +15,7 @@ package com.ecopedia.charging.booking.domain;
  * real: tiene un solo auto y lo tiene enchufado en un solo lado.
  */
 public class DriverAlreadyBookedException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     private final String code;
 

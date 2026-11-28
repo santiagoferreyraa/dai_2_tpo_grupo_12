@@ -31,6 +31,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class PaymentService {
 
+    /** Los importes van en pesos con centavos, como en Mercado Pago. */
+    private static final int MAX_DECIMALS = 2;
+
     private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
 
     private final PaymentRepository payments;
@@ -140,7 +143,7 @@ public class PaymentService {
         if (amount == null || amount.signum() <= 0) {
             throw GatewayException.badRequest("invalid_amount", "Amount must be greater than zero");
         }
-        if (amount.scale() > 2) {
+        if (amount.scale() > MAX_DECIMALS) {
             throw GatewayException.badRequest("invalid_amount", "Amount cannot have more than two decimals");
         }
     }

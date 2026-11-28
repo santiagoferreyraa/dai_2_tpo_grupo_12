@@ -9,6 +9,7 @@ package com.ecopedia.charging.session.domain;
  * no le conviene saber cuáles tienen la forma correcta.
  */
 public class InvalidAccessCodeException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     public InvalidAccessCodeException(String reason) {
         super(reason);

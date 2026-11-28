@@ -2,6 +2,7 @@ package com.ecopedia.simulation.paymentgateway.web;
 
 import com.ecopedia.simulation.paymentgateway.domain.GatewayException;
 import com.ecopedia.simulation.paymentgateway.web.dto.ErrorResponse;
+import java.util.Locale;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -39,6 +40,6 @@ public class GatewayExceptionHandler {
     }
 
     private static String errorName(HttpStatus status) {
-        return status.getReasonPhrase().toLowerCase().replace(' ', '_');
+        return status.getReasonPhrase().toLowerCase(Locale.ROOT).replace(' ', '_');
     }
 }

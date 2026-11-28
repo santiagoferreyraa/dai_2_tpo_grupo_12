@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -65,7 +66,7 @@ public class ChargingBookingsClient implements DriverBookingsPort {
             }
             return answer.cancelled();
         } catch (RestClientResponseException response) {
-            if (response.getStatusCode().value() == 401) {
+            if (response.getStatusCode().isSameCodeAs(HttpStatus.UNAUTHORIZED)) {
                 log.error("ecopedia-charging rechazó la clave de servicio: revisar ECOPEDIA_INTERNAL_TOKEN");
             }
             throw new BookingsUnavailableException(

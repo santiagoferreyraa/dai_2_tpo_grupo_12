@@ -8,6 +8,7 @@ import java.time.Duration;
  * @param retryAfter cuánto falta para poder volver a probar
  */
 public class TooManyAccessCodeAttemptsException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     private final Duration retryAfter;
 

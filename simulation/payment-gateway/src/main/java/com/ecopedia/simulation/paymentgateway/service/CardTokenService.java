@@ -25,6 +25,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class CardTokenService {
 
+    /** Luhn: un dígito duplicado que pasa de 9 se reduce restándole 9 (es sumar sus dos cifras). */
+    private static final int MAX_DIGIT = 9;
+
     /* Los límites que abarcan a las tres marcas: AMEX tiene 15 dígitos y VISA hasta 19. */
     private static final int MINIMUM_DIGITS = 13;
     private static final int MAXIMUM_DIGITS = 19;
@@ -130,7 +133,7 @@ public class CardTokenService {
             int digit = digits.charAt(position) - '0';
             if (doubling) {
                 digit *= 2;
-                if (digit > 9) digit -= 9;
+                if (digit > MAX_DIGIT) digit -= MAX_DIGIT;
             }
             sum += digit;
             doubling = !doubling;

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    Lo que SpotBugs no mira o no cuenta, cada cosa con su motivo. Todo lo demás de prioridad media o
-    alta hace fallar "mvn verify" (ver el pom padre).
+    Lo que SpotBugs no mira o no cuenta, cada cosa con su motivo. Todo lo demás, de cualquier
+    prioridad (también la baja, desde el 28/11/2026), hace fallar "mvn verify" (ver el pom padre).
 -->
 <FindBugsFilter
         xmlns="https://github.com/spotbugs/filter/3.0.0"
@@ -31,5 +31,17 @@
     -->
     <Match>
         <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+
+    <!--
+        THROWS_METHOD_THROWS_RUNTIMEEXCEPTION: "el método relanza una RuntimeException". Acá es el
+        patrón buscado: atrapar, compensar o dejar registro, y relanzar la misma. El checkout devuelve
+        la seña y relanza (BookingCheckoutFacadeImpl), la habilitación libera la reserva y relanza
+        (ChargingSessionServiceImpl), los listeners anotan el intento y relanzan para que el broker
+        reintente, y ApiExceptionHandler relanza las de seguridad para que las conteste Spring
+        Security con 401 y 404. Envolverla en otra cambiaría el tipo que esperan los de arriba.
+    -->
+    <Match>
+        <Bug pattern="THROWS_METHOD_THROWS_RUNTIMEEXCEPTION"/>
     </Match>
 </FindBugsFilter>

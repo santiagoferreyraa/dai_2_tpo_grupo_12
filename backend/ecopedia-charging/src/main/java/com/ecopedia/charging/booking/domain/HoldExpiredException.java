@@ -10,6 +10,7 @@ import java.util.UUID;
  * conductor, junto con el botón para volver a elegir el mismo slot.
  */
 public class HoldExpiredException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     public HoldExpiredException(UUID holdId) {
         super("La retención " + holdId + " venció: volvé a elegir el horario");

@@ -25,7 +25,8 @@ public record BookingEventMessage(
         BigDecimal depositAmount,
         Boolean depositRefunded,
         String cardLastFour,
-        Instant depositRefundableUntil)
+        Instant depositRefundableUntil,
+        Integer noShowGraceMinutes)
         implements QueuedEvent {
 
     @Override
@@ -41,7 +42,9 @@ public record BookingEventMessage(
                 depositAmount,
                 depositRefunded,
                 cardLastFour,
-                depositRefundableUntil);
+                depositRefundableUntil,
+                null,
+                noShowGraceMinutes);
     }
 
     @Override

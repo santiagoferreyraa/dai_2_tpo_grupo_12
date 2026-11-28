@@ -141,7 +141,8 @@ class ApiErrorResponseTest {
     @Test
     @DisplayName("Un método no permitido da 405 en Problem Details")
     void wrongMethodIsMethodNotAllowed() throws Exception {
-        mockMvc.perform(delete("/api/vehicle-models"))
+        // Con sesión: sin ella, una escritura recibe 401 de la cadena de seguridad antes del 405 (28/11).
+        mockMvc.perform(delete("/api/vehicle-models").header(HttpHeaders.AUTHORIZATION, adminBearer()))
                 .andExpect(status().isMethodNotAllowed())
                 .andExpect(content().contentType(PROBLEM_JSON))
                 .andExpect(header().exists(HttpHeaders.ALLOW));

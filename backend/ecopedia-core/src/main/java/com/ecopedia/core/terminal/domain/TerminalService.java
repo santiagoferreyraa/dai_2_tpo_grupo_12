@@ -2,7 +2,9 @@ package com.ecopedia.core.terminal.domain;
 
 import com.ecopedia.core.shared.VersionCondition;
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Interfaz del componente <i>Terminales</i>, stateless. Ver ARQUITECTURA_ECOPEDIA.md §2.3.
@@ -86,11 +88,20 @@ public interface TerminalService {
     /** Devuelve un conector por su identificador. */
     Connector getConnector(Long connectorId);
 
+    /** Todas las estaciones, también las dadas de baja: para el tablero del backoffice. */
+    List<Station> getStationsIncludingInactive();
+
     /** Devuelve todos los conectores registrados en la plataforma. */
     List<Connector> getAllConnectors();
 
     /** Devuelve todos los conectores pertenecientes a una estación determinada. */
     List<Connector> getConnectorsByStation(Long stationId);
+
+    /**
+     * Los conectores de varias estaciones, agrupados por estación, con una sola consulta. Una
+     * estación sin conectores no aparece en el mapa.
+     */
+    Map<Long, List<Connector>> getConnectorsByStations(Collection<Long> stationIds);
 
     /** Devuelve una estación por su identificador. */
     Station getStation(Long stationId);

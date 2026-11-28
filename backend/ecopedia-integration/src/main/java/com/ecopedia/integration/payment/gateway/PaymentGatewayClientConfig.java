@@ -28,7 +28,12 @@ import org.springframework.web.client.RestClient;
 @Configuration
 public class PaymentGatewayClientConfig {
 
+    /*
+     * El HttpClient vive lo que vive el bean: lo usa el RestClient en cada pedido a la pasarela, así
+     * que cerrarlo al salir de este método lo dejaría inservible. Lo cierra la JVM al terminar.
+     */
     @Bean
+    @SuppressWarnings("PMD.CloseResource")
     public RestClient paymentGatewayHttpClient(
             RestClient.Builder builder,
             @Value("${ecopedia.payment-gateway.url}") String url,

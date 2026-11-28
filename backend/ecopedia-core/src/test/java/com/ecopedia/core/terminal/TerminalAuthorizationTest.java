@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ecopedia.core.security.JwtTokenProvider;
@@ -56,9 +57,9 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * que es justo la pieza que puede romperse en silencio; además evita sumar
  * {@code spring-security-test} al POM a una semana de la entrega.
  *
- * <p><b>El anónimo recibe 401</b> (QA-33): la cadena de {@code SecurityConfig} deja pasar todas
- * las URL ({@code anyRequest().permitAll()}), quien rechaza es la anotación sobre el método y
- * Spring Security contesta por {@code UnauthorizedEntryPoint}. Hasta el 02/11 era 403.
+ * <p><b>El anónimo recibe 401</b> (QA-33): en una lectura rechaza la anotación sobre el método; en
+ * una escritura, la propia cadena de {@code SecurityConfig}, antes de leer el cuerpo (28/11). En los
+ * dos casos contesta {@code UnauthorizedEntryPoint}. Hasta el 02/11 era 403.
  *
  * <p><b>Con sesión y sin el rol, la respuesta es un 404</b> igual al de una ruta que no existe
  * (SEC-05), y el 403 queda solo en el log. Ver {@code NotFoundAccessDeniedHandler}.
@@ -168,6 +169,23 @@ class TerminalAuthorizationTest {
         for (MockHttpServletRequestBuilder request : abmRequests()) {
             mockMvc.perform(request).andExpect(status().isUnauthorized());
         }
+    }
+
+    /*
+     * Con un cuerpo inválido, el anónimo recibía 400 con la lista de campos que faltaban: la
+     * validación del @RequestBody corre antes que el @PreAuthorize. Ahora la cadena de seguridad pide
+     * sesión para toda escritura y el 401 llega antes de leer el cuerpo.
+     */
+    @Test
+    @DisplayName("Sin token y con un cuerpo inválido, el alta de estación da 401 y no cuenta qué campos espera")
+    void anonymousInvalidBodyGetsUnauthorizedNotValidationErrors() throws Exception {
+        mockMvc.perform(post("/api/stations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.errors").doesNotExist())
+                .andExpect(jsonPath("$.detail")
+                        .value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("name"))));
     }
 
     /*

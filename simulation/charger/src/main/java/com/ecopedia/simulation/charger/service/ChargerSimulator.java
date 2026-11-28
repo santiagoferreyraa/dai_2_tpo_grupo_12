@@ -112,7 +112,10 @@ public class ChargerSimulator {
         } catch (RuntimeException brokerDown) {
             log.warn("No se activa el conector {}: no se pudo publicar la telemetría", connectorId, brokerDown);
             throw new ChargerException(
-                    HttpStatus.SERVICE_UNAVAILABLE, "telemetry_unavailable", "Telemetry broker is not reachable");
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "telemetry_unavailable",
+                    "Telemetry broker is not reachable",
+                    brokerDown);
         }
         sessions.put(connectorId, session);
         log.info(

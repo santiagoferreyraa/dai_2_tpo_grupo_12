@@ -5,6 +5,7 @@ package com.ecopedia.charging.checkout.domain;
  * vencida. Pagos no distingue, a propósito (SEC-06).
  */
 public class PaymentMethodInvalidException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     public PaymentMethodInvalidException() {
         super("La tarjeta elegida no se puede usar para cobrar la seña");
@@ -12,5 +13,9 @@ public class PaymentMethodInvalidException extends RuntimeException {
 
     public PaymentMethodInvalidException(String message) {
         super(message);
+    }
+
+    public PaymentMethodInvalidException(String message, Throwable cause) {
+        super(message, cause);
     }
 }

@@ -75,8 +75,9 @@ public interface BookingService {
     void releaseHold(UUID holdId, Long driverId);
 
     /**
-     * Consulta una retención vigente por id (ECO-35, para uso del Facade de Checkout).
-     * Devuelve vacía si no existe o ya venció.
+     * Consulta una retención por id (ECO-35, para uso del Facade de Checkout): la vigente, o una que
+     * venció hace poco, para que el Facade le conteste 410 a su dueño. Quien la usa compara
+     * {@code isExpiredAt}. Devuelve vacía si no existe, se soltó, se reemplazó o venció hace rato.
      */
     Optional<Hold> findHold(UUID holdId);
 
