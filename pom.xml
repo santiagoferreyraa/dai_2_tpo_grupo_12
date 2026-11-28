@@ -47,6 +47,15 @@
         <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
         <sonar.exclusions>**/generated-sources/**,**/contract/**</sonar.exclusions>
         <!--
+            Fuera de la detección de duplicados (no del análisis de bugs y seguridad): la configuración
+            de seguridad y la de OpenAPI de cada módulo. Son cuatro artefactos que se despliegan por
+            separado, sin una biblioteca común, y la regla tiene que ser la misma en los cuatro: que
+            un anónimo reciba 401 antes de que se lea el cuerpo, que los errores salgan igual en el
+            contrato. Repetirla es a propósito; una diferencia entre módulos sí sería un error.
+            Agregado el 28/11 (el #107 subió la duplicación del código nuevo a 5,9 %).
+        -->
+        <sonar.cpd.exclusions>**/config/SecurityConfig.java,**/config/OpenApiConfig.java</sonar.cpd.exclusions>
+        <!--
             Hallazgos revisados que no aplican (va acá, una vez, y no repetido en cada módulo):
             - java:S4502 en los SecurityConfig: CSRF apagado a propósito. La API no usa cookies ni
               sesión de servidor (STATELESS) y el token viaja en la cabecera Authorization, que un
