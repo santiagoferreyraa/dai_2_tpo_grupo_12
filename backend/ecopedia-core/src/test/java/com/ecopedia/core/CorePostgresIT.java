@@ -71,4 +71,17 @@ class CorePostgresIT extends ContainersSupport {
         assertThatThrownBy(() -> jdbc.update(insert, "repetido@ecopedia.test", "hash", "Segunda"))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
+
+    @Test
+    @DisplayName("La tabla de usuarios no tiene clave foránea hacia el catálogo de Vehículos (RNF09)")
+    void usersHaveNoForeignKeyToVehicleModels() {
+        Integer foreignKeys = jdbc.queryForObject(
+                """
+                select count(*) from information_schema.table_constraints
+                where table_schema = 'core' and table_name = 'users' and constraint_type = 'FOREIGN KEY'
+                """,
+                Integer.class);
+
+        assertThat(foreignKeys).isZero();
+    }
 }

@@ -124,7 +124,11 @@ public class UserServiceImpl implements UserService {
         if (data.fullName() != null && !data.fullName().isBlank()) {
             user.setFullName(data.fullName());
         }
-        user.setVehicleModel(data.vehicleModelId() == null ? null : vehicleService.getModel(data.vehicleModelId()));
+        // getModel valida que exista y se ofrezca (400 si no); se guarda solo el id (RNF09).
+        user.setVehicleModelId(
+                data.vehicleModelId() == null
+                        ? null
+                        : vehicleService.getModel(data.vehicleModelId()).getId());
         return userRepository.save(user);
     }
 
