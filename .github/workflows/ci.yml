@@ -4,12 +4,12 @@
 # Somos cuatro: si alguien mergea algo que no compila o que no está formateado, los otros
 # tres se lo llevan puesto en su próximo rebase.
 #
-# Los cinco jobs corren en paralelo y son independientes. `api` es el de QA-05: levanta los cuatro backends y los tres simuladores
+# Los seis jobs corren en paralelo y son independientes. `sonar` es el de QA-17: SonarCloud y su Quality Gate. `api` es el de QA-05: levanta los cuatro backends y los tres simuladores
 # y les corre la colección de Postman con Newman. `agent` es el del asistente del chat (agent/). `e2e`
 # es el de QA-20: los escenarios de punta a punta en un navegador.
 #
-# Ojo: el nombre de cada job es un `context` del ruleset de main. "Agent (Node)" y "E2E (Playwright)"
-# NO están en el ruleset (no bloquean el merge); si se los quiere obligatorios, los agrega SantiagoF
+# Ojo: el nombre de cada job es un `context` del ruleset de main. "Agent (Node)", "E2E (Playwright)"
+# y "Sonar (Quality Gate)" NO están en el ruleset (no bloquean el merge); si se los quiere obligatorios, los agrega SantiagoF
 # en Settings.
 
 name: CI
@@ -134,6 +134,54 @@ jobs:
 
       - name: Tests
         run: pnpm test
+
+  # QA-17: análisis estático y Quality Gate en SonarCloud (proyecto
+  # santiagoferreyraa_dai_2_tpo_grupo_12, con el Automatic Analysis apagado: lo analiza este job).
+  #
+  # Va aparte de `backend` para no alargarlo ni mezclar sus checks: corre el mismo `mvn verify`
+  # (así Sonar recibe la cobertura de JaCoCo) y después el escáner, que espera el Quality Gate y
+  # pone el job en rojo si no pasa. Analiza los 4 backends y los 3 simuladores (los módulos Maven).
+  #
+  # Sin SONAR_TOKEN (un PR desde un fork, por ejemplo) el job avisa y termina en verde sin analizar.
+  sonar:
+    name: Sonar (Quality Gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+    steps:
+      - name: ¿Está configurado SonarCloud?
+        id: config
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::notice title=SonarCloud sin configurar::Falta el secreto SONAR_TOKEN; el análisis no corre."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.config.outputs.enabled == 'true'
+        with:
+          fetch-depth: 0     # Sonar usa el historial para saber qué código es nuevo
+
+      - name: Preparar JDK 21
+        if: steps.config.outputs.enabled == 'true'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      - name: Testear, medir cobertura y analizar
+        if: steps.config.outputs.enabled == 'true'
+        run: |
+          mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.organization=santiagoferreyraa \
+            -Dsonar.projectKey=santiagoferreyraa_dai_2_tpo_grupo_12 \
+            -Dsonar.qualitygate.wait=true
 
   # QA-05 (ECO-155): la colección de API, contra el sistema corriendo de verdad.
   #
