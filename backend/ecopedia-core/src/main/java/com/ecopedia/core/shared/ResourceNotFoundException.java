@@ -9,6 +9,7 @@ package com.ecopedia.core.shared;
  * Terminales). Los manejadores de errores la atienden antes por ser más específica.
  */
 public class ResourceNotFoundException extends IllegalArgumentException {
+    private static final long serialVersionUID = 1L;
 
     public ResourceNotFoundException(String message) {
         super(message);

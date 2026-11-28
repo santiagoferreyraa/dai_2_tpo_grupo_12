@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatus;
  * tal cual a la pantalla (directriz 7).
  */
 public class GatewayException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     private final HttpStatus status;
     private final String code;

@@ -5,6 +5,7 @@ package com.ecopedia.core.user.domain;
  * vino). Cuenta como un intento fallido de login: ver {@code LoginAttempts}.
  */
 public class AdminPasswordRejectedException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     /** El {@code code} estable de la respuesta, para que el front elija sus palabras. */
     public static final String CODE = "PASSWORD_INCORRECT";

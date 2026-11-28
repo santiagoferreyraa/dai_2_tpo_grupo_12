@@ -18,6 +18,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -138,17 +139,18 @@ public class IntegrationPaymentDirectory implements PaymentDirectory {
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientResponseException ex) {
-            if (ex.getStatusCode().value() == 422) {
-                String code = extractCode(ex);
-                if ("DRIVER_HAS_DEBT".equals(code)) {
+            if (ex.getStatusCode().isSameCodeAs(HttpStatus.UNPROCESSABLE_ENTITY)) {
+                switch (extractCode(ex)) {
                     // Aparte de la tarjeta inválida: el front le dice que pague la deuda, no que revise la tarjeta.
-                    throw new DriverHasDebtException(driverId);
-                } else if ("CARD_DECLINED".equals(code)) {
-                    throw new PaymentMethodInvalidException("La tarjeta fue rechazada por la pasarela de pagos");
-                } else if ("CARD_EXPIRED".equals(code)) {
-                    throw new PaymentMethodInvalidException("La tarjeta registrada se encuentra vencida");
-                } else {
-                    throw new PaymentMethodInvalidException("No se encontró un medio de pago válido para operar");
+                    case "DRIVER_HAS_DEBT" -> throw new DriverHasDebtException(driverId, ex);
+                    case "CARD_DECLINED" ->
+                        throw new PaymentMethodInvalidException(
+                                "La tarjeta fue rechazada por la pasarela de pagos", ex);
+                    case "CARD_EXPIRED" ->
+                        throw new PaymentMethodInvalidException("La tarjeta registrada se encuentra vencida", ex);
+                    default ->
+                        throw new PaymentMethodInvalidException(
+                                "No se encontró un medio de pago válido para operar", ex);
                 }
             }
             log.warn(
@@ -196,13 +198,14 @@ public class IntegrationPaymentDirectory implements PaymentDirectory {
     private String extractCode(RestClientResponseException ex) {
         try {
             String responseBody = ex.getResponseBodyAsString();
-            if (responseBody != null && !responseBody.isBlank()) {
+            // getResponseBodyAsString nunca devuelve null: un cuerpo vacío llega como "".
+            if (!responseBody.isBlank()) {
                 JsonNode root = objectMapper.readTree(responseBody);
                 if (root.has("code")) {
                     return root.get("code").asText();
                 }
             }
-        } catch (JsonProcessingException unreadable) {
+        } catch (JsonProcessingException ignored) {
             // Un cuerpo que no es JSON: no hay código que leer.
         }
         return "UNKNOWN";

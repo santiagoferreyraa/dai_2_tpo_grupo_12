@@ -42,6 +42,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class DebtCollectionServiceImpl implements DebtCollectionService {
 
+    /** Con cero reintentos la cuenta quedaría marcada al primer rechazo, sin ninguna chance. */
+    private static final int MINIMUM_RETRIES = 1;
+
     private static final Logger log = LoggerFactory.getLogger(DebtCollectionServiceImpl.class);
 
     /** Holgado contra los 5 s que se espera a la pasarela; corto si el proceso se cae con la deuda reclamada. */
@@ -65,7 +68,7 @@ public class DebtCollectionServiceImpl implements DebtCollectionService {
             Clock clock,
             @Value("${ecopedia.payments.debt.retry-interval}") Duration retryInterval,
             @Value("${ecopedia.payments.debt.max-retries}") int maxRetries) {
-        if (maxRetries < 1) {
+        if (maxRetries < MINIMUM_RETRIES) {
             throw new IllegalArgumentException("ecopedia.payments.debt.max-retries tiene que ser al menos 1");
         }
         this.debts = debts;

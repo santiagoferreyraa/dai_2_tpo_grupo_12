@@ -15,6 +15,9 @@ record BoundingBox(double minLatitude, double maxLatitude, double minLongitude, 
     /** Kilómetros de un grado de latitud, con el mismo radio terrestre que la distancia (6371 km). */
     private static final double KM_PER_DEGREE = Math.toRadians(1) * 6371.0;
 
+    /** Por debajo de este coseno (a unos metros del polo) se toma la longitud entera. */
+    private static final double NEAR_POLE_COSINE = 1e-6;
+
     static BoundingBox around(double latitude, double longitude, double radiusKm) {
         double deltaLatitude = radiusKm / KM_PER_DEGREE;
         double minLatitude = Math.max(-90, latitude - deltaLatitude);
@@ -23,7 +26,7 @@ record BoundingBox(double minLatitude, double maxLatitude, double minLongitude, 
         // El coseno más chico del recuadro es el del borde más cercano al polo: ahí un grado mide menos.
         double widestLatitude = Math.max(Math.abs(minLatitude), Math.abs(maxLatitude));
         double cosine = Math.cos(Math.toRadians(widestLatitude));
-        if (cosine < 1e-6) return new BoundingBox(minLatitude, maxLatitude, -180, 180);
+        if (cosine < NEAR_POLE_COSINE) return new BoundingBox(minLatitude, maxLatitude, -180, 180);
 
         double deltaLongitude = radiusKm / (KM_PER_DEGREE * cosine);
         double minLongitude = longitude - deltaLongitude;

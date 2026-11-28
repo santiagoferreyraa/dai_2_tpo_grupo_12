@@ -7,6 +7,7 @@ package com.ecopedia.charging.booking.domain;
  * vale, porque el front se puede saltear.
  */
 public class ConnectorNotBookableException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     public ConnectorNotBookableException(Long connectorId) {
         super("El conector " + connectorId + " está fuera de servicio y no se puede reservar");

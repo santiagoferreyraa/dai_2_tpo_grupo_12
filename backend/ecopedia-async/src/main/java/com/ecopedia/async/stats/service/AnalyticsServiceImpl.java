@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
@@ -179,7 +180,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
 
     /** Las franjas del grupo, sumando los conectores que caen en la misma, en orden. */
     private static List<SlotDemand> slotDemands(List<DemandSlot> group) {
-        TreeMap<Instant, List<DemandSlot>> perSlot = new TreeMap<>();
+        NavigableMap<Instant, List<DemandSlot>> perSlot = new TreeMap<>();
         for (DemandSlot row : group) {
             perSlot.computeIfAbsent(row.getSlotStart(), start -> new ArrayList<>())
                     .add(row);

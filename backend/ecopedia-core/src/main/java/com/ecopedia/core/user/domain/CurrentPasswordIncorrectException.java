@@ -8,6 +8,7 @@ package com.ecopedia.core.user.domain;
  * lo demás, un pedido inválido (400): no 401, que le cerraría la sesión a alguien que sí la tiene.
  */
 public class CurrentPasswordIncorrectException extends IllegalArgumentException {
+    private static final long serialVersionUID = 1L;
 
     /** El {@code code} estable de la respuesta. */
     public static final String CODE = "CURRENT_PASSWORD_INCORRECT";

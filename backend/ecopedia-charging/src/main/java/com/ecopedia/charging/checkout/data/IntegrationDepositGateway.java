@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
@@ -58,12 +59,14 @@ public class IntegrationDepositGateway implements DepositGateway {
             }
             return new DepositCharge(answer.chargeId(), answer.cardLastFour());
         } catch (RestClientResponseException response) {
-            if (response.getStatusCode().value() == 422) {
+            if (response.getStatusCode().isSameCodeAs(HttpStatus.UNPROCESSABLE_ENTITY)) {
                 String code = codeOf(response);
                 switch (code) {
-                    case "CARD_DECLINED" -> throw new CardDeclinedException();
-                    case "PAYMENT_METHOD_INVALID" -> throw new PaymentMethodInvalidException();
-                    case "IDEMPOTENCY_KEY_REUSED" -> throw new IdempotencyKeyReusedException();
+                    case "CARD_DECLINED" -> throw new CardDeclinedException(response);
+                    case "PAYMENT_METHOD_INVALID" ->
+                        throw new PaymentMethodInvalidException(
+                                "La tarjeta elegida no se puede usar para cobrar la seña", response);
+                    case "IDEMPOTENCY_KEY_REUSED" -> throw new IdempotencyKeyReusedException(response);
                     default -> {
                         // Un código que este lado no conoce: no se sabe qué pasó, se trata como sin respuesta.
                     }
@@ -110,7 +113,7 @@ public class IntegrationDepositGateway implements DepositGateway {
     private static DepositPaymentUnavailableException unavailable(
             String operation, RestClientResponseException response) {
         int status = response.getStatusCode().value();
-        if (status == 401) {
+        if (response.getStatusCode().isSameCodeAs(HttpStatus.UNAUTHORIZED)) {
             log.error("ecopedia-integration rechazó la clave de servicio: revisar ECOPEDIA_INTERNAL_TOKEN");
         }
         return new DepositPaymentUnavailableException("Pagos contestó " + status + " al " + operation, response);
@@ -120,7 +123,7 @@ public class IntegrationDepositGateway implements DepositGateway {
         try {
             ErrorBody error = response.getResponseBodyAs(ErrorBody.class);
             if (error != null && error.code() != null) return error.code();
-        } catch (RuntimeException unreadable) {
+        } catch (RuntimeException ignored) {
             // Un cuerpo que no es el esperado se trata como un rechazo sin código.
         }
         return "UNKNOWN";

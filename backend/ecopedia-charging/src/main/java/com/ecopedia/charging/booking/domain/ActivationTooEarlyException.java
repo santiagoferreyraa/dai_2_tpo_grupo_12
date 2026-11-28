@@ -12,10 +12,11 @@ import java.time.Instant;
  * sobre el estado de otro.
  */
 public class ActivationTooEarlyException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     public static final String CODE = "ACTIVATION_TOO_EARLY";
 
-    private final transient Instant availableFrom;
+    private final Instant availableFrom;
 
     public ActivationTooEarlyException(Long bookingId, Instant availableFrom) {
         super("La reserva " + bookingId + " recién se puede habilitar desde " + availableFrom);

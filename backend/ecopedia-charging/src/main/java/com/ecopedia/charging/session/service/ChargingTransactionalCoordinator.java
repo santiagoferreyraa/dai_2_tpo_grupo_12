@@ -231,6 +231,7 @@ public class ChargingTransactionalCoordinator {
      * pero con nombre propio para que quien cierra la distinga y no liquide dos veces.
      */
     public static class SessionAlreadyClosedException extends InvalidBookingRequestException {
+        private static final long serialVersionUID = 1L;
 
         public SessionAlreadyClosedException(String sessionId) {
             super("La sesión " + sessionId + " ya fue finalizada");

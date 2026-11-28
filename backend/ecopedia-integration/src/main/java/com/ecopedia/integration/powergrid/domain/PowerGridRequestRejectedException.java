@@ -8,6 +8,7 @@ package com.ecopedia.integration.powergrid.domain;
  * dice cuál, para que quien llama decida sin leer el texto. El mensaje es para el log.
  */
 public class PowerGridRequestRejectedException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     /** Qué rechazó la distribuidora. */
     public enum Reason {

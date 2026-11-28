@@ -9,12 +9,19 @@ import org.springframework.http.HttpStatus;
  * que va en inglés, como el de la API de cualquier fabricante.
  */
 public class ChargerException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
 
     private final HttpStatus status;
     private final String code;
 
     public ChargerException(HttpStatus status, String code, String message) {
         super(message);
+        this.status = status;
+        this.code = code;
+    }
+
+    public ChargerException(HttpStatus status, String code, String message, Throwable cause) {
+        super(message, cause);
         this.status = status;
         this.code = code;
     }

@@ -14,7 +14,6 @@ import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springdoc.core.customizers.OpenApiCustomizer;
@@ -52,18 +51,16 @@ public class OpenApiConfig {
     static final String PROBLEM_MEDIA_TYPE = "application/problem+json";
 
     /** Los errores que puede devolver cualquier operación de este módulo, además del 401. */
-    private static final Map<String, String> ERRORS = errors();
+    /** Un error que puede devolver cualquier operación del módulo, en el orden del contrato. */
+    private record KnownError(String status, String description) {}
 
-    private static Map<String, String> errors() {
-        Map<String, String> errors = new LinkedHashMap<>();
-        errors.put("400", "La solicitud no es válida.");
-        errors.put("402", "La tarjeta rechazó el cobro.");
-        errors.put("404", "No se encontró el recurso pedido, o la operación no es para este rol.");
-        errors.put("409", "El pedido choca con el estado actual.");
-        errors.put("422", "El pedido se entendió, pero no se puede cumplir.");
-        errors.put("503", "Un sistema del que depende no contesta: probar de nuevo en un momento.");
-        return errors;
-    }
+    private static final List<KnownError> ERRORS = List.of(
+            new KnownError("400", "La solicitud no es válida."),
+            new KnownError("402", "La tarjeta rechazó el cobro."),
+            new KnownError("404", "No se encontró el recurso pedido, o la operación no es para este rol."),
+            new KnownError("409", "El pedido choca con el estado actual."),
+            new KnownError("422", "El pedido se entendió, pero no se puede cumplir."),
+            new KnownError("503", "Un sistema del que depende no contesta: probar de nuevo en un momento."));
 
     @Bean
     public OpenAPI ecopediaOpenApi() {
@@ -89,7 +86,7 @@ public class OpenApiConfig {
                 operation.addSecurityItem(new SecurityRequirement().addList(BEARER));
                 addProblem(operation, "401", "Hace falta una sesión válida.");
             }
-            ERRORS.forEach((status, description) -> addProblem(operation, status, description));
+            ERRORS.forEach(error -> addProblem(operation, error.status(), error.description()));
             return operation;
         };
     }
@@ -127,6 +124,8 @@ public class OpenApiConfig {
                 || AnnotatedElementUtils.hasAnnotation(handlerMethod.getBeanType(), PreAuthorize.class);
     }
 
+    // ApiResponses es una clase de swagger-models sin interfaz propia: no hay otro tipo que usar.
+    @SuppressWarnings("PMD.LooseCoupling")
     private static void addProblem(Operation operation, String status, String description) {
         ApiResponses responses = operation.getResponses();
         if (responses == null) {

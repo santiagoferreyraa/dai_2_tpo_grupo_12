@@ -27,6 +27,8 @@ public class JwtTokenProvider {
         this.expirationMs = expirationMs;
     }
 
+    // jjwt recibe la emisión y el vencimiento como java.util.Date: es su API, no una elección nuestra.
+    @SuppressWarnings("PMD.ReplaceJavaUtilDate")
     public String generateToken(Long userId, String email, Role role) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expirationMs);

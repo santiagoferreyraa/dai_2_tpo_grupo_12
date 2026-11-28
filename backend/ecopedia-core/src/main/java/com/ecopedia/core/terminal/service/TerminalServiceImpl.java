@@ -67,9 +67,7 @@ public class TerminalServiceImpl implements TerminalService {
 
     @Override
     public Station updateStation(Long stationId, StationData data, VersionCondition condition) {
-        Station station = stationRepository
-                .findById(stationId)
-                .orElseThrow(() -> new ResourceNotFoundException("Estación no encontrada con ID: " + stationId));
+        Station station = stationRepository.findById(stationId).orElseThrow(() -> stationNotFound(stationId));
         /*
          * Sobre la misma entidad que después se guarda: si otro guarda entre esta comprobación y el
          * commit, el UPDATE lleva la versión leída en el WHERE (@Version) y no pisa nada.
@@ -93,18 +91,14 @@ public class TerminalServiceImpl implements TerminalService {
 
     @Override
     public void deactivateStation(Long stationId) {
-        Station station = stationRepository
-                .findById(stationId)
-                .orElseThrow(() -> new ResourceNotFoundException("Estación no encontrada con ID: " + stationId));
+        Station station = stationRepository.findById(stationId).orElseThrow(() -> stationNotFound(stationId));
         station.setActive(false);
         stationRepository.save(station);
     }
 
     @Override
     public Connector addConnector(Long stationId, ConnectorType connectorType, BigDecimal maxPowerKw) {
-        Station station = stationRepository
-                .findById(stationId)
-                .orElseThrow(() -> new ResourceNotFoundException("Estación no encontrada con ID: " + stationId));
+        Station station = stationRepository.findById(stationId).orElseThrow(() -> stationNotFound(stationId));
 
         Connector connector = new Connector();
         connector.setStation(station);
@@ -118,9 +112,8 @@ public class TerminalServiceImpl implements TerminalService {
 
     @Override
     public Connector configureConnector(Long connectorId, ConnectorType connectorType, BigDecimal maxPowerKw) {
-        Connector connector = connectorRepository
-                .findById(connectorId)
-                .orElseThrow(() -> new ResourceNotFoundException("Conector no encontrado con ID: " + connectorId));
+        Connector connector =
+                connectorRepository.findById(connectorId).orElseThrow(() -> connectorNotFound(connectorId));
 
         connector.setConnectorType(connectorType);
         connector.setMaxPowerKw(maxPowerKw);
@@ -129,9 +122,8 @@ public class TerminalServiceImpl implements TerminalService {
 
     @Override
     public void changeOperationalStatus(Long connectorId, OperationalStatus operationalStatus) {
-        Connector connector = connectorRepository
-                .findById(connectorId)
-                .orElseThrow(() -> new ResourceNotFoundException("Conector no encontrado con ID: " + connectorId));
+        Connector connector =
+                connectorRepository.findById(connectorId).orElseThrow(() -> connectorNotFound(connectorId));
 
         connector.setOperationalStatus(operationalStatus);
         connectorRepository.save(connector);
@@ -220,9 +212,7 @@ public class TerminalServiceImpl implements TerminalService {
     @Override
     @Transactional(readOnly = true)
     public Connector getConnector(Long connectorId) {
-        return connectorRepository
-                .findById(connectorId)
-                .orElseThrow(() -> new ResourceNotFoundException("Conector no encontrado con ID: " + connectorId));
+        return connectorRepository.findById(connectorId).orElseThrow(() -> connectorNotFound(connectorId));
     }
 
     @Override
@@ -264,9 +254,7 @@ public class TerminalServiceImpl implements TerminalService {
     @Override
     @Transactional(readOnly = true)
     public Station getStation(Long stationId) {
-        Station station = stationRepository
-                .findById(stationId)
-                .orElseThrow(() -> new ResourceNotFoundException("Estación no encontrada con ID: " + stationId));
+        Station station = stationRepository.findById(stationId).orElseThrow(() -> stationNotFound(stationId));
 
         Hibernate.initialize(station.getPhotoUrls());
         return station;
@@ -281,9 +269,8 @@ public class TerminalServiceImpl implements TerminalService {
 
     @Override
     public void removeConnector(Long connectorId) {
-        Connector connector = connectorRepository
-                .findById(connectorId)
-                .orElseThrow(() -> new ResourceNotFoundException("Conector no encontrado con ID: " + connectorId));
+        Connector connector =
+                connectorRepository.findById(connectorId).orElseThrow(() -> connectorNotFound(connectorId));
         connectorRepository.delete(connector);
     }
 
@@ -312,9 +299,8 @@ public class TerminalServiceImpl implements TerminalService {
 
     @Override
     public Connector regenerateAccessCode(Long connectorId) {
-        Connector connector = connectorRepository
-                .findById(connectorId)
-                .orElseThrow(() -> new ResourceNotFoundException("Conector no encontrado con ID: " + connectorId));
+        Connector connector =
+                connectorRepository.findById(connectorId).orElseThrow(() -> connectorNotFound(connectorId));
         connector.setAccessCode(unusedAccessCode());
         return connectorRepository.save(connector);
     }
@@ -332,5 +318,14 @@ public class TerminalServiceImpl implements TerminalService {
             }
         }
         throw new IllegalStateException("No se encontró un código de acceso libre para el conector");
+    }
+
+    /** El 404 de una estación: el id va al mensaje, que es para el log (la respuesta es el 404 único). */
+    private static ResourceNotFoundException stationNotFound(Long stationId) {
+        return new ResourceNotFoundException("Estación no encontrada con ID: " + stationId);
+    }
+
+    private static ResourceNotFoundException connectorNotFound(Long connectorId) {
+        return new ResourceNotFoundException("Conector no encontrado con ID: " + connectorId);
     }
 }
