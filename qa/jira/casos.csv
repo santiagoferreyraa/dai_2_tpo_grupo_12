@@ -261,7 +261,7 @@ Precondición: Sesión de ADMIN
 Datos: id 999999
 Pasos: DELETE /api/admin/users/{id}
 Esperado: 404
-Test: AdminErrorResponseTest (deshabilitado)
+Test: AdminErrorResponseTest
 Defecto: DEF-05"
 "TC-34 · Alternativo: el rol sale de la base, no del token",Tarea,High,caso-de-prueba,hu-07,"HU: HU-07 (Backoffice del administrador)
 Tipo: Borde
