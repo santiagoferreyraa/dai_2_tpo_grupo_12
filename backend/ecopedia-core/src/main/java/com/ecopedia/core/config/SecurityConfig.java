@@ -49,6 +49,12 @@ public class SecurityConfig {
     }
 
     @Bean
+    /*
+     * CSRF apagado a propósito (SonarCloud S4502, revisado): la API no usa cookies ni sesión de
+     * servidor (STATELESS) y el token viaja en la cabecera Authorization, que un sitio ajeno no
+     * puede hacer que el navegador mande solo. Sin credencial automática no hay CSRF posible.
+     */
+    @SuppressWarnings("java:S4502")
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         // X-Frame-Options en SAMEORIGIN y no apagado: la consola H2 se dibuja en un <iframe> de su
         // propia página y sigue andando, pero ningún sitio ajeno puede embeber la aplicación para

@@ -37,10 +37,15 @@ public record StationRequest(
          * El código del nodo tal como lo escribe la distribuidora: mayúsculas, números y guiones
          * (CABA-CENTRO). Vacío vale, y es "sin nodo". El formato cerrado evita que viaje a la
          * distribuidora cualquier texto que alguien pegó en el formulario.
+         *
+         * Los cuantificadores son posesivos (++ y *+) a propósito: @Pattern se evalúa aunque @Size
+         * ya haya fallado, y con la versión que retrocedía unos 20 KB de "A-A-A-..." desbordaban la
+         * pila y la respuesta era 500 (SonarCloud S5998; InputLimitsTest#hugeGridNode). Acepta y
+         * rechaza exactamente lo mismo que antes.
          */
         @Size(max = 40, message = "El nodo de la distribuidora tiene como máximo 40 caracteres")
                 @Pattern(
-                        regexp = "^$|^[A-Z0-9]+(-[A-Z0-9]+)*$",
+                        regexp = "^$|^[A-Z0-9]++(?:-[A-Z0-9]++)*+$",
                         message = "El nodo de la distribuidora lleva mayúsculas, números y guiones, como CABA-CENTRO")
                 String nodeId) {
 
