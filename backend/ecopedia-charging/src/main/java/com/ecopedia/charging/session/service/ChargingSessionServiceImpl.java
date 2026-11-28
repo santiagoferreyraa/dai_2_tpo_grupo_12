@@ -306,8 +306,13 @@ public class ChargingSessionServiceImpl implements ChargingSessionService {
                 .orElseThrow(() -> new SessionNotFoundException(sessionId));
 
         if (!session.getDriverId().equals(driverId)) {
+            // Al log va el id que está guardado, no el que llegó en la URL: así nadie puede meter
+            // saltos de línea o líneas de log falsas por el path (inyección en el log, SonarCloud S5145).
+            // Son el mismo valor, porque la sesión se encontró con ese id.
             log.warn(
-                    "Acceso denegado: el conductor {} quiso detener la sesión {}, que es de otro", driverId, sessionId);
+                    "Acceso denegado: el conductor {} quiso detener la sesión {}, que es de otro",
+                    driverId,
+                    session.getSessionId());
             throw new SessionNotFoundException(sessionId);
         }
 

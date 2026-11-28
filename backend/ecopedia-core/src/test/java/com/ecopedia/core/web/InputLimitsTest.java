@@ -14,6 +14,7 @@ import com.ecopedia.core.user.domain.RegistrationData;
 import com.ecopedia.core.user.domain.Role;
 import com.ecopedia.core.user.domain.User;
 import com.ecopedia.core.user.domain.UserService;
+import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -110,7 +111,7 @@ class InputLimitsTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value(expected));
 
-        String id = created.replaceAll(".*\"id\":(\\d+).*", "$1");
+        String id = JsonPath.read(created, "$.id").toString();
         send("POST", "/api/connectors/" + id + "/configure", connector(type, over))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value(expected));
@@ -173,6 +174,27 @@ class InputLimitsTest {
                         {"email": "%s@ecopedia.test", "password": "unaClave123", "fullName": "Largo"}"""
                                 .formatted(max))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Un nodo de la distribuidora enorme da 400, no 500: la regex no desborda la pila")
+    void hugeGridNode() throws Exception {
+        // @Pattern se evalúa aunque @Size ya haya fallado. Con la regex anterior, unos 20 KB de
+        // "A-A-A-..." tiraban StackOverflowError (lo encontró SonarCloud, regla S5998).
+        String node = "A" + "-A".repeat(10_000);
+        send(
+                        "POST",
+                        "/api/stations",
+                        """
+                        {"name": "Nodo", "address": "Calle 1", "latitude": 0, "longitude": 0, "nodeId": "%s"}"""
+                                .formatted(node))
+                .andExpect(status().isBadRequest());
+        send(
+                        "POST",
+                        "/api/stations",
+                        """
+                        {"name": "Nodo", "address": "Calle 1", "latitude": 0, "longitude": 0, "nodeId": "CABA-CENTRO"}""")
+                .andExpect(status().isCreated());
     }
 
     @Test

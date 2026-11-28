@@ -37,10 +37,17 @@ public record StationRequest(
          * El código del nodo tal como lo escribe la distribuidora: mayúsculas, números y guiones
          * (CABA-CENTRO). Vacío vale, y es "sin nodo". El formato cerrado evita que viaje a la
          * distribuidora cualquier texto que alguien pegó en el formulario.
+         *
+         * La regex no repite un grupo a propósito: @Pattern se evalúa aunque @Size ya haya fallado,
+         * y la versión anterior, ^$|^[A-Z0-9]+(-[A-Z0-9]+)*$, desbordaba la pila con unos 20 KB de
+         * "A-A-A-..." y la respuesta era 500 (SonarCloud S5998; InputLimitsTest#hugeGridNode).
+         * Esta acepta y rechaza lo mismo: ni empieza ni termina con guion, ni lleva dos seguidos.
+         * No usa cuantificadores posesivos porque el OpenAPI publica esta regex y Schemathesis
+         * (QA-25) no los entiende.
          */
         @Size(max = 40, message = "El nodo de la distribuidora tiene como máximo 40 caracteres")
                 @Pattern(
-                        regexp = "^$|^[A-Z0-9]+(-[A-Z0-9]+)*$",
+                        regexp = "^(?!-)(?!.*--)(?!.*-$)[A-Z0-9-]*$",
                         message = "El nodo de la distribuidora lleva mayúsculas, números y guiones, como CABA-CENTRO")
                 String nodeId) {
 

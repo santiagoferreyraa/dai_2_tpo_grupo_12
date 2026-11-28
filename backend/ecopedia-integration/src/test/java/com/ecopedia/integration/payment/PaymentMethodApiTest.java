@@ -17,6 +17,7 @@ import com.ecopedia.integration.payment.domain.PaymentGatewayPort;
 import com.ecopedia.integration.payment.domain.PaymentGatewayUnavailableException;
 import com.ecopedia.integration.payment.domain.TokenizedCard;
 import com.ecopedia.integration.web.ApiProblems;
+import com.jayway.jsonpath.JsonPath;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
@@ -116,6 +117,10 @@ class PaymentMethodApiTest {
                 .content(body);
     }
 
+    private static long cardId(String createdJson) {
+        return ((Number) JsonPath.read(createdJson, "$.id")).longValue();
+    }
+
     @Test
     @DisplayName("Un conductor registra su tarjeta y recibe marca, últimos cuatro y nada más")
     void registersACard() throws Exception {
@@ -210,7 +215,7 @@ class PaymentMethodApiTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        long cardId = Long.parseLong(created.replaceAll(".*\"id\":(\\d+).*", "$1"));
+        long cardId = cardId(created);
 
         mockMvc.perform(delete("/api/payment-methods/" + cardId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(2L, "CONDUCTOR")))
@@ -233,7 +238,7 @@ class PaymentMethodApiTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        long cardId = Long.parseLong(created.replaceAll(".*\"id\":(\\d+).*", "$1"));
+        long cardId = cardId(created);
 
         mockMvc.perform(delete("/api/payment-methods/" + cardId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(1L, "CONDUCTOR")))
