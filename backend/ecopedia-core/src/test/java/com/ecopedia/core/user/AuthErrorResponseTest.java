@@ -102,6 +102,7 @@ class AuthErrorResponseTest {
                 """
                                 .formatted(REGISTERED_EMAIL))
                 .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("EMAIL_ALREADY_REGISTERED"))
                 .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("ya está registrado")));
     }
 

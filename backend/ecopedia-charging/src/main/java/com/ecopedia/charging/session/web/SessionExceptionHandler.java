@@ -8,6 +8,7 @@ import com.ecopedia.charging.booking.domain.ConnectorNotFoundException;
 import com.ecopedia.charging.booking.domain.DriverAlreadyBookedException;
 import com.ecopedia.charging.booking.domain.InvalidBookingRequestException;
 import com.ecopedia.charging.booking.domain.SlotUnavailableException;
+import com.ecopedia.charging.checkout.domain.DriverHasDebtException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodInvalidException;
 import com.ecopedia.charging.checkout.domain.PaymentMethodsUnavailableException;
 import com.ecopedia.charging.session.domain.ChargingPointCatalogUnavailableException;
@@ -61,6 +62,15 @@ public class SessionExceptionHandler {
     @ExceptionHandler(PaymentMethodInvalidException.class)
     public ProblemDetail handlePaymentInvalid(PaymentMethodInvalidException ex) {
         return withCode(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), "PAYMENT_METHOD_INVALID");
+    }
+
+    /**
+     * Deuda de una carga anterior (ECO-62): 409 {@code DRIVER_HAS_DEBT}, el mismo que el checkout, para
+     * que el front le diga que la pague en vez de que revise la tarjeta.
+     */
+    @ExceptionHandler(DriverHasDebtException.class)
+    public ProblemDetail handleDriverHasDebt(DriverHasDebtException ex) {
+        return withCode(HttpStatus.CONFLICT, ex.getMessage(), "DRIVER_HAS_DEBT");
     }
 
     @ExceptionHandler(PaymentMethodsUnavailableException.class)

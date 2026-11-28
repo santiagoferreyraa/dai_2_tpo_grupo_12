@@ -3,6 +3,8 @@ package com.ecopedia.core.user.web;
 import com.ecopedia.core.shared.ResourceNotFoundException;
 import com.ecopedia.core.user.domain.AdminAccountProtectedException;
 import com.ecopedia.core.user.domain.AdminPasswordRejectedException;
+import com.ecopedia.core.user.domain.CurrentPasswordIncorrectException;
+import com.ecopedia.core.user.domain.EmailAlreadyRegisteredException;
 import com.ecopedia.core.user.domain.TooManyLoginAttemptsException;
 import com.ecopedia.core.vehicle.domain.VehicleModelNotFoundException;
 import com.ecopedia.core.web.ApiProblems;
@@ -67,7 +69,25 @@ public class AuthExceptionHandler {
         return ApiProblems.invalidRequest();
     }
 
-    /** Credenciales inválidas (también la cuenta dada de baja) o email ya registrado. */
+    /**
+     * Email ya registrado o contraseña actual equivocada: 400 con su {@code code}, para que el front
+     * elija sus palabras y no muestre el {@code detail} (directiva 6).
+     */
+    @ExceptionHandler(EmailAlreadyRegisteredException.class)
+    public ProblemDetail handleEmailTaken(EmailAlreadyRegisteredException exception) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+        problem.setProperty("code", EmailAlreadyRegisteredException.CODE);
+        return problem;
+    }
+
+    @ExceptionHandler(CurrentPasswordIncorrectException.class)
+    public ProblemDetail handleWrongCurrentPassword(CurrentPasswordIncorrectException exception) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+        problem.setProperty("code", CurrentPasswordIncorrectException.CODE);
+        return problem;
+    }
+
+    /** Credenciales inválidas (también la cuenta dada de baja). */
     @ExceptionHandler(IllegalArgumentException.class)
     public ProblemDetail handleInvalidRequest(IllegalArgumentException exception) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());

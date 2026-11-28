@@ -40,7 +40,7 @@ public class UserServiceImpl implements UserService {
     @Override
     public User register(RegistrationData data) {
         if (userRepository.findByEmail(data.email()).isPresent()) {
-            throw new IllegalArgumentException("El email ya está registrado: " + data.email());
+            throw new EmailAlreadyRegisteredException(data.email());
         }
 
         User user = new User();
@@ -138,7 +138,7 @@ public class UserServiceImpl implements UserService {
          * usuario existe.
          */
         if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
-            throw new IllegalArgumentException("La contraseña actual no es correcta");
+            throw new CurrentPasswordIncorrectException();
         }
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));

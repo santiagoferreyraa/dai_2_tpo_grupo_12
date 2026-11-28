@@ -1,6 +1,7 @@
 package com.ecopedia.integration.payment.service;
 
 import com.ecopedia.integration.payment.domain.CardData;
+import com.ecopedia.integration.payment.domain.CardRejectedException;
 import com.ecopedia.integration.payment.domain.CardValidation;
 import com.ecopedia.integration.payment.domain.ConsumptionChargeRequest;
 import com.ecopedia.integration.payment.domain.ConsumptionChargeResult;
@@ -111,7 +112,8 @@ public class PaymentServiceImpl implements PaymentService {
         List<PaymentMethod> current = paymentMethodRepository.findByDriverIdAndActiveTrueOrderByCreatedAtDesc(driverId);
 
         if (current.size() >= MAXIMUM_ACTIVE_CARDS) {
-            throw new IllegalArgumentException(
+            throw new CardRejectedException(
+                    CardRejectedException.CARD_LIMIT_REACHED,
                     "Llegaste al máximo de " + MAXIMUM_ACTIVE_CARDS + " tarjetas. Eliminá alguna para agregar otra");
         }
 
@@ -505,7 +507,8 @@ public class PaymentServiceImpl implements PaymentService {
                         && card.getExpiryYear() == data.expiryYear());
 
         if (alreadyRegistered) {
-            throw new IllegalArgumentException("Esa tarjeta ya está registrada");
+            throw new CardRejectedException(
+                    CardRejectedException.CARD_ALREADY_REGISTERED, "Esa tarjeta ya está registrada");
         }
     }
 

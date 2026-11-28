@@ -34,7 +34,8 @@ public interface PaymentDirectory {
      *
      * @param driverId Identificador del conductor.
      * @param paymentMethodId Identificador opcional de la tarjeta elegida.
-     * @throws PaymentMethodInvalidException si la tarjeta fue declinada, no existe o el conductor arrastra deuda.
+     * @throws PaymentMethodInvalidException si la tarjeta fue declinada o no existe.
+     * @throws DriverHasDebtException si el conductor arrastra deuda (ECO-62).
      * @throws PaymentMethodsUnavailableException si Pagos o la pasarela no responden (503).
      */
     void validatePaymentMethodForCharging(Long driverId, Long paymentMethodId);

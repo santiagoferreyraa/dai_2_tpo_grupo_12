@@ -18,6 +18,7 @@ import {
 import { CONNECTOR_TYPES, CONNECTOR_TYPE_LABEL, POWER_STEPS, matchesFilters } from './format'
 import type { ConnectorType, StationDetail, StationInput } from './types'
 import { STALE_VERSION_MESSAGE, isStaleVersion } from '@/lib/entityTag'
+import { errorMessage } from '@/lib/errorMessage'
 import { useMediaQuery } from '@/lib/useMediaQuery'
 import { useWheelToHorizontal } from './useWheelToHorizontal'
 
@@ -120,9 +121,7 @@ export default function StationsPage() {
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return
-        setLoadError(
-          error instanceof Error ? error.message : 'No se pudieron cargar las estaciones',
-        )
+        setLoadError(errorMessage(error, 'No pudimos cargar tus estaciones.'))
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)

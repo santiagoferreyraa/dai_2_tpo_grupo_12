@@ -23,6 +23,7 @@ import { useDeviceLocation } from '@/features/terminals/useDeviceLocation'
 import type { DeviceLocation } from '@/features/terminals/useDeviceLocation'
 
 import { useDriverVehicle } from '@/features/vehicles/vehicle'
+import { errorMessage } from '@/lib/errorMessage'
 
 /**
  * Desde dónde se mide mientras el navegador no diga dónde está el usuario: UADE, Lima e
@@ -115,7 +116,7 @@ export function useHomeStations(): HomeStations {
       .then(setStations)
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return
-        setError(cause instanceof Error ? cause.message : 'No se pudieron cargar las estaciones')
+        setError(errorMessage(cause, 'No pudimos cargar las estaciones.'))
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)

@@ -1,5 +1,6 @@
 package com.ecopedia.integration.payment.web;
 
+import com.ecopedia.integration.payment.domain.CardRejectedException;
 import com.ecopedia.integration.payment.domain.DebtNotFoundException;
 import com.ecopedia.integration.payment.domain.DebtPaymentDeclinedException;
 import com.ecopedia.integration.payment.domain.DebtPaymentInProgressException;
@@ -76,7 +77,16 @@ public class PaymentExceptionHandler {
         return ApiProblems.invalidRequest();
     }
 
-    /** Tarjeta rechazada por la pasarela, duplicada o tope alcanzado. */
+    /**
+     * Tarjeta rechazada por la pasarela, duplicada o tope alcanzado: 400 con el {@code code}, para
+     * que el front elija sus palabras y no muestre el {@code detail} (directiva 6).
+     */
+    @ExceptionHandler(CardRejectedException.class)
+    public ProblemDetail handleCardRejected(CardRejectedException exception) {
+        return withCode(HttpStatus.BAD_REQUEST, exception.getMessage(), exception.getCode());
+    }
+
+    /** Cualquier otro pedido inválido que el servicio rechace con un mensaje. */
     @ExceptionHandler(IllegalArgumentException.class)
     public ProblemDetail handleInvalidRequest(IllegalArgumentException exception) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());

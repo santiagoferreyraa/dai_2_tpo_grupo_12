@@ -279,6 +279,7 @@ class UserAuthorizationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"currentPassword\":\"otraClave999\",\"newPassword\":\"claveNueva456\"}"))
                 .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("CURRENT_PASSWORD_INCORRECT"))
                 .andExpect(jsonPath("$.detail").value("La contraseña actual no es correcta"));
 
         mockMvc.perform(put("/api/users/profile/password")

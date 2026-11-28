@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 
+import { errorMessage } from '@/lib/errorMessage'
+
 import { listVehicleModels } from './data/vehicleModelsRepository'
 import type { VehicleModel } from './types'
 
@@ -76,7 +78,7 @@ export function useVehicleModels(): VehicleCatalog {
       })
       .catch((cause: unknown) => {
         if (cancelled) return
-        setError(cause instanceof Error ? cause.message : 'No se pudo cargar el catálogo de autos')
+        setError(errorMessage(cause, 'No pudimos cargar el catálogo de autos.'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
