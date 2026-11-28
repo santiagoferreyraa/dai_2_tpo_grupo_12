@@ -56,6 +56,13 @@
         <sonar.issue.ignore.multicriteria>csrf</sonar.issue.ignore.multicriteria>
         <sonar.issue.ignore.multicriteria.csrf.ruleKey>java:S4502</sonar.issue.ignore.multicriteria.csrf.ruleKey>
         <sonar.issue.ignore.multicriteria.csrf.resourceKey>**/config/SecurityConfig.java</sonar.issue.ignore.multicriteria.csrf.resourceKey>
+        <!--
+            Duplicación: la configuración de seguridad y la del OpenAPI se repiten en los 4
+            backends a propósito. Cada uno es un artefacto que se despliega solo y no comparten
+            código (ni una librería común): es la separación por artefactos de la arquitectura.
+            Fuera de estas dos clases, la duplicación se sigue midiendo como siempre.
+        -->
+        <sonar.cpd.exclusions>**/config/SecurityConfig.java,**/config/OpenApiConfig.java</sonar.cpd.exclusions>
 
         <!--
             Versiones por encima de las que trae Spring Boot 3.5.16, solo para cerrar vulnerabilidades
