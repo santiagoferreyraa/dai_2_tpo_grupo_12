@@ -79,7 +79,7 @@ class NotificationTemplates {
                 "Cancelaste tu reserva " + where + " del " + when + ". " + cancelledDeposit(request);
             case BOOKING_NO_SHOW ->
                 "No llegaste a tu reserva " + where + " del " + when
-                        + ". Pasaron los 15 minutos de tolerancia, así que la cancelamos"
+                        + ". " + graceElapsed(request) + ", así que la cancelamos"
                         + (request.hasDeposit() ? " y la seña no se devuelve" : "")
                         + ". Ya podés hacer otra reserva.";
             case BOOKING_CANCELLED_FOR_DEBT ->
@@ -159,6 +159,17 @@ class NotificationTemplates {
             return "Te reintegramos la seña.";
         }
         return "Como faltaban menos de " + noticeHours(request) + " para el inicio, la seña no se devuelve.";
+    }
+
+    /**
+     * "Pasaron los 15 minutos de tolerancia", con los minutos que viajaron en el evento, para no
+     * tenerlos escritos acá aparte de {@code ecopedia.booking.no-show-grace}. Un mensaje que no los
+     * trae (anterior al 28/11, o guardado en el outbox) dice lo mismo sin el número.
+     */
+    private static String graceElapsed(NotificationToDispatch request) {
+        Integer minutes = request.noShowGraceMinutes();
+        if (minutes == null) return "Pasó el tiempo de tolerancia";
+        return minutes == 1 ? "Pasó el minuto de tolerancia" : "Pasaron los " + minutes + " minutos de tolerancia";
     }
 
     /** "5 horas", calculado del plazo que viajó en el evento. */

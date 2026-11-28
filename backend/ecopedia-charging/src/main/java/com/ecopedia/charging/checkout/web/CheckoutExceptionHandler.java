@@ -104,7 +104,8 @@ public class CheckoutExceptionHandler {
 
     @ExceptionHandler(HoldExpiredException.class)
     public ProblemDetail handleHoldExpired(HoldExpiredException exception) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.GONE, exception.getMessage());
+        // 410 y no 404: la retención existió y era suya, se le venció el tiempo (el front lo dice así).
+        return withCode(HttpStatus.GONE, exception.getMessage(), "HOLD_EXPIRED");
     }
 
     @ExceptionHandler(SlotUnavailableException.class)

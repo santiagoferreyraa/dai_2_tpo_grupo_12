@@ -128,6 +128,48 @@ class BookingServiceImplTest {
         assertThat(retaken.driverId()).isEqualTo(OTHER_DRIVER);
     }
 
+    /*
+     * El checkout contestaba 404 a quien volvía de pagar con la retención vencida: findHold la daba
+     * por inexistente y el reloj ya la había sacado, así que su 410 no se alcanzaba nunca. Ahora la
+     * recuerda un rato, ya vencida, y el Facade (que compara isExpiredAt) contesta 410.
+     */
+    @Test
+    @DisplayName("Una retención que venció se sigue encontrando un rato, vencida, para que el checkout dé 410")
+    void anExpiredHoldIsStillFoundAsExpired() throws InterruptedException {
+        started(AVAILABLE, Duration.ofMillis(150));
+        Hold hold = service.startHold(CONNECTOR, windowIn(2), DRIVER);
+        waitUntilNoHoldIsActive();
+        clock.advance(Duration.ofSeconds(1));
+
+        Hold found = service.findHold(hold.id()).orElseThrow();
+
+        assertThat(found.isExpiredAt(clock.instant())).isTrue();
+        assertThat(found.driverId()).isEqualTo(DRIVER);
+    }
+
+    @Test
+    @DisplayName("Pasada la hora, la retención vencida se olvida y vuelve a ser inexistente")
+    void anOldExpiredHoldIsForgotten() throws InterruptedException {
+        started(AVAILABLE, Duration.ofMillis(150));
+        Hold old = service.startHold(CONNECTOR, windowIn(2), DRIVER);
+        waitUntilNoHoldIsActive();
+
+        // Otra que vence más de una hora después: al vencer, limpia las viejas.
+        clock.advance(BookingServiceImpl.EXPIRED_MEMORY.plusMinutes(1));
+        service.startHold(CONNECTOR, windowIn(5), OTHER_DRIVER);
+        waitUntilNoHoldIsActive();
+
+        assertThat(service.findHold(old.id())).isEmpty();
+    }
+
+    private void waitUntilNoHoldIsActive() throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 3_000;
+        while (service.activeHoldCount() > 0 && System.currentTimeMillis() < deadline) {
+            Thread.sleep(25);
+        }
+        assertThat(service.activeHoldCount()).isZero();
+    }
+
     @Test
     @DisplayName("DEF-27: soltar la retención propia libera el slot en el acto, sin esperar el vencimiento")
     void releasingAHoldFreesTheSlotRightAway() {
@@ -954,6 +996,8 @@ class BookingServiceImplTest {
             BookingEvent event = events.published().get(events.published().size() - 1);
             assertThat(event.type()).isEqualTo(BookingEventType.BOOKING_NO_SHOW);
             assertThat(event.eventId()).isEqualTo("booking-" + booking.getId() + "-BOOKING_NO_SHOW");
+            // La tolerancia viaja en el evento: el aviso no la tiene escrita aparte.
+            assertThat(event.noShowGraceMinutes()).isEqualTo((int) NO_SHOW_GRACE.toMinutes());
         }
 
         @Test
