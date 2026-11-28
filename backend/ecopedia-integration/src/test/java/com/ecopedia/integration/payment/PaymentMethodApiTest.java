@@ -163,6 +163,15 @@ class PaymentMethodApiTest {
     }
 
     @Test
+    @DisplayName("Sin token y con un cuerpo inválido, el alta de tarjeta da 401 antes de validar el cuerpo")
+    void deniesTheAnonymousBeforeReadingTheBody() throws Exception {
+        mockMvc.perform(post("/api/payment-methods")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     @DisplayName("Un token firmado con otra clave no vale")
     void deniesAForgedToken() throws Exception {
         SecretKey otherKey = Keys.hmacShaKeyFor(
