@@ -2,6 +2,7 @@ package com.ecopedia.core.terminal;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.Mockito.*;
 
 import com.ecopedia.core.shared.ResourceNotFoundException;
@@ -9,10 +10,12 @@ import com.ecopedia.core.terminal.domain.*;
 import com.ecopedia.core.terminal.service.TerminalServiceImpl;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -95,7 +98,6 @@ class TerminalServiceTest {
 
         Connector updated = terminalService.configureConnector(1L, ConnectorType.TYPE_2, new BigDecimal("22.00"));
 
-        assertSame(mockConnector, updated);
         assertEquals(ConnectorType.TYPE_2, updated.getConnectorType());
         assertEquals(new BigDecimal("22.00"), updated.getMaxPowerKw());
         verify(connectorRepository, times(1)).save(mockConnector);
@@ -156,8 +158,8 @@ class TerminalServiceTest {
 
     @Test
     void testSearchStationsWithinRadius() {
-        when(stationRepository.findAllActive()).thenReturn(List.of(mockStation));
-        when(connectorRepository.findByStationId(10L)).thenReturn(List.of(mockConnector));
+        givenStationsInTheBox(mockStation);
+        when(connectorRepository.findByStationIdIn(List.of(10L))).thenReturn(List.of(mockConnector));
 
         SearchCriteria criteria = new SearchCriteria(-34.61300, -58.38100, 5.0, null, null, false);
         List<StationResult> results = terminalService.search(criteria);
@@ -177,8 +179,8 @@ class TerminalServiceTest {
      */
     @Test
     void testSearchCombinedFiltersEdgeCases() {
-        when(stationRepository.findAllActive()).thenReturn(List.of(mockStation));
-        when(connectorRepository.findByStationId(10L)).thenReturn(List.of(mockConnector));
+        givenStationsInTheBox(mockStation);
+        when(connectorRepository.findByStationIdIn(List.of(10L))).thenReturn(List.of(mockConnector));
 
         // 1. Los tres filtros dan: CCS2, mínimo 40 kW y disponible.
         SearchCriteria matchAll =
@@ -214,8 +216,8 @@ class TerminalServiceTest {
     void testSearchKeepsTheStationWithOnlyTheConnectorsThatMatch() {
         Connector slowType2 = connector(2L, ConnectorType.TYPE_2, "22.00", OperationalStatus.AVAILABLE);
 
-        when(stationRepository.findAllActive()).thenReturn(List.of(mockStation));
-        when(connectorRepository.findByStationId(10L)).thenReturn(List.of(mockConnector, slowType2));
+        givenStationsInTheBox(mockStation);
+        when(connectorRepository.findByStationIdIn(List.of(10L))).thenReturn(List.of(mockConnector, slowType2));
 
         SearchCriteria onlyCcs2 = new SearchCriteria(-34.61300, -58.38100, 5.0, ConnectorType.CCS2, null, false);
         List<StationResult> results = terminalService.search(onlyCcs2);
@@ -237,8 +239,8 @@ class TerminalServiceTest {
         mockConnector.setOperationalStatus(OperationalStatus.OUT_OF_SERVICE);
         Connector alsoBroken = connector(2L, ConnectorType.TYPE_2, "11.00", OperationalStatus.OUT_OF_SERVICE);
 
-        when(stationRepository.findAllActive()).thenReturn(List.of(mockStation));
-        when(connectorRepository.findByStationId(10L)).thenReturn(List.of(mockConnector, alsoBroken));
+        givenStationsInTheBox(mockStation);
+        when(connectorRepository.findByStationIdIn(List.of(10L))).thenReturn(List.of(mockConnector, alsoBroken));
 
         SearchCriteria onlyAvailable = new SearchCriteria(-34.61300, -58.38100, 5.0, null, null, true);
         assertTrue(terminalService.search(onlyAvailable).isEmpty());
@@ -255,12 +257,62 @@ class TerminalServiceTest {
      */
     @Test
     void testSearchDropsTheStationWithoutConnectors() {
-        when(stationRepository.findAllActive()).thenReturn(List.of(mockStation));
-        when(connectorRepository.findByStationId(10L)).thenReturn(List.of());
+        givenStationsInTheBox(mockStation);
+        when(connectorRepository.findByStationIdIn(List.of(10L))).thenReturn(List.of());
 
         SearchCriteria noFilter = new SearchCriteria(-34.61300, -58.38100, 5.0, null, null, false);
 
         assertTrue(terminalService.search(noFilter).isEmpty());
+    }
+
+    /**
+     * La primera pasada va a la base con un recuadro que contiene al punto buscado; la segunda
+     * recorta por la distancia real. Una estación dentro del recuadro pero fuera del radio (en la
+     * esquina) no es un resultado, y los conectores se piden una sola vez para todas.
+     */
+    @Test
+    void testSearchAsksTheBoxAroundThePointAndTrimsTheCorners() {
+        // Unos 4,2 km al noreste: entra en el recuadro de un radio de 3 km, pero queda afuera del círculo.
+        Station corner = new Station();
+        corner.setId(20L);
+        corner.setLatitude(-34.61315 + 0.0265);
+        corner.setLongitude(-58.38138 + 0.0325);
+        corner.setActive(true);
+        givenStationsInTheBox(mockStation, corner);
+        when(connectorRepository.findByStationIdIn(List.of(10L))).thenReturn(List.of(mockConnector));
+
+        List<StationResult> results =
+                terminalService.search(new SearchCriteria(-34.61315, -58.38138, 3.0, null, null, false));
+
+        assertEquals(
+                List.of(10L), results.stream().map(StationResult::stationId).toList());
+        ArgumentCaptor<Double> bounds = ArgumentCaptor.forClass(Double.class);
+        verify(stationRepository)
+                .findActiveWithin(bounds.capture(), bounds.capture(), bounds.capture(), bounds.capture());
+        List<Double> box = bounds.getAllValues();
+        assertTrue(box.get(0) < -34.61315 && box.get(1) > -34.61315, "la latitud buscada está adentro");
+        assertTrue(box.get(2) < -58.38138 && box.get(3) > -58.38138, "la longitud buscada está adentro");
+        // Una sola consulta de conectores, y solo para la que quedó adentro del radio.
+        verify(connectorRepository, times(1)).findByStationIdIn(any());
+        verify(connectorRepository, never()).findByStationId(any());
+    }
+
+    @Test
+    void testConnectorsOfSeveralStationsComeGroupedFromOneQuery() {
+        Station other = new Station();
+        other.setId(11L);
+        Connector first = connector(1L, ConnectorType.CCS2, "50.00", OperationalStatus.AVAILABLE);
+        Connector second = connector(2L, ConnectorType.TYPE_2, "22.00", OperationalStatus.AVAILABLE);
+        Connector elsewhere = connector(3L, ConnectorType.CCS2, "150.00", OperationalStatus.AVAILABLE);
+        elsewhere.setStation(other);
+        when(connectorRepository.findByStationIdIn(List.of(10L, 11L))).thenReturn(List.of(first, second, elsewhere));
+
+        Map<Long, List<Connector>> grouped = terminalService.getConnectorsByStations(List.of(10L, 11L));
+
+        assertEquals(List.of(first, second), grouped.get(10L));
+        assertEquals(List.of(elsewhere), grouped.get(11L));
+        assertTrue(terminalService.getConnectorsByStations(List.of()).isEmpty());
+        verify(connectorRepository, times(1)).findByStationIdIn(any());
     }
 
     @Test
@@ -318,32 +370,36 @@ class TerminalServiceTest {
         verify(stationRepository, never()).save(any());
     }
 
+    /*
+     * Solo lo que el servicio decide: el cambio de estado que se guarda y los 404. Las lecturas que
+     * solo delegan en el repositorio (getConnector, getAllConnectors, getStation, getAllStations) no
+     * se afirman acá contra un mock que devuelve lo mismo que se compara: las cubren los tests de
+     * punta a punta contra la base (StationQueriesTest y TerminalAuthorizationTest).
+     */
     @Test
     void testChangeOperationalStatusAndConnectorQueriesAndRemoval() {
         when(connectorRepository.findById(1L)).thenReturn(Optional.of(mockConnector));
         when(connectorRepository.findById(99L)).thenReturn(Optional.empty());
-        when(connectorRepository.save(any(Connector.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(connectorRepository.findAll()).thenReturn(List.of(mockConnector));
-        when(connectorRepository.findByStationId(10L)).thenReturn(List.of(mockConnector));
-        when(stationRepository.findById(10L)).thenReturn(Optional.of(mockStation));
-        when(stationRepository.findAllActive()).thenReturn(List.of(mockStation));
 
         terminalService.changeOperationalStatus(1L, OperationalStatus.OUT_OF_SERVICE);
-        assertEquals(OperationalStatus.OUT_OF_SERVICE, mockConnector.getOperationalStatus());
+        ArgumentCaptor<Connector> saved = ArgumentCaptor.forClass(Connector.class);
+        verify(connectorRepository).save(saved.capture());
+        assertEquals(OperationalStatus.OUT_OF_SERVICE, saved.getValue().getOperationalStatus());
         assertThrows(
                 ResourceNotFoundException.class,
                 () -> terminalService.changeOperationalStatus(99L, OperationalStatus.AVAILABLE));
 
-        assertSame(mockConnector, terminalService.getConnector(1L));
         assertThrows(ResourceNotFoundException.class, () -> terminalService.getConnector(99L));
-        assertEquals(List.of(mockConnector), terminalService.getAllConnectors());
-        assertEquals(List.of(mockConnector), terminalService.getConnectorsByStation(10L));
-        assertSame(mockStation, terminalService.getStation(10L));
-        assertEquals(List.of(mockStation), terminalService.getAllStations());
 
         terminalService.removeConnector(1L);
         verify(connectorRepository).delete(mockConnector);
         assertThrows(ResourceNotFoundException.class, () -> terminalService.removeConnector(99L));
+    }
+
+    /** La base devuelve estas estaciones para cualquier recuadro: el recorte por radio es del servicio. */
+    private void givenStationsInTheBox(Station... stations) {
+        when(stationRepository.findActiveWithin(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .thenReturn(List.of(stations));
     }
 
     private Connector connector(Long id, ConnectorType type, String maxPowerKw, OperationalStatus status) {

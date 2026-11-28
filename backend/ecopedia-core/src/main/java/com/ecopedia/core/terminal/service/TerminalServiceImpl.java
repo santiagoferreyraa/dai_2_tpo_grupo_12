@@ -5,8 +5,12 @@ import com.ecopedia.core.shared.VersionCondition;
 import com.ecopedia.core.terminal.domain.*;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.hibernate.Hibernate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -136,19 +140,32 @@ public class TerminalServiceImpl implements TerminalService {
     @Override
     @Transactional(readOnly = true)
     public List<StationResult> search(SearchCriteria criteria) {
-        List<Station> activeStations = stationRepository.findAllActive();
+        /*
+         * Dos pasadas (ECO-14). La base devuelve las activas dentro del recuadro que contiene al
+         * círculo del radio, con el índice de latitud y longitud; acá se recortan las esquinas con la
+         * distancia de verdad. Los conectores de todas las que quedan vienen en una sola consulta.
+         */
+        BoundingBox box = BoundingBox.around(criteria.latitude(), criteria.longitude(), criteria.radiusKm());
+        List<Station> candidates = stationRepository.findActiveWithin(
+                box.minLatitude(), box.maxLatitude(), box.minLongitude(), box.maxLongitude());
+
+        Map<Long, Double> distances = new HashMap<>();
+        List<Station> inRadius = new ArrayList<>();
+        for (Station station : candidates) {
+            double distanceKm = calculateHaversineDistanceKm(
+                    criteria.latitude(), criteria.longitude(), station.getLatitude(), station.getLongitude());
+            if (distanceKm <= criteria.radiusKm()) {
+                distances.put(station.getId(), distanceKm);
+                inRadius.add(station);
+            }
+        }
+        Map<Long, List<Connector>> connectorsByStation =
+                getConnectorsByStations(inRadius.stream().map(Station::getId).toList());
         List<StationResult> results = new ArrayList<>();
 
-        for (Station station : activeStations) {
-            double distanceKm = calculateHaversineDistanceKm(
-                    criteria.latitude(), criteria.longitude(),
-                    station.getLatitude(), station.getLongitude());
-
-            if (distanceKm > criteria.radiusKm()) {
-                continue;
-            }
-
-            List<Connector> connectors = connectorRepository.findByStationId(station.getId());
+        for (Station station : inRadius) {
+            double distanceKm = distances.get(station.getId());
+            List<Connector> connectors = connectorsByStation.getOrDefault(station.getId(), List.of());
             List<StationResult.ConnectorSummary> matchingConnectors = new ArrayList<>();
 
             for (Connector connector : connectors) {
@@ -216,8 +233,23 @@ public class TerminalServiceImpl implements TerminalService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<Station> getStationsIncludingInactive() {
+        return stationRepository.findAll();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<Connector> getConnectorsByStation(Long stationId) {
         return connectorRepository.findByStationId(stationId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<Long, List<Connector>> getConnectorsByStations(Collection<Long> stationIds) {
+        if (stationIds.isEmpty()) return Map.of();
+        return connectorRepository.findByStationIdIn(stationIds).stream()
+                .collect(Collectors.groupingBy(
+                        connector -> connector.getStation().getId()));
     }
 
     /*
@@ -243,9 +275,8 @@ public class TerminalServiceImpl implements TerminalService {
     @Override
     @Transactional(readOnly = true)
     public List<Station> getAllStations() {
-        List<Station> stations = stationRepository.findAllActive();
-        stations.forEach(station -> Hibernate.initialize(station.getPhotoUrls()));
-        return stations;
+        // Las fotos vienen en la misma consulta (JOIN FETCH): ver JpaStationRepository.
+        return stationRepository.findAllActive();
     }
 
     @Override
