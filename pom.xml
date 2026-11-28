@@ -46,6 +46,16 @@
         -->
         <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
         <sonar.exclusions>**/generated-sources/**,**/contract/**</sonar.exclusions>
+        <!--
+            Hallazgos revisados que no aplican (va acá, una vez, y no repetido en cada módulo):
+            - java:S4502 en los SecurityConfig: CSRF apagado a propósito. La API no usa cookies ni
+              sesión de servidor (STATELESS) y el token viaja en la cabecera Authorization, que un
+              sitio ajeno no puede hacer que el navegador mande solo: sin credencial automática no
+              hay CSRF posible. Revisado el 28/11 (QA-08 / QA-09).
+        -->
+        <sonar.issue.ignore.multicriteria>csrf</sonar.issue.ignore.multicriteria>
+        <sonar.issue.ignore.multicriteria.csrf.ruleKey>java:S4502</sonar.issue.ignore.multicriteria.csrf.ruleKey>
+        <sonar.issue.ignore.multicriteria.csrf.resourceKey>**/config/SecurityConfig.java</sonar.issue.ignore.multicriteria.csrf.resourceKey>
 
         <!--
             Versiones por encima de las que trae Spring Boot 3.5.16, solo para cerrar vulnerabilidades
